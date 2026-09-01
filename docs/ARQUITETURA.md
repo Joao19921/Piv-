@@ -102,10 +102,15 @@ Responsabilidades:
 Arquivos principais:
 
 - `collectors/bacenCollector.ts`: PTAX via BACEN Olinda API.
-- `collectors/azureCollector.ts`: Azure Retail Prices API.
-- `collectors/staticFallbacks.ts`: valores estaticos para operacao degradada.
-- `resilience/resilienceManager.ts`: politica de resiliencia.
-- `cache/fileCache.ts`: cache JSON em `data/cache`.
+- `collectors/azureCollector.ts`: Azure Retail Prices API (consulta ao vivo, por requisicao).
+- `collectors/awsCollector.ts`: AWS Pricing API (`GetProducts`, SDK `@aws-sdk/client-pricing`); exige `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` com permissao somente-leitura `pricing:GetProducts`.
+- `collectors/gcpCollector.ts`: GCP Cloud Billing Catalog API; exige `GOOGLE_CLOUD_BILLING_API_KEY`. Precifica instancias predefinidas como vCPU-preco + RAM-preco (GCP nao tem SKU unico "por instancia").
+- `collectors/staticFallbacks.ts`: valores estaticos para operacao degradada (ultimo nivel de fallback).
+- `resilience/resilienceManager.ts`: politica de resiliencia (circuit breaker, retry, cache, fallback).
+- `cache/fileCache.ts`: cache JSON em `data/cache` (fallback de nivel 3 quando o Postgres nao esta configurado).
+- `db/client.ts`: pool `pg` para o Postgres (Supabase), com observabilidade de consultas (duracao, erros) via `observability/queryStats.ts`.
+- `repositories/`: `cloudPricingRepository`, `fxRepository`, `marketBenchmarkRepository`, `ingestionRunsRepository` — leitura/escrita das tabelas descritas em "Banco De Dados" abaixo.
+- `observability/logger.ts` e `observability/queryStats.ts`: logging estruturado (JSON por linha, capturado pelo log viewer do Render) e contadores em memoria por consulta.
 
 ## Padrao De Resiliencia
 
@@ -134,14 +139,39 @@ O frontend usa esse contrato diretamente para mostrar se um numero veio de fonte
 
 | Fonte | Implementacao atual | Estado |
 | :--- | :--- | :--- |
-| BACEN PTAX | API Olinda publica | Ao vivo |
-| Azure Retail Prices | API publica da Microsoft | Ao vivo |
-| AWS EC2 | Snapshot oficial em catalogo local | Fallback/snapshot |
-| GCP Compute | Snapshot oficial em catalogo local | Fallback/snapshot |
+| BACEN PTAX | API Olinda publica | Ao vivo (por requisicao) |
+| Azure Retail Prices | API publica da Microsoft | Ao vivo (por requisicao) |
+| AWS EC2 | AWS Pricing API (`GetProducts`) via ingestao periodica (cron 5 dias) + leitura do Postgres | Ao vivo na ingestao; leitura em runtime vem do Postgres |
+| GCP Compute Engine | Cloud Billing Catalog API via ingestao periodica (cron 5 dias) + leitura do Postgres | Ao vivo na ingestao; leitura em runtime vem do Postgres |
 | Perfis CAGED/MTE | Catalogo parametrizado local | Snapshot |
-| Benchmark salarial | Modelo local + opcional `MARKET_BENCHMARK_CONNECTOR_URL` | Snapshot ou conector |
+| Benchmark salarial | Modelo local (catalogo interno CLT/PJ) + opcional `MARKET_BENCHMARK_CONNECTOR_URL`; historico persistido no Postgres | Snapshot ou conector |
 | Licencas SaaS | Catalogo local com URLs oficiais | Snapshot |
 | PNCP | Nao implementado | Pendente |
+
+Sem `DATABASE_URL` configurado, ou se o Postgres estiver fora do ar, AWS/GCP/benchmark caem para o snapshot estatico embutido no codigo (mesmo comportamento da fase anterior) — o app nunca fica sem responder por falta de banco.
+
+## Banco De Dados
+
+Projeto Supabase dedicado (Postgres 17, plano free, regiao `sa-east-1`). Acesso via `pg` com connection string direta (`DATABASE_URL`), sem ORM. RLS habilitado em todas as tabelas sem policies, bloqueando qualquer acesso via PostgREST/anon key — o backend conecta como usuario com privilegios diretos no Postgres, que ignora RLS.
+
+Tabelas (`server/db/migrations/0001_core_schema.sql`):
+
+- `cloud_skus` / `cloud_regions`: dimensao do catalogo de compute (metadados; sem preco embutido).
+- `cloud_prices`: historico insert-only de preco por SKU/regiao (o preco "atual" e a linha mais recente).
+- `fx_rates`: historico de cotacoes PTAX.
+- `market_benchmark_searches` / `market_benchmark_sources`: historico de buscas de benchmark salarial (substitui o cache em arquivo `data/cache/market-benchmark-history`).
+- `ingestion_runs`: uma linha por execucao de coletor/ingestao (servico, status, registros atualizados, duracao, erro) — base do painel de observabilidade em `/system-health` e na tela "Fontes".
+
+## Ingestao Periodica (Cron)
+
+`server/scripts/refreshSources.ts` roda via GitHub Actions (`.github/workflows/refresh-sources.yml`, `schedule: cron: "0 6 1,6,11,16,21,26 * *"`, aproximando "a cada 5 dias"; cron e baseado em calendario, entao o intervalo real varia entre 4 e 6 dias na virada do mes) ou manualmente (`pnpm run refresh-sources` com `DATABASE_URL` no ambiente). Para cada SKU/regiao do catalogo, consulta o coletor real (Azure/AWS/GCP) e grava o preco em `cloud_prices`; tambem atualiza `fx_rates`. Cada fonte grava um resumo em `ingestion_runs`.
+
+Azure tambem continua com consulta ao vivo por requisicao (nao depende so do cron). Qualquer chamada ao vivo bem-sucedida (seja do cron ou de uma requisicao normal de `/cloud/estimate`) grava uma nova linha em `cloud_prices`, mantendo o Postgres fresco entre as janelas do cron.
+
+## Observabilidade
+
+- **Servicos externos**: `/system-health` combina checagem ao vivo (BACEN, Azure) com a ultima linha de `ingestion_runs` por servico (AWS, GCP) — status, quantidade de registros atualizados, duracao e erro da ultima execucao.
+- **Consultas ao Postgres**: `server/src/infrastructure/db/client.ts` mede duracao e erro de cada consulta nomeada e acumula contadores em memoria (`observability/queryStats.ts`), expostos em `/system-health` (`database.queries`) e na tela "Fontes". Consultas acima de 500ms geram um log de aviso estruturado. Isso e observabilidade leve (contadores desde o start do processo + logs), nao uma APM completa — adequado ao estagio atual (instancia unica, free tier); os logs estruturados (JSON por linha) ficam disponiveis no log viewer do Render para investigacao mais profunda.
 
 ## API Publica
 
@@ -160,19 +190,13 @@ Todas as rotas ficam sob `/api/v1`:
 
 ## Dados E Persistencia
 
-Hoje nao existe banco de dados. O unico armazenamento e o cache de resiliencia em `data/cache`, que:
+O Postgres (Supabase, ver "Banco De Dados" acima) e a fonte de verdade para catalogo de cloud, precos, cotacao PTAX e historico de benchmark. O cache de resiliencia em arquivo (`data/cache`) continua existindo como fallback de nivel 3 quando `DATABASE_URL` nao esta configurado ou o Postgres esta fora do ar — ele:
 
-- melhora a experiencia quando uma fonte externa falha;
+- melhora a experiencia quando uma fonte externa e o banco falham juntos;
 - nao deve ser usado como registro permanente;
-- pode ser perdido em provedores com filesystem efemero, como Render Free.
+- pode ser perdido em provedores com filesystem efemero, como Render Free (por isso a migracao para Postgres).
 
-Para uma segunda fase, recomenda-se Postgres para:
-
-- usuarios e acessos;
-- propostas salvas;
-- snapshots versionados de catalogo;
-- historico de benchmark;
-- auditoria de fontes utilizadas em cada proposta.
+Pendente para uma proxima fase: usuarios/acessos, propostas salvas e auditoria de fontes por proposta (a tabela `ingestion_runs` ja cobre auditoria de fontes de precificacao, mas nao de propostas individuais).
 
 ## Deploy
 
@@ -193,8 +217,9 @@ Detalhes:
 
 - Substituir snapshots de CAGED/MTE por pipeline real de ingestao.
 - Implementar PNCP.
-- Implementar coletores AWS Pricing API e GCP Cloud Billing Catalog.
-- Adicionar banco persistente.
+- Configurar credenciais reais (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, `GOOGLE_CLOUD_BILLING_API_KEY`) e validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
+- Ampliar dimensoes de custo da calculadora cloud: storage (EBS/Persistent Disk), transferencia de dados, banco gerenciado (RDS/Cloud SQL) — hoje cobre so compute on-demand.
+- Persistir propostas, usuarios e auditoria de fontes por proposta no Postgres.
 - Separar dominio em modulos menores quando o volume de regras crescer.
 - Criar MCP server previsto no PRD.
 - Publicar workflow CI/CD quando a credencial GitHub tiver escopo `workflow`.

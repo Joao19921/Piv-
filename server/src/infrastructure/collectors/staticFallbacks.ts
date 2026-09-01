@@ -25,23 +25,6 @@ export const AZURE_REGION_AVG_USD_PER_HOUR: Record<string, number> = {
   "eu-west-1": 0.098,
 };
 
-export interface StaticUnitPrice {
-  pricePerHourUsd: number;
-}
-
-/** Provedores sem integração ao vivo ainda: sempre reportam DEGRADED com a tabela estática. */
-export function getStaticProviderPrice(provider: string, region: string): ResilienceResult<StaticUnitPrice> {
-  const table = provider === "GCP" ? GCP_REGION_AVG_USD_PER_HOUR : AWS_REGION_AVG_USD_PER_HOUR;
-  const price = table[region] ?? table[DEFAULT_REGION_KEY];
-  return {
-    status: "DEGRADED",
-    source: "STATIC_TABLE",
-    timestamp: new Date().toISOString(),
-    warning: `${provider} ainda não tem integração ao vivo nesta fase; usando tabela de custo médio por região.`,
-    data: { pricePerHourUsd: price },
-  };
-}
-
 export interface StaticSourceInfo {
   name: string;
   status: ResilienceResult<unknown>["status"];

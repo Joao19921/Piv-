@@ -11,8 +11,30 @@ export interface ApiSourceResult<T = unknown> {
   data: T | null;
 }
 
+export interface IngestionRun {
+  serviceName: string;
+  status: SourceStatus;
+  recordsUpserted: number;
+  durationMs: number;
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface QueryStat {
+  name: string;
+  count: number;
+  errorCount: number;
+  avgMs: number;
+  maxMs: number;
+  lastRanAt: string;
+  lastError?: string;
+}
+
 export interface SystemHealthResponse {
   sources: ApiSourceResult[];
+  ingestion: IngestionRun[];
+  database: { configured: boolean; queries: QueryStat[] };
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealthResponse> {
@@ -34,7 +56,6 @@ export interface CloudRegion {
   provider: "AWS" | "Azure" | "GCP";
   label: string;
   providerRegion: string;
-  sourceStatus: "LIVE_API" | "STATIC_SNAPSHOT";
 }
 
 export interface CloudSku {
@@ -49,7 +70,6 @@ export interface CloudSku {
   pricingModel: "OnDemand";
   sourceName: string;
   sourceUrl: string;
-  regionalPricesUsd: Record<string, number>;
   notes: string;
 }
 
@@ -134,14 +154,14 @@ export async function fetchLaborEstimate(params: LaborEstimateParams): Promise<L
   return res.json();
 }
 
-export interface MarketBenchmarkSource {
-  sourceName: string;
-  sourceUrl: string | null;
-  valueText: string;
-  monthlyMin: number;
-  monthlyMax: number;
+export interface MarketBenchmarkSalarySource {
+  employmentModel: "CLT" | "PJ";
+  profileId: string;
+  profileTitle: string;
+  seniority: LaborProfile["seniority"];
+  monthlyCompensation: number;
+  factorK: number;
   observation: string;
-  confidence: "LOW" | "MEDIUM" | "HIGH";
 }
 
 export interface MarketBenchmarkResult {
@@ -149,11 +169,9 @@ export interface MarketBenchmarkResult {
   state: string;
   city: string;
   notes?: string;
-  matchedProfile: LaborProfile;
+  sources: MarketBenchmarkSalarySource[];
   suggestedMonthlyCompensation: number;
-  regionalMultiplier: number;
   sourceMode: "LIVE_CONNECTOR" | "STATIC_SNAPSHOT";
-  results: MarketBenchmarkSource[];
   summary: string;
   generatedAt: string;
 }

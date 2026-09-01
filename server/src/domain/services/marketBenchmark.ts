@@ -1,4 +1,7 @@
 import { readCache, writeCache } from "../../infrastructure/cache/fileCache";
+import { isDatabaseConfigured } from "../../infrastructure/db/client";
+import { logger } from "../../infrastructure/observability/logger";
+import { insertBenchmarkSearch, listRecentBenchmarkSearches } from "../../infrastructure/repositories/marketBenchmarkRepository";
 import { executeWithFallback, type ResilienceResult } from "../../infrastructure/resilience/resilienceManager";
 import { laborProfiles, type LaborProfile } from "./catalogs";
 
@@ -9,14 +12,14 @@ export interface MarketBenchmarkInput {
   notes?: string;
 }
 
-export interface MarketBenchmarkSource {
-  sourceName: string;
-  sourceUrl: string | null;
-  valueText: string;
-  monthlyMin: number;
-  monthlyMax: number;
+export interface MarketBenchmarkSalarySource {
+  employmentModel: "CLT" | "PJ";
+  profileId: string;
+  profileTitle: string;
+  seniority: LaborProfile["seniority"];
+  monthlyCompensation: number;
+  factorK: number;
   observation: string;
-  confidence: "LOW" | "MEDIUM" | "HIGH";
 }
 
 export interface MarketBenchmarkResult {
@@ -24,11 +27,9 @@ export interface MarketBenchmarkResult {
   state: string;
   city: string;
   notes?: string;
-  matchedProfile: LaborProfile;
+  sources: MarketBenchmarkSalarySource[];
   suggestedMonthlyCompensation: number;
-  regionalMultiplier: number;
   sourceMode: "LIVE_CONNECTOR" | "STATIC_SNAPSHOT";
-  results: MarketBenchmarkSource[];
   summary: string;
   generatedAt: string;
 }
@@ -38,58 +39,17 @@ export interface MarketBenchmarkHistoryEntry extends MarketBenchmarkResult {
 }
 
 const HISTORY_CACHE_KEY = "market-benchmark-history";
-const BENCHMARK_CACHE_VERSION = "v3";
+const BENCHMARK_CACHE_VERSION = "v4";
 const REQUEST_TIMEOUT_MS = 8_000;
 
-const seniorityMultipliers: Array<{ pattern: RegExp; seniority: LaborProfile["seniority"]; multiplier: number }> = [
-  { pattern: /junior|jr\b|júnior/i, seniority: "Junior", multiplier: 0.72 },
-  { pattern: /pleno|mid/i, seniority: "Pleno", multiplier: 1 },
-  { pattern: /senior|sr\b|sênior/i, seniority: "Senior", multiplier: 1.28 },
-  { pattern: /especialista|lead|principal|arquiteto/i, seniority: "Especialista", multiplier: 1.45 },
+const roleCategories: Array<{ pattern: RegExp; profileIds: string[] }> = [
+  { pattern: /dados|data|bi\b|analytics/i, profileIds: ["dados-especialista-pj"] },
+  { pattern: /arquiteto|solution|solucao|solucoes/i, profileIds: ["arquiteto-senior-pj"] },
+  { pattern: /analista|sistemas|business analyst|requisitos/i, profileIds: ["analista-pleno-clt"] },
+  { pattern: /backend|api|java|node|full stack|frontend|desenvolvedor|developer|dev\b/i, profileIds: ["dev-pleno-clt", "dev-senior-pj"] },
 ];
 
-const cityMultipliers: Record<string, number> = {
-  "sao paulo": 1.08,
-  "são paulo": 1.08,
-  campinas: 1.04,
-  "rio de janeiro": 1.03,
-  brasilia: 1.02,
-  "brasília": 1.02,
-  curitiba: 0.98,
-  recife: 0.92,
-  "porto alegre": 0.97,
-  remoto: 1,
-};
-
-const stateMultipliers: Record<string, number> = {
-  AC: 0.86,
-  AL: 0.88,
-  AM: 0.91,
-  AP: 0.87,
-  BA: 0.92,
-  CE: 0.91,
-  DF: 1.04,
-  ES: 0.95,
-  GO: 0.94,
-  MA: 0.86,
-  MG: 0.98,
-  MS: 0.92,
-  MT: 0.93,
-  PA: 0.9,
-  PB: 0.88,
-  PE: 0.93,
-  PI: 0.86,
-  PR: 0.99,
-  RJ: 1.03,
-  RN: 0.88,
-  RO: 0.88,
-  RR: 0.87,
-  RS: 0.98,
-  SC: 1,
-  SE: 0.87,
-  SP: 1.08,
-  TO: 0.87,
-};
+const FALLBACK_PROFILE_IDS = ["analista-pleno-clt"];
 
 function normalize(text: string): string {
   return text
@@ -110,92 +70,47 @@ function formatBRL(value: number): string {
   }).format(value);
 }
 
-function inferProfile(role: string): LaborProfile {
+function matchProfilesForRole(role: string): LaborProfile[] {
   const normalized = normalize(role);
-  if (/dados|data|bi|analytics/.test(normalized)) return laborProfiles.find((profile) => profile.id === "dados-especialista-pj") ?? laborProfiles[0];
-  if (/arquiteto|solution|solucao|solucoes/.test(normalized)) return laborProfiles.find((profile) => profile.id === "arquiteto-senior-pj") ?? laborProfiles[0];
-  if (/analista|sistemas|business analyst|requisitos/.test(normalized)) return laborProfiles.find((profile) => profile.id === "analista-pleno-clt") ?? laborProfiles[0];
-  if (/backend|api|java|node|full stack|frontend|desenvolvedor|developer|dev/.test(normalized)) return laborProfiles.find((profile) => profile.id === "dev-senior-pj") ?? laborProfiles[0];
-  return laborProfiles.find((profile) => profile.id === "analista-pleno-clt") ?? laborProfiles[0];
-}
-
-function inferSeniority(role: string, profile: LaborProfile): { seniority: LaborProfile["seniority"]; multiplier: number } {
-  const matched = seniorityMultipliers.find((entry) => entry.pattern.test(role));
-  return matched ?? { seniority: profile.seniority, multiplier: 1 };
-}
-
-function inferCityMultiplier(city: string): number {
-  const normalizedCity = normalize(city);
-  return Object.entries(cityMultipliers).find(([key]) => normalize(key) === normalizedCity)?.[1] ?? 1;
-}
-
-function inferStateMultiplier(state: string | undefined): number {
-  if (!state) return 1;
-  return stateMultipliers[state.trim().toUpperCase()] ?? 1;
+  const category = roleCategories.find((entry) => entry.pattern.test(normalized));
+  const ids = category?.profileIds ?? FALLBACK_PROFILE_IDS;
+  return ids
+    .map((id) => laborProfiles.find((profile) => profile.id === id))
+    .filter((profile): profile is LaborProfile => Boolean(profile));
 }
 
 function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResult {
   const city = input.city?.trim() || "Brasil";
   const state = input.state?.trim().toUpperCase() || "BR";
-  const matchedProfile = inferProfile(input.role);
-  const seniority = inferSeniority(input.role, matchedProfile);
-  const regionalMultiplier = inferStateMultiplier(state) * inferCityMultiplier(city);
-  const base = Math.round(matchedProfile.monthlyCompensation * seniority.multiplier * regionalMultiplier);
+  const matchedProfiles = matchProfilesForRole(input.role);
 
-  const sources: MarketBenchmarkSource[] = [
-    {
-      sourceName: "Robert Half Brasil",
-      sourceUrl: null,
-      valueText: `${formatBRL(base * 0.92)} a ${formatBRL(base * 1.35)}/mes`,
-      monthlyMin: Math.round(base * 0.92),
-      monthlyMax: Math.round(base * 1.35),
-      observation: "Snapshot parametrizado localmente; guia salarial ao vivo ainda nao conectado.",
-      confidence: "MEDIUM",
-    },
-    {
-      sourceName: "Michael Page Brasil",
-      sourceUrl: null,
-      valueText: `${formatBRL(base * 0.9)} a ${formatBRL(base * 1.32)}/mes`,
-      monthlyMin: Math.round(base * 0.9),
-      monthlyMax: Math.round(base * 1.32),
-      observation: "Snapshot parametrizado localmente; estudo salarial Michael Page ainda nao consultado ao vivo.",
-      confidence: "MEDIUM",
-    },
-    {
-      sourceName: "Glassdoor Brasil",
-      sourceUrl: null,
-      valueText: `${formatBRL(base * 0.82)} a ${formatBRL(base * 1.18)}/mes`,
-      monthlyMin: Math.round(base * 0.82),
-      monthlyMax: Math.round(base * 1.18),
-      observation: "Estimativa derivada do perfil CTC mais proximo; amostra publica nao consultada nesta execucao.",
-      confidence: "LOW",
-    },
-    {
-      sourceName: "Indeed Brasil",
-      sourceUrl: null,
-      valueText: `${formatBRL(base * 0.78)} a ${formatBRL(base * 1.1)}/mes`,
-      monthlyMin: Math.round(base * 0.78),
-      monthlyMax: Math.round(base * 1.1),
-      observation: "Faixa de contingencia para orientar triagem; requer validacao antes de proposta.",
-      confidence: "LOW",
-    },
-  ];
+  const sources: MarketBenchmarkSalarySource[] = matchedProfiles.map((profile) => ({
+    employmentModel: profile.employmentModel,
+    profileId: profile.id,
+    profileTitle: profile.title,
+    seniority: profile.seniority,
+    monthlyCompensation: profile.monthlyCompensation,
+    factorK: profile.factorK,
+    observation: `Valor bruto do catalogo interno (${profile.benchmarkSource}), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
+  }));
 
-  const suggestedMonthlyCompensation = Math.round(
-    sources.reduce((total, source) => total + (source.monthlyMin + source.monthlyMax) / 2, 0) / sources.length,
-  );
+  const suggestedMonthlyCompensation = sources.length
+    ? Math.round(sources.reduce((total, source) => total + source.monthlyCompensation, 0) / sources.length)
+    : 0;
+
+  const summarySources = sources.length
+    ? sources.map((source) => `${source.employmentModel} ${formatBRL(source.monthlyCompensation)}`).join(" e ")
+    : "nenhum perfil do catalogo correspondente";
 
   return {
     roleSearched: input.role.trim(),
     state,
     city,
     notes: input.notes?.trim() || undefined,
-    matchedProfile: { ...matchedProfile, seniority: seniority.seniority },
+    sources,
     suggestedMonthlyCompensation,
-    regionalMultiplier,
     sourceMode: "STATIC_SNAPSHOT",
-    results: sources,
-    summary: `Benchmark aproximado para ${input.role.trim()} em ${city}/${state}: ${formatBRL(suggestedMonthlyCompensation)}/mes como remuneracao de referencia. Ajuste regional aplicado: ${regionalMultiplier.toFixed(2)}x. Use como insumo de composicao; preco de venda ainda depende de Fator K, margem e impostos.`,
+    summary: `Referencia para ${input.role.trim()} em ${city}/${state}: ${summarySources}. Valores brutos do catalogo interno de perfis (salario CLT e/ou PJ), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -221,12 +136,34 @@ async function fetchLiveBenchmark(input: MarketBenchmarkInput): Promise<MarketBe
   return { ...data, sourceMode: "LIVE_CONNECTOR", generatedAt: data.generatedAt ?? new Date().toISOString() };
 }
 
-function readHistory(): MarketBenchmarkHistoryEntry[] {
+async function readHistory(): Promise<MarketBenchmarkHistoryEntry[]> {
+  if (isDatabaseConfigured) {
+    try {
+      return await listRecentBenchmarkSearches();
+    } catch (err) {
+      logger.error("Falha ao ler historico de benchmark do Postgres; usando cache em arquivo", { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
   return readCache<MarketBenchmarkHistoryEntry[]>(HISTORY_CACHE_KEY)?.data ?? [];
 }
 
-function writeHistory(history: MarketBenchmarkHistoryEntry[]): void {
-  writeCache(HISTORY_CACHE_KEY, history.slice(0, 50));
+/** Persiste a busca (Postgres quando configurado; cache em arquivo como fallback) e devolve a entrada com id. */
+async function saveHistoryEntry(result: MarketBenchmarkResult): Promise<MarketBenchmarkHistoryEntry> {
+  if (isDatabaseConfigured) {
+    try {
+      const id = await insertBenchmarkSearch(result);
+      return { ...result, id };
+    } catch (err) {
+      logger.error("Falha ao gravar historico de benchmark no Postgres; usando cache em arquivo", { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  const entry: MarketBenchmarkHistoryEntry = { ...result, id: `${Date.now()}-${slugify(result.roleSearched)}` };
+  const existing = readCache<MarketBenchmarkHistoryEntry[]>(HISTORY_CACHE_KEY)?.data ?? [];
+  writeCache(
+    HISTORY_CACHE_KEY,
+    [entry, ...existing.filter((item) => item.roleSearched !== entry.roleSearched || item.city !== entry.city || item.state !== entry.state)].slice(0, 50),
+  );
+  return entry;
 }
 
 export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promise<ResilienceResult<MarketBenchmarkResult>> {
@@ -259,16 +196,12 @@ export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promis
   });
 
   if (result.data) {
-    const entry: MarketBenchmarkHistoryEntry = {
-      ...result.data,
-      id: `${Date.now()}-${slugify(role)}`,
-    };
-    writeHistory([entry, ...readHistory().filter((item) => item.roleSearched !== role || item.city !== entry.city || item.state !== entry.state)]);
+    await saveHistoryEntry(result.data);
   }
 
   return result;
 }
 
-export function getMarketBenchmarkHistory(): MarketBenchmarkHistoryEntry[] {
+export async function getMarketBenchmarkHistory(): Promise<MarketBenchmarkHistoryEntry[]> {
   return readHistory();
 }

@@ -47,6 +47,9 @@ Variaveis:
 | `TEST_ACCESS_USER` | usuario de teste do time |
 | `TEST_ACCESS_PASSWORD` | senha forte compartilhada apenas internamente |
 | `MARKET_BENCHMARK_CONNECTOR_URL` | vazio, ate existir conector real |
+| `DATABASE_URL` | connection string do Postgres (Supabase, projeto `pivo`) — ver "Banco De Dados" abaixo |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | credencial IAM somente-leitura (`pricing:GetProducts`), usada pela ingestao AWS |
+| `GOOGLE_CLOUD_BILLING_API_KEY` | API key restrita a "Cloud Billing API", usada pela ingestao GCP |
 
 Limitacoes do plano gratuito:
 
@@ -97,23 +100,31 @@ Se preferir criar manualmente:
   - `TEST_ACCESS_USER=...`
   - `TEST_ACCESS_PASSWORD=...`
 
-## Quando Adicionar Banco
+## Banco De Dados (Supabase)
 
-O banco nao e necessario para o teste atual, mas passa a ser necessario quando houver:
+Projeto Supabase dedicado `pivo` (Postgres 17, plano free, regiao `sa-east-1`) ja criado e com o schema aplicado (`server/db/migrations/`). Cobre catalogo de cloud, precos, PTAX e historico de benchmark — ver `docs/ARQUITETURA.md`.
 
-- propostas persistidas;
-- usuarios individuais;
-- auditoria de simulacoes;
-- historico permanente de benchmark;
-- catalogos versionados;
-- pipeline real de CAGED/PNCP.
+Limitacoes do plano free do Supabase:
 
-Sugestao de fase 2:
+- o projeto pode pausar apos ~1 semana sem atividade (o cron de ingestao a cada 5 dias ajuda a manter o projeto ativo, mas nao e garantia absoluta — se pausar, o dashboard do Supabase reativa em segundos na proxima conexao);
+- 500MB de storage e 2 projetos ativos simultaneos no plano free da organizacao.
 
-- Postgres gerenciado em plano gratuito ou baixo custo;
-- migrations versionadas;
-- repositorios em `server/src/infrastructure/repositories`;
-- entidades de dominio para `Proposal`, `CostLine`, `DataSnapshot` e `User`.
+Pendente para persistir propostas, usuarios individuais e auditoria de simulacoes (proxima fase, fora do escopo desta migracao):
+
+- entidades de dominio para `Proposal`, `CostLine` e `User`;
+- migrations adicionais no mesmo projeto Supabase (ou um projeto separado, se quiser isolar o billing).
+
+## Segredos Do GitHub Actions (Cron De Ingestao)
+
+O workflow `.github/workflows/refresh-sources.yml` roda a cada ~5 dias e precisa destes secrets em Settings > Secrets and variables > Actions:
+
+| Secret | Uso |
+| :--- | :--- |
+| `DATABASE_URL` | connection string do Postgres (mesma do Render) |
+| `AWS_PRICING_ACCESS_KEY_ID` / `AWS_PRICING_SECRET_ACCESS_KEY` | credencial IAM somente-leitura (`pricing:GetProducts`) |
+| `GOOGLE_CLOUD_BILLING_API_KEY` | API key restrita a "Cloud Billing API" |
+
+Sem `DATABASE_URL`, o job detecta a ausencia e sai sem erro (mesmo padrao do deploy hook do Render).
 
 ## Segurança Do Ambiente De Teste
 

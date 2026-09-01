@@ -1,12 +1,19 @@
 import express, { type Router } from "express";
-import { cloudRegions, cloudSkus, getCloudSku } from "../domain/services/cloudCatalog";
+import { getCloudCatalog, getCloudRegions, getCloudSku, getLatestKnownPrice } from "../domain/services/cloudCatalog";
 import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/services/catalogs";
 import { computeCloudEstimate } from "../domain/services/cloudPricing";
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
+import { getAwsUnitPrice } from "../infrastructure/collectors/awsCollector";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
-import { getPendingSources, getStaticProviderPrice } from "../infrastructure/collectors/staticFallbacks";
+import { getGcpUnitPrice } from "../infrastructure/collectors/gcpCollector";
+import { getPendingSources } from "../infrastructure/collectors/staticFallbacks";
+import { isDatabaseConfigured } from "../infrastructure/db/client";
+import { logger } from "../infrastructure/observability/logger";
+import { getQueryStats } from "../infrastructure/observability/queryStats";
+import { insertPrice } from "../infrastructure/repositories/cloudPricingRepository";
+import { getLatestIngestionRuns, type IngestionRun } from "../infrastructure/repositories/ingestionRunsRepository";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
@@ -20,6 +27,28 @@ function toSourceView(name: string, result: ResilienceResult<unknown>) {
   };
 }
 
+/** Deriva um ApiSourceResult a partir da ultima execucao registrada em ingestion_runs (fontes sem checagem ao vivo por requisicao). */
+function fromIngestionRun(name: string, run: IngestionRun | undefined) {
+  if (!run) {
+    return {
+      name,
+      status: "FALLBACK_STALE" as const,
+      source: "STATIC_SNAPSHOT",
+      timestamp: new Date().toISOString(),
+      warning: "Ingestao periodica ainda nao rodou para esta fonte; usando snapshot estatico do catalogo.",
+      data: null,
+    };
+  }
+  return {
+    name,
+    status: run.status,
+    source: "SCHEDULED_INGESTION",
+    timestamp: run.finishedAt,
+    warning: run.errorMessage ?? `Ultima ingestao: ${run.recordsUpserted} preco(s) atualizados em ${run.durationMs}ms.`,
+    data: null,
+  };
+}
+
 export function createApiRouter(): Router {
   const router = express.Router();
   router.use(express.json());
@@ -30,12 +59,17 @@ export function createApiRouter(): Router {
   });
 
   router.get("/system-health", async (_req, res) => {
-    const [ptax, azure] = await Promise.all([getPtax(), getAzureUnitPrice("us-east-1")]);
+    const [ptax, azure, ingestionRuns] = await Promise.all([
+      getPtax(),
+      getAzureUnitPrice("us-east-1"),
+      isDatabaseConfigured ? getLatestIngestionRuns().catch(() => ({}) as Record<string, IngestionRun>) : Promise.resolve({} as Record<string, IngestionRun>),
+    ]);
 
     const sources = [
       toSourceView("BACEN - PTAX", ptax),
       toSourceView("Azure Retail API", azure),
-      toSourceView("AWS Pricing", getStaticProviderPrice("AWS", "us-east-1")),
+      fromIngestionRun("AWS Pricing API", ingestionRuns.AWS_PRICING_INGESTION),
+      fromIngestionRun("GCP Cloud Billing Catalog", ingestionRuns.GCP_PRICING_INGESTION),
       {
         name: "Benchmark salarial",
         status: process.env.MARKET_BENCHMARK_CONNECTOR_URL ? "DEGRADED" : "FALLBACK_STALE",
@@ -43,35 +77,46 @@ export function createApiRouter(): Router {
         timestamp: new Date().toISOString(),
         warning: process.env.MARKET_BENCHMARK_CONNECTOR_URL
           ? "Conector externo configurado; consultas usam cache/fallback quando a fonte falha."
-          : "Conector externo de benchmark nao configurado; usando snapshot parametrizado local com Robert Half, Michael Page, Glassdoor e Indeed.",
+          : "Conector externo de benchmark nao configurado; usando catalogo interno de perfis (salario CLT e/ou PJ) como snapshot local.",
         data: null,
       },
       ...getPendingSources(),
     ];
 
-    res.json({ sources });
+    res.json({
+      sources,
+      ingestion: Object.values(ingestionRuns),
+      database: {
+        configured: isDatabaseConfigured,
+        queries: getQueryStats(),
+      },
+    });
   });
 
   router.get("/fx/ptax", async (_req, res) => {
     res.json(await getPtax());
   });
 
-  router.get("/cloud/catalog", (_req, res) => {
+  router.get("/cloud/catalog", async (_req, res) => {
+    const catalog = await getCloudCatalog();
     res.json({
-      regions: cloudRegions,
-      skus: cloudSkus,
+      regions: catalog.regions,
+      skus: catalog.skus,
       source: {
         name: "Catalogo cloud",
-        status: "FALLBACK_STALE",
-        source: "LIVE_AZURE_STATIC_AWS_GCP",
+        status: catalog.origin === "DATABASE" ? "OPERATIONAL" : "FALLBACK_STALE",
+        source: catalog.origin === "DATABASE" ? "POSTGRES" : "STATIC_SNAPSHOT",
         timestamp: new Date().toISOString(),
-        warning: "Azure usa Retail Prices API ao vivo. AWS e GCP usam snapshot oficial parametrizado ate os coletores dedicados serem ligados.",
+        warning:
+          catalog.origin === "DATABASE"
+            ? "Catalogo carregado do Postgres. Azure tambem consulta preco ao vivo por requisicao; AWS/GCP sao atualizados pela ingestao periodica (a cada 5 dias)."
+            : "Postgres indisponivel ou ainda nao configurado (DATABASE_URL); usando snapshot estatico embutido no codigo.",
       },
     });
   });
 
   router.get("/cloud/estimate", async (req, res) => {
-    const provider = String(req.query.provider ?? "AWS");
+    const provider = String(req.query.provider ?? "AWS") as "AWS" | "Azure" | "GCP";
     const region = String(req.query.region ?? "us-east-1");
     const skuId = String(req.query.skuId ?? "");
     const instances = Number(req.query.instances);
@@ -82,29 +127,35 @@ export function createApiRouter(): Router {
       return;
     }
 
-    const sku = getCloudSku(skuId, provider);
-    const fallbackPrice = sku.regionalPricesUsd[region] ?? Object.values(sku.regionalPricesUsd)[0] ?? 0;
-    const staticResult: ResilienceResult<{ pricePerHourUsd: number; skuName: string; sourceUrl: string }> = {
-      status: "FALLBACK_STALE",
-      source: "STATIC_SNAPSHOT",
-      timestamp: new Date().toISOString(),
-      warning: `${provider} usa snapshot oficial parametrizado nesta fase. Ligue o coletor dedicado para preco ao vivo.`,
-      data: { pricePerHourUsd: fallbackPrice, skuName: sku.skuName, sourceUrl: sku.sourceUrl },
-    };
+    const [sku, regions] = await Promise.all([getCloudSku(skuId, provider), getCloudRegions(provider)]);
+    const providerRegion = regions.find((r) => r.key === region)?.providerRegion ?? region;
+    const knownPrice = await getLatestKnownPrice(sku.id, region);
+    const fallbackPrice = knownPrice?.pricePerHourUsd;
 
     const [unitPriceResult, fxResult] = await Promise.all([
-      provider === "Azure" ? getAzureUnitPrice(region, sku.azureArmSkuName ?? sku.skuName, fallbackPrice) : Promise.resolve(staticResult),
+      provider === "Azure"
+        ? getAzureUnitPrice(region, sku.azureArmSkuName ?? sku.skuName, fallbackPrice)
+        : provider === "AWS"
+          ? getAwsUnitPrice(providerRegion, sku.skuName, fallbackPrice)
+          : getGcpUnitPrice(providerRegion, sku.skuName, sku.vcpu, sku.memoryGiB, fallbackPrice),
       getPtax(),
     ]);
 
-    const unitPriceUsd = (unitPriceResult.data as { pricePerHourUsd: number } | null)?.pricePerHourUsd ?? 0.08;
+    const unitPriceUsd = (unitPriceResult.data as { pricePerHourUsd: number } | null)?.pricePerHourUsd ?? fallbackPrice ?? 0.08;
     const fxRate = (fxResult.data as { rate: number } | null)?.rate ?? 5.4;
     const estimate = computeCloudEstimate({ unitPriceUsd, fxRate, instances, hours });
+
+    // Aproveita a consulta ao vivo para manter o Postgres fresco entre as janelas do cron (nao bloqueia a resposta).
+    if (isDatabaseConfigured && unitPriceResult.status === "OPERATIONAL") {
+      insertPrice({ skuId: sku.id, regionKey: region, pricePerHourUsd: unitPriceUsd, sourceStatus: "OPERATIONAL" }).catch((err) =>
+        logger.error("Falha ao gravar preco ao vivo no Postgres", { error: err instanceof Error ? err.message : String(err) }),
+      );
+    }
 
     res.json({
       estimate,
       sku,
-      unitPrice: toSourceView(provider === "Azure" ? "Azure Retail API" : `${provider} (snapshot oficial)`, unitPriceResult),
+      unitPrice: toSourceView(`${provider} Pricing`, unitPriceResult),
       fx: toSourceView("BACEN - PTAX", fxResult),
     });
   });
@@ -148,8 +199,8 @@ export function createApiRouter(): Router {
     }));
   });
 
-  router.get("/market-benchmark/history", (_req, res) => {
-    res.json({ entries: getMarketBenchmarkHistory() });
+  router.get("/market-benchmark/history", async (_req, res) => {
+    res.json({ entries: await getMarketBenchmarkHistory() });
   });
 
   router.get("/licenses/catalog", (_req, res) => {
