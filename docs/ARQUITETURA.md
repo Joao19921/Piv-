@@ -1,101 +1,200 @@
-# Arquitetura Atual — Pivô
+# Arquitetura - Pivo
 
-Este documento descreve a arquitetura **realmente implementada** do Pivô, em contraste com a arquitetura aspiracional original preservada em [`PRD-original.md`](PRD-original.md).
+Este documento descreve a arquitetura atualmente implementada. Ele nao substitui o PRD original; o PRD historico fica em [PRD-original.md](PRD-original.md).
 
-## Decisão de stack: Node/TypeScript em vez de Python/FastAPI
+## Decisao De Stack
 
-O PRD original especificava um backend Python (FastAPI) + MCP server separado, com Clean Architecture e coletores independentes por fonte externa. Na prática, o projeto já existia como um front-end React/Vite + um Express mínimo (gerado via Manus AI como protótipo visual). Diante dessa base, a decisão tomada foi **continuar em Node/TypeScript dentro do mesmo Express**, replicando as mesmas camadas (domain → infrastructure → presentation) em vez de subir um segundo runtime.
+O PRD original previa Python/FastAPI e um MCP server separado. A base real do produto ja estava em React/Vite com um backend Express minimo. A evolucao foi feita mantendo Node/TypeScript para reduzir custo operacional e evitar dois runtimes no primeiro ambiente de teste.
 
-**Motivo:** um único processo/linguagem para rodar e implantar, sem o custo operacional de manter dois runtimes (Node + Python) para uma equipe pequena. A troca não compromete os princípios do PRD (separação de regras de negócio, resiliência em camadas, rastreabilidade de origem do dado) — apenas o veículo de implementação.
-
-O MCP server (Fase 3 do PRD) **não foi implementado ainda**; ver [Pendências](#pendências-vs-prd-original).
-
-## Visão geral
+A separacao de responsabilidades do PRD foi mantida por camadas:
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                      CLIENTE (navegador)                        │
-│   React 19 + Vite + Tailwind v4 + shadcn/ui + TanStack Query     │
-│   client/src/pages/Home.tsx (shell + módulos) + hooks/ + lib/api │
-└───────────────────────────┬───────────────────────────────────--┘
-                             │ HTTPS / REST JSON  (/api/v1/*)
-                             ▼
-┌───────────────────────────────────────────────────────────────--┐
-│                    SERVIDOR (Node.js + Express)                 │
-│                                                                  │
-│  presentation/app.ts        rotas REST, validação de entrada     │
-│         │                                                        │
-│  domain/services/           regras de negócio puras:             │
-│    - laborPricing.ts          Fator K → custo/hora → taxa sugerida│
-│    - cloudPricing.ts          unitário × instâncias × horas × fx │
-│    - cloudCatalog.ts          catálogo estático de regiões/SKUs  │
-│    - catalogs.ts              perfis de mão de obra + licenças   │
-│    - marketBenchmark.ts       inferência de perfil/senioridade/  │
-│                                região + orquestra conector/cache  │
-│         │                                                        │
-│  infrastructure/                                                 │
-│    - collectors/            BACEN PTAX, Azure Retail Prices,     │
-│                              fallbacks estáticos (AWS/GCP)        │
-│    - resilience/             circuit breaker + retry + fallback  │
-│    - cache/                  cache write-through em disco (JSON) │
-└──────────────┬──────────────────────────┬────────────────────--─┘
-               │                          │
-               ▼                          ▼
-   ┌───────────────────┐      ┌────────────────────────┐
-   │ BACEN Olinda API  │      │ Azure Retail Prices API│
-   │ (público, sem chave)     │ (público, sem chave)   │
-   └───────────────────┘      └────────────────────────┘
+Browser
+  |
+  | REST JSON /api/v1/*
+  v
+Express server
+  |
+  |-- presentation/    rotas HTTP, validacao simples, contratos REST
+  |-- domain/          calculos, catalogos e regras de negocio
+  `-- infrastructure/  coletores externos, cache e resiliencia
 ```
 
-Um único processo Express serve a API (`/api/v1/*`) e, em produção, também os arquivos estáticos do build do front-end — não há dois deploys separados.
+## Runtime
 
-## Camada de resiliência
+Em desenvolvimento existem dois processos:
 
-`server/src/infrastructure/resilience/resilienceManager.ts` implementa as 4 camadas de proteção do PRD original, de fato:
+- Vite em `localhost:3000`;
+- Express em `localhost:3001`.
 
-1. **Circuit breaker** — em memória, por `serviceName`. Abre após 2 falhas consecutivas, meio-abre depois de 30s.
-2. **Retry com backoff exponencial** — 2 tentativas por padrão, com espera crescente entre elas.
-3. **Cache local (write-through)** — `infrastructure/cache/fileCache.ts` grava cada resposta bem-sucedida em `data/cache/*.json`; uma falha ao vivo primeiro tenta ler esse cache.
-4. **Fallback estático** — se não há cache (primeira execução) nem resposta ao vivo, cada coletor tem um valor de contingência fixo (ex.: PTAX 5,40 hardcoded, tabela de USD/hora por região).
+Em producao existe um unico processo Express:
 
-Toda chamada retorna o formato único `ResilienceResult<T>`:
+- serve a API em `/api/v1/*`;
+- serve os arquivos estaticos do frontend gerados em `dist/public`;
+- aplica Basic Auth quando `NODE_ENV=production` e `TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD` estao definidos;
+- mantem `/api/v1/healthz` fora do Basic Auth para health check de orquestrador.
+
+## Modulos De Codigo
+
+### Frontend
+
+```text
+client/src/pages/Home.tsx
+client/src/hooks/*
+client/src/lib/api.ts
+client/src/components/ui/*
+```
+
+Responsabilidades:
+
+- renderizar os modulos de negocio;
+- consultar a API com TanStack Query;
+- expor estados de carregamento, erro, fallback e fonte;
+- manter estado de UI local.
+
+### Presentation
+
+```text
+server/src/presentation/app.ts
+```
+
+Responsabilidades:
+
+- registrar rotas REST;
+- converter query/body em entrada de dominio;
+- devolver respostas padronizadas;
+- nao conter regra de precificacao.
+
+### Domain
+
+```text
+server/src/domain/services/
+```
+
+Responsabilidades:
+
+- calcular taxa-hora de mao de obra;
+- aplicar Fator K, margem e horas faturaveis;
+- manter catalogos de perfis, licencas, regioes e SKUs;
+- calcular custo mensal de cloud;
+- estimar benchmark salarial por cargo, UF e cidade.
+
+Arquivos principais:
+
+- `laborPricing.ts`: custo mensal, custo/hora e taxa sugerida.
+- `marketBenchmark.ts`: benchmark por cargo/regiao com historico.
+- `cloudPricing.ts`: composicao de custo cloud em BRL/USD.
+- `cloudCatalog.ts`: providers, regioes e SKUs.
+- `catalogs.ts`: perfis profissionais e licencas SaaS.
+
+### Infrastructure
+
+```text
+server/src/infrastructure/
+```
+
+Responsabilidades:
+
+- chamar APIs externas;
+- aplicar circuit breaker, retry, cache e fallback;
+- persistir cache local em arquivo.
+
+Arquivos principais:
+
+- `collectors/bacenCollector.ts`: PTAX via BACEN Olinda API.
+- `collectors/azureCollector.ts`: Azure Retail Prices API.
+- `collectors/staticFallbacks.ts`: valores estaticos para operacao degradada.
+- `resilience/resilienceManager.ts`: politica de resiliencia.
+- `cache/fileCache.ts`: cache JSON em `data/cache`.
+
+## Padrao De Resiliencia
+
+Chamadas dependentes de fonte externa seguem quatro camadas:
+
+1. Circuit breaker em memoria por servico.
+2. Retry com backoff exponencial.
+3. Cache local em disco.
+4. Fallback estatico.
+
+O contrato retornado e:
 
 ```ts
-{ status: "OPERATIONAL" | "DEGRADED" | "FALLBACK_STALE" | "OFFLINE", source, timestamp, warning?, data }
+{
+  status: "OPERATIONAL" | "DEGRADED" | "FALLBACK_STALE" | "OFFLINE",
+  source: string,
+  timestamp: string,
+  warning?: string,
+  data: T
+}
 ```
 
-O front-end nunca esconde isso — o badge de cada fonte e as mensagens de aviso na UI vêm diretamente desse campo `status`/`warning`, sem tradução "otimista".
+O frontend usa esse contrato diretamente para mostrar se um numero veio de fonte ao vivo, cache ou snapshot.
 
-## Fontes de dados — o que é real hoje
+## Fontes De Dados
 
-| Fonte | Coletor | Ao vivo? |
+| Fonte | Implementacao atual | Estado |
 | :--- | :--- | :--- |
-| Câmbio (PTAX) | `collectors/bacenCollector.ts` | ✅ API Olinda do BACEN, pública |
-| Preço unitário Azure | `collectors/azureCollector.ts` | ✅ Azure Retail Prices API, pública, por SKU ARM + região |
-| Preço unitário AWS/GCP | `domain/services/cloudCatalog.ts` (dados embutidos) | ⚠️ Snapshot oficial parametrizado por SKU/região — sem coletor dedicado (exigiria credenciais AWS/GCP) |
-| Perfis de mão de obra (CAGED) | `domain/services/catalogs.ts` | ⚠️ Snapshot parametrizado |
-| Benchmark salarial | `domain/services/marketBenchmark.ts` | ⚠️ Snapshot parametrizado por padrão; vira `LIVE_CONNECTOR` automaticamente se `MARKET_BENCHMARK_CONNECTOR_URL` estiver configurado |
-| Licenciamento SaaS | `domain/services/catalogs.ts` | ⚠️ Snapshot baseado em páginas oficiais de preço |
-| PNCP | não implementado | ❌ |
+| BACEN PTAX | API Olinda publica | Ao vivo |
+| Azure Retail Prices | API publica da Microsoft | Ao vivo |
+| AWS EC2 | Snapshot oficial em catalogo local | Fallback/snapshot |
+| GCP Compute | Snapshot oficial em catalogo local | Fallback/snapshot |
+| Perfis CAGED/MTE | Catalogo parametrizado local | Snapshot |
+| Benchmark salarial | Modelo local + opcional `MARKET_BENCHMARK_CONNECTOR_URL` | Snapshot ou conector |
+| Licencas SaaS | Catalogo local com URLs oficiais | Snapshot |
+| PNCP | Nao implementado | Pendente |
 
-## Front-end
+## API Publica
 
-Estrutura feature-first dentro de um único arquivo de shell (`client/src/pages/Home.tsx`), que renderiza os módulos (Dashboard, Mão de obra, Infra cloud, Licenças, Propostas, Fontes) conforme a navegação. Estado de servidor é gerenciado inteiramente por TanStack Query (`client/src/hooks/*`), com `staleTime`/`refetchInterval` ajustados por tipo de dado (catálogos quase estáticos vs. `system-health` que repolla a cada 30s). Não há Redux/Zustand — o estado de UI local usa `useState` diretamente nos componentes de cada módulo.
+Todas as rotas ficam sob `/api/v1`:
 
-## Infraestrutura
+- `GET /healthz`
+- `GET /system-health`
+- `GET /fx/ptax`
+- `GET /cloud/catalog`
+- `GET /cloud/estimate`
+- `GET /labor/profiles`
+- `POST /labor/estimate`
+- `POST /market-benchmark/search`
+- `GET /market-benchmark/history`
+- `GET /licenses/catalog`
 
-- **`Dockerfile`**: build multi-stage (build com pnpm + Vite/esbuild, runtime `node:22-alpine` enxuto).
-- **`.env.example`**: variáveis suportadas (ver README).
-- **Basic Auth de teste**: `server/index.ts` protege o app inteiro com Basic Auth simples quando `TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD` estão definidos em produção — pensado para ambientes de teste compartilhados, não para produção real com múltiplos usuários.
-- **`.github/workflows/ci.yml`**: instala dependências, roda type-check e build a cada push/PR (job `build`); se `master` passar, dispara o deploy hook do Render (job `deploy`).
-- **`render.yaml`**: Blueprint do Render — serviço web Docker, health check em `/api/v1/healthz`. Configuração única (conectar repo, secrets) documentada em [`deploy-render.md`](deploy-render.md).
-- **Persistência**: nenhuma além do cache em arquivo (`data/cache/`, git-ignorado). Não há banco de dados.
+## Dados E Persistencia
 
-## Pendências vs. PRD original
+Hoje nao existe banco de dados. O unico armazenamento e o cache de resiliencia em `data/cache`, que:
 
-O que o PRD original previa e ainda **não** existe nesta implementação:
+- melhora a experiencia quando uma fonte externa falha;
+- nao deve ser usado como registro permanente;
+- pode ser perdido em provedores com filesystem efemero, como Render Free.
 
-- Backend Python/FastAPI e servidor MCP (FastMCP) para consumo por assistentes de IA/IDEs.
-- Ingestão real de CAGED (MTE) e PNCP (hoje são snapshots/estão marcados como não implementados).
-- Coletores dedicados de AWS Pricing API e GCP Billing Catalog API (hoje snapshot estático parametrizado).
-- Banco de dados persistente (PostgreSQL/DuckDB) — hoje é só cache em arquivo, adequado para uma instância única, não para múltiplas réplicas.
+Para uma segunda fase, recomenda-se Postgres para:
+
+- usuarios e acessos;
+- propostas salvas;
+- snapshots versionados de catalogo;
+- historico de benchmark;
+- auditoria de fontes utilizadas em cada proposta.
+
+## Deploy
+
+O artefato principal e o `Dockerfile`. O `render.yaml` descreve um Web Service gratuito no Render com:
+
+- runtime Docker;
+- health check em `/api/v1/healthz`;
+- `NODE_ENV=production`;
+- variaveis secretas para Basic Auth e conector opcional.
+
+Detalhes:
+
+- [deploy-render.md](deploy-render.md)
+- [deploy-teste.md](deploy-teste.md)
+- [REQUISITOS-INFRA.md](REQUISITOS-INFRA.md)
+
+## Pendencias Arquiteturais
+
+- Substituir snapshots de CAGED/MTE por pipeline real de ingestao.
+- Implementar PNCP.
+- Implementar coletores AWS Pricing API e GCP Cloud Billing Catalog.
+- Adicionar banco persistente.
+- Separar dominio em modulos menores quando o volume de regras crescer.
+- Criar MCP server previsto no PRD.
+- Publicar workflow CI/CD quando a credencial GitHub tiver escopo `workflow`.

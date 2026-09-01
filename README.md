@@ -1,50 +1,149 @@
-# Pivô — Engine de Precificação Estratégica de TI
+# Pivo - Strategic Pricing
 
-Pivô transforma fontes de custo dispersas (mão de obra, infraestrutura cloud, câmbio, licenciamento de software e benchmark salarial de mercado) em uma base defensável para precificar projetos e propostas de TI. Cada número mostra sua origem, se é dado ao vivo ou snapshot, e quando foi atualizado pela última vez — nunca escondendo a procedência do dado atrás de uma tela bonita.
+Pivo e uma aplicacao full-stack para precificacao de projetos de TI. A solucao consolida custos de mao de obra, infraestrutura cloud, cambio, licencas SaaS e benchmark salarial em uma interface unica, sempre mostrando a origem e o estado de confiabilidade de cada dado.
 
-> Este repositório é a implementação real do projeto. A visão original (arquitetura aspiracional em Python/FastAPI + MCP) está preservada em [`docs/PRD-original.md`](docs/PRD-original.md); o que foi de fato construído — e por quê diverge do PRD — está documentado em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
+O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-## Módulos
+## O Que Existe Hoje
 
-| Módulo | O que faz |
-| :--- | :--- |
-| **Visão geral** | Dashboard com margem média, pipeline de propostas e integridade das fontes de dados. |
-| **Mão de obra** | Calculadora de taxa-hora (Fator K) por perfil profissional (CLT/PJ) + busca de benchmark salarial por cargo/UF/cidade (Robert Half, Michael Page, Glassdoor, Indeed), com histórico de consultas. |
-| **Infra cloud** | Estimativa mensal por provedor (AWS/Azure/GCP) × família × SKU × região, com câmbio BACEN aplicado em tempo real. |
-| **Licenças** | Catálogo de custos de licenciamento SaaS (GitHub, Microsoft 365, Datadog, Power BI, Jira, Slack) com calculadora por número de assentos. |
-| **Propostas** | Fila de rascunhos que preserva as premissas e o estado das fontes no momento da simulação. |
-| **Fontes** | Painel de observabilidade: mostra circuit breaker, retry, cache local e fallback estático acontecendo de verdade, fonte a fonte. |
+| Area | Status | Observacao |
+| :--- | :--- | :--- |
+| Dashboard de fontes | Implementado | Mostra saude, latencia e degradacao das fontes. |
+| Mao de obra | Implementado | Perfis profissionais, Fator K, CLT/PJ e filtro por UF/cidade no benchmark. |
+| Infra cloud | Implementado | Catalogo por provider, regiao, familia e SKU; Azure ao vivo, AWS/GCP por snapshot oficial. |
+| Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais e calculo por assentos. |
+| Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
+| Resiliencia | Implementado | Circuit breaker, retry, cache em disco e fallback estatico. |
+| Ambiente de teste | Implementado | Docker + Render Free + Basic Auth opcional. |
+| CAGED/PNCP ao vivo | Pendente | Hoje aparecem como snapshot/fallback ou pendente. |
+| MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
+| Banco persistente | Pendente | Hoje existe cache local em arquivo. |
 
 ## Stack
 
-- **Front-end:** React 19 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui (Radix) + TanStack Query + Recharts.
-- **Back-end:** Node.js + Express (TypeScript), em camadas inspiradas em Clean Architecture (`domain` → `infrastructure` → `presentation`).
-- **Dados externos:** BACEN (PTAX) e Azure Retail Prices API consultados ao vivo; demais fontes documentadas como snapshot/fallback (ver [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)).
-- **Empacotamento:** pnpm workspaces único, build via Vite (front) + esbuild (back), Docker multi-stage para produção.
+- Frontend: React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Query, Recharts.
+- Backend: Node.js, Express, TypeScript.
+- Arquitetura: camadas inspiradas em Clean Architecture (`domain`, `infrastructure`, `presentation`).
+- Build: Vite para o cliente e esbuild para o servidor.
+- Deploy: Dockerfile unico; recomendado Render Free para testes.
 
-## Como rodar localmente
+## Como Rodar Localmente
 
-Pré-requisitos: Node.js 22+, [pnpm](https://pnpm.io/) 10+.
+Pre-requisitos:
+
+- Node.js 22+
+- pnpm 10+
 
 ```bash
 pnpm install
-
-# Sobe o front-end (Vite, porta 3000) e a API (Express, porta 3001) juntos
 pnpm run dev
 ```
 
-Acesse <http://localhost:3000> — o Vite faz proxy de `/api` para a API em `:3001`.
+URLs locais:
 
-Outros comandos úteis:
+- Frontend: <http://localhost:3000>
+- API: <http://localhost:3001/api/v1>
+
+Comandos uteis:
 
 ```bash
-pnpm run check    # type-check (tsc --noEmit)
-pnpm run build    # build de produção (client + server) em dist/
-pnpm run start    # roda o build de produção (requer NODE_ENV=production)
-pnpm run format    # prettier --write
+pnpm run check    # Type-check
+pnpm run build    # Build de producao em dist/
+pnpm run start    # Roda o build em modo producao
+pnpm run format   # Prettier
 ```
 
-### Docker
+## Variaveis De Ambiente
+
+Veja tambem [.env.example](.env.example).
+
+| Variavel | Obrigatoria | Uso |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Nao | Use `production` em deploy. |
+| `PORT` | Nao | Porta do Express; padrao 3000 em producao e 3001 em dev. |
+| `TEST_ACCESS_USER` | Nao | Usuario do Basic Auth para ambiente de teste. |
+| `TEST_ACCESS_PASSWORD` | Nao | Senha do Basic Auth para ambiente de teste. |
+| `MARKET_BENCHMARK_CONNECTOR_URL` | Nao | Conector externo para benchmark salarial ao vivo. |
+
+BACEN PTAX e Azure Retail Prices API nao exigem chave.
+
+## Estrutura
+
+```text
+Pivo/
+|-- client/
+|   `-- src/
+|       |-- pages/Home.tsx        # Interface principal e modulos
+|       |-- hooks/                # Hooks de dados com TanStack Query
+|       |-- lib/api.ts            # Cliente HTTP tipado
+|       `-- components/ui/        # Componentes shadcn/ui
+|-- server/
+|   |-- index.ts                  # Bootstrap Express, static files e Basic Auth
+|   `-- src/
+|       |-- domain/services/      # Regras de precificacao e catalogos
+|       |-- infrastructure/       # Coletores, cache e resiliencia
+|       `-- presentation/app.ts   # Rotas REST /api/v1
+|-- docs/
+|   |-- ARQUITETURA.md
+|   |-- FLUXOS.md
+|   |-- REQUISITOS-INFRA.md
+|   |-- deploy-render.md
+|   |-- deploy-teste.md
+|   `-- PRD-original.md
+|-- Dockerfile
+|-- render.yaml
+`-- package.json
+```
+
+## Fluxos Do Produto
+
+Os fluxos de uso e operacao estao documentados em [docs/FLUXOS.md](docs/FLUXOS.md):
+
+- validacao de saude das fontes;
+- benchmark de mao de obra por cargo, UF e cidade;
+- calculo de taxa-hora com perfil profissional;
+- estimativa de infra cloud por provider/regiao/SKU;
+- composicao de licencas por fornecedor e numero de assentos;
+- publicacao de ambiente de teste.
+
+## API
+
+Todas as rotas ficam sob `/api/v1`.
+
+| Metodo | Rota | Descricao |
+| :--- | :--- | :--- |
+| `GET` | `/healthz` | Health check leve para orquestradores. |
+| `GET` | `/system-health` | Estado agregado das fontes de dados. |
+| `GET` | `/fx/ptax` | Cambio PTAX via BACEN com resiliencia. |
+| `GET` | `/cloud/catalog` | Regioes e SKUs disponiveis por provider. |
+| `GET` | `/cloud/estimate` | Estimativa mensal de cloud. |
+| `GET` | `/labor/profiles` | Perfis profissionais de mao de obra. |
+| `POST` | `/labor/estimate` | Calculo de custo/hora e taxa-hora sugerida. |
+| `POST` | `/market-benchmark/search` | Benchmark salarial por cargo, UF e cidade. |
+| `GET` | `/market-benchmark/history` | Historico das buscas recentes. |
+| `GET` | `/licenses/catalog` | Catalogo de licencas SaaS. |
+
+## Infraestrutura Gratuita Recomendada
+
+Para acesso de teste do time, a recomendacao atual e **Render Free Web Service** usando o Dockerfile deste repositorio.
+
+Motivos:
+
+- suporta app full-stack com Express escutando porta HTTP;
+- permite deploy por Docker sem reescrever a API como serverless;
+- oferece TLS gerenciado e URL publica;
+- tem plano gratuito adequado para ambiente de teste;
+- o `render.yaml` ja esta versionado.
+
+Limitacoes importantes:
+
+- o servico gratuito dorme apos inatividade;
+- o filesystem e efemero, entao o cache em `data/cache` nao deve ser tratado como banco;
+- nao e ambiente de producao com SLA.
+
+Detalhes e alternativas estao em [docs/REQUISITOS-INFRA.md](docs/REQUISITOS-INFRA.md). O passo a passo para subir esta em [docs/deploy-render.md](docs/deploy-render.md).
+
+## Build Com Docker
 
 ```bash
 docker build -t pivo:test .
@@ -55,88 +154,15 @@ docker run --rm -p 3000:3000 \
   pivo:test
 ```
 
-Veja [`docs/deploy-teste.md`](docs/deploy-teste.md) para o passo a passo de publicar um ambiente de teste protegido por Basic Auth.
+## Roadmap Tecnico
 
-### CI/CD
+1. Ligar ingestao real de CAGED/MTE.
+2. Ligar PNCP para referencias de contratacoes publicas.
+3. Trocar snapshots AWS/GCP por coletores dedicados.
+4. Persistir simulacoes/propostas em Postgres.
+5. Implementar MCP server para consumo por assistentes.
+6. Criar pipeline CI/CD quando o token GitHub tiver escopo `workflow`.
 
-- **CI** (`.github/workflows/ci.yml`): a cada push/PR, instala dependências, roda type-check e build.
-- **CD**: se o CI passar em `master`, dispara o deploy hook do [Render](https://render.com) (blueprint em [`render.yaml`](render.yaml)). Configuração única necessária: veja [`docs/deploy-render.md`](docs/deploy-render.md).
+## Licenca
 
-### Variáveis de ambiente
-
-Veja [`.env.example`](.env.example). Nenhuma é obrigatória para rodar em desenvolvimento — BACEN PTAX e Azure Retail Prices API são públicas e não exigem chave.
-
-| Variável | Obrigatória | Descrição |
-| :--- | :--- | :--- |
-| `NODE_ENV` | não | `production` habilita servir o build estático + Basic Auth opcional. |
-| `PORT` | não | Porta do servidor Express (padrão `3000` em produção, `3001` em dev). |
-| `TEST_ACCESS_USER` / `TEST_ACCESS_PASSWORD` | não | Se ambas definidas em produção, protege o app inteiro com Basic Auth (útil para ambientes de teste). |
-| `MARKET_BENCHMARK_CONNECTOR_URL` | não | Conector externo para benchmark salarial ao vivo. Sem isso, o benchmark usa um snapshot parametrizado local. |
-
-## Estrutura do projeto
-
-```text
-Pivô/
-├── client/                  # Front-end (Vite + React)
-│   └── src/
-│       ├── pages/Home.tsx   # Shell do produto + todos os módulos (single-page, feature-first)
-│       ├── hooks/           # useSystemHealth, useCloudCatalog, useCloudEstimate, useLaborCatalog,
-│       │                    # useLaborEstimate, useLicenseCatalog, useMarketBenchmark...
-│       ├── lib/api.ts       # Cliente HTTP tipado para a API
-│       └── components/ui/   # shadcn/ui
-├── server/
-│   ├── index.ts             # Bootstrap do Express (API + estáticos em produção + Basic Auth de teste)
-│   └── src/
-│       ├── domain/services/        # Regras de negócio puras (Fator K, estimativa cloud, catálogos, benchmark)
-│       ├── infrastructure/
-│       │   ├── collectors/         # BACEN, Azure Retail Prices, fallbacks estáticos
-│       │   ├── resilience/         # Circuit breaker + retry + fallback (resilienceManager.ts)
-│       │   └── cache/              # Cache local em arquivo (data/cache/*.json)
-│       └── presentation/app.ts     # Rotas REST (/api/v1/*)
-├── docs/
-│   ├── ARQUITETURA.md       # Arquitetura atual, decisões e o que ainda falta
-│   ├── PRD-original.md      # Visão/arquitetura aspiracional original (histórico)
-│   └── deploy-teste.md      # Como publicar um ambiente de teste
-├── Dockerfile
-└── .github/workflows/ci.yml # Build + type-check em cada push/PR
-```
-
-## Endpoints da API
-
-Todas as rotas ficam sob `/api/v1`. Toda resposta que depende de uma fonte externa segue o formato `{ status, source, timestamp, warning?, data }`, onde `status` é `OPERATIONAL | DEGRADED | FALLBACK_STALE | OFFLINE`.
-
-| Método | Rota | Descrição |
-| :--- | :--- | :--- |
-| `GET` | `/system-health` | Estado agregado de todas as fontes de dados. |
-| `GET` | `/fx/ptax` | Cotação PTAX (BACEN), com fallback em cache/estático. |
-| `GET` | `/cloud/catalog` | Catálogo de regiões e SKUs por provedor. |
-| `GET` | `/cloud/estimate` | Estimativa mensal (`provider`, `region`, `skuId`, `instances`, `hours`). |
-| `GET` | `/labor/profiles` | Catálogo de perfis profissionais (snapshot CAGED/MTE). |
-| `POST` | `/labor/estimate` | Calcula taxa-hora (`monthlySalary`, `factorK`, `marginPct`, `profileId?`). |
-| `POST` | `/market-benchmark/search` | Busca benchmark salarial por cargo/UF/cidade. |
-| `GET` | `/market-benchmark/history` | Histórico das últimas buscas de benchmark. |
-| `GET` | `/licenses/catalog` | Catálogo de custos de licenciamento SaaS. |
-
-## Estado da integração de dados
-
-| Fonte | Status hoje | Observação |
-| :--- | :--- | :--- |
-| BACEN PTAX | ✅ Ao vivo | API Olinda pública, sem chave. |
-| Azure Retail Prices API | ✅ Ao vivo | Pública, sem chave. |
-| AWS EC2 / GCP Compute | ⚠️ Snapshot oficial | Preços parametrizados a partir das páginas oficiais; coletor dedicado ainda não ligado (precisa de credenciais). |
-| CAGED/MTE (perfis de mão de obra) | ⚠️ Snapshot | Ingestão real do CAGED ainda não implementada. |
-| Benchmark salarial (Robert Half, Michael Page, Glassdoor, Indeed) | ⚠️ Snapshot parametrizado | Vira ao vivo automaticamente se `MARKET_BENCHMARK_CONNECTOR_URL` for configurado. |
-| Licenciamento SaaS | ⚠️ Snapshot | Baseado em páginas oficiais de preço; sem conectores comerciais por fornecedor ainda. |
-| PNCP | ❌ Não implementado | Próxima fase. |
-
-## Roadmap
-
-- [ ] Ingestão real de CAGED/MTE e PNCP.
-- [ ] Coletores dedicados de AWS Pricing API e GCP Billing Catalog API.
-- [ ] Persistência real (Postgres/DuckDB) no lugar do cache em arquivo.
-- [ ] Servidor MCP para expor as ferramentas de precificação a assistentes de IA.
-- [ ] Definir e provisionar infraestrutura de deploy contínuo (hoje há apenas Docker + um passo manual de teste).
-
-## Licença
-
-MIT — veja [`LICENSE`](LICENSE).
+MIT. Veja [LICENSE](LICENSE).

@@ -1,26 +1,84 @@
-# CD para o Render
+# Deploy No Render
 
-O Pivô publica automaticamente no [Render](https://render.com) a cada push em `master` que passar no CI. O pipeline é: **GitHub Actions builda e valida → se passar, dispara o deploy hook do Render → Render builda a imagem Docker e publica**.
+Este guia publica o Pivo como um Web Service gratuito no Render usando o Dockerfile e o `render.yaml` do repositorio.
 
-## Configuração única (manual, uma vez)
+## Por Que Render
 
-1. Crie uma conta no Render e clique em **New +** → **Blueprint**.
-2. Conecte este repositório (`Joao19921/Piv-`). O Render detecta o [`render.yaml`](../render.yaml) na raiz automaticamente.
-3. Na tela de revisão do Blueprint, preencha os valores dos env vars marcados como secretos (`sync: false`):
-   - `TEST_ACCESS_USER` / `TEST_ACCESS_PASSWORD` — protege o ambiente publicado com Basic Auth (recomendado, já que é um ambiente de teste). Deixe em branco para publicar sem proteção.
-   - `MARKET_BENCHMARK_CONNECTOR_URL` — opcional, só se houver um conector externo de benchmark salarial.
-4. Confirme a criação do serviço. O primeiro deploy roda a partir do Dockerfile.
-5. No serviço criado, vá em **Settings → Deploy Hook** e copie a URL (é um segredo — não a compartilhe fora do necessário).
-6. No GitHub, vá em **Settings → Secrets and variables → Actions** deste repositório e crie o secret `RENDER_DEPLOY_HOOK_URL` com essa URL.
+O Pivo atual roda melhor como um servidor Node/Express unico, servindo API e frontend estatico. O Render Free Web Service aceita esse modelo diretamente via Docker. Vercel e Netlify tambem possuem planos gratuitos, mas exigiriam adaptar a API Express para functions/serverless.
 
-A partir daqui, todo push em `master` que passar no job `build` do CI dispara automaticamente um novo deploy no Render.
+## Configuracao Inicial
 
-## Sem o secret configurado
+1. Crie uma conta no Render.
+2. Clique em **New +** e escolha **Blueprint**.
+3. Conecte o repositorio `Joao19921/Piv-`.
+4. Confirme que o Render detectou o arquivo [`../render.yaml`](../render.yaml).
+5. Preencha os env vars secretos:
+   - `TEST_ACCESS_USER`
+   - `TEST_ACCESS_PASSWORD`
+   - `MARKET_BENCHMARK_CONNECTOR_URL` somente se existir conector externo.
+6. Confirme a criacao do servico.
+7. Aguarde o primeiro build e deploy.
 
-Enquanto `RENDER_DEPLOY_HOOK_URL` não existir, o job `deploy` do workflow roda, detecta que o secret está vazio, imprime um aviso e sai com sucesso (não quebra o CI) — o deploy simplesmente não é disparado até você concluir os passos acima.
+## Configuracao Esperada
 
-## Observações
+O `render.yaml` define:
 
-- O plano `free` do Render "dorme" o serviço após um período de inatividade — a primeira requisição depois disso demora mais (cold start). Adequado para um ambiente de teste, não para produção com SLA.
-- O health check do Render aponta para `/api/v1/healthz` (leve, não depende de BACEN/Azure) — não confundir com `/api/v1/system-health`, que reflete o estado real de cada fonte de dados e pode demorar alguns segundos quando alguma fonte externa está degradada.
-- Para trocar de provedor (AWS App Runner, Fly.io, etc.) no futuro, o `Dockerfile` já é o artefato portável — só muda o passo de deploy do workflow.
+- service type: `web`;
+- runtime: `docker`;
+- plan: `free`;
+- Dockerfile: `./Dockerfile`;
+- health check: `/api/v1/healthz`;
+- `NODE_ENV=production`.
+
+## Acesso Do Time
+
+Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem definidos, o app inteiro fica protegido por Basic Auth, exceto `/api/v1/healthz`.
+
+Compartilhe com o time:
+
+- URL publica do Render;
+- usuario de teste;
+- senha de teste;
+- aviso de que o primeiro acesso pode demorar se o servico estiver dormindo.
+
+## Deploy Continuo
+
+Use primeiro a integracao GitHub nativa do Render:
+
+1. No servico Render, acesse **Settings**.
+2. Confirme que deploy automatico esta ativo para a branch principal.
+3. Cada push na branch configurada dispara um novo deploy.
+
+Um workflow GitHub Actions pode ser adicionado depois, mas isso exige uma credencial GitHub com escopo `workflow`. No estado atual, o repositorio evita versionar `.github/workflows/ci.yml` para nao bloquear pushes feitos pelo token disponivel.
+
+## Validacao
+
+Depois do deploy:
+
+```bash
+curl https://SEU-SERVICO.onrender.com/api/v1/healthz
+```
+
+Resposta esperada:
+
+```json
+{ "status": "ok" }
+```
+
+Depois valide no navegador:
+
+- tela inicial carrega;
+- Basic Auth solicita usuario/senha;
+- `Fontes` mostra estados reais;
+- `Mao de obra` executa benchmark;
+- `Infra cloud` calcula estimativa;
+- `Licencas` mostra catalogo.
+
+## Limitacoes Do Plano Gratuito
+
+- O servico dorme apos inatividade.
+- O filesystem e efemero.
+- Nao ha garantia de SLA.
+- Nao use para dados sensiveis de cliente.
+
+Essas limitacoes sao aceitaveis para teste interno do time.
