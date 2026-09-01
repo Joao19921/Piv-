@@ -87,7 +87,8 @@ Estrutura feature-first dentro de um único arquivo de shell (`client/src/pages/
 - **`Dockerfile`**: build multi-stage (build com pnpm + Vite/esbuild, runtime `node:22-alpine` enxuto).
 - **`.env.example`**: variáveis suportadas (ver README).
 - **Basic Auth de teste**: `server/index.ts` protege o app inteiro com Basic Auth simples quando `TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD` estão definidos em produção — pensado para ambientes de teste compartilhados, não para produção real com múltiplos usuários.
-- **`.github/workflows/ci.yml`**: instala dependências, roda type-check e build a cada push/PR. Não há pipeline de deploy contínuo ainda — publicar um ambiente segue o passo a passo manual em [`deploy-teste.md`](deploy-teste.md).
+- **`.github/workflows/ci.yml`**: instala dependências, roda type-check e build a cada push/PR (job `build`); se `master` passar, dispara o deploy hook do Render (job `deploy`).
+- **`render.yaml`**: Blueprint do Render — serviço web Docker, health check em `/api/v1/healthz`. Configuração única (conectar repo, secrets) documentada em [`deploy-render.md`](deploy-render.md).
 - **Persistência**: nenhuma além do cache em arquivo (`data/cache/`, git-ignorado). Não há banco de dados.
 
 ## Pendências vs. PRD original
@@ -98,4 +99,3 @@ O que o PRD original previa e ainda **não** existe nesta implementação:
 - Ingestão real de CAGED (MTE) e PNCP (hoje são snapshots/estão marcados como não implementados).
 - Coletores dedicados de AWS Pricing API e GCP Billing Catalog API (hoje snapshot estático parametrizado).
 - Banco de dados persistente (PostgreSQL/DuckDB) — hoje é só cache em arquivo, adequado para uma instância única, não para múltiplas réplicas.
-- Pipeline de deploy contínuo automatizado (hoje é Docker + publicação manual).

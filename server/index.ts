@@ -16,6 +16,11 @@ async function startServer() {
 
   if (isProduction && testAccessUser && testAccessPassword) {
     app.use((req, res, next) => {
+      if (req.path === "/api/v1/healthz") {
+        next();
+        return;
+      }
+
       const header = req.headers.authorization;
       const encoded = header?.startsWith("Basic ") ? header.slice("Basic ".length) : "";
       const [user, password] = Buffer.from(encoded, "base64").toString("utf-8").split(":");

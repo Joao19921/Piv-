@@ -33,7 +33,7 @@ pnpm install
 pnpm run dev
 ```
 
-Acesse http://localhost:3000 — o Vite faz proxy de `/api` para a API em `:3001`.
+Acesse <http://localhost:3000> — o Vite faz proxy de `/api` para a API em `:3001`.
 
 Outros comandos úteis:
 
@@ -56,6 +56,11 @@ docker run --rm -p 3000:3000 \
 ```
 
 Veja [`docs/deploy-teste.md`](docs/deploy-teste.md) para o passo a passo de publicar um ambiente de teste protegido por Basic Auth.
+
+### CI/CD
+
+- **CI** (`.github/workflows/ci.yml`): a cada push/PR, instala dependências, roda type-check e build.
+- **CD**: se o CI passar em `master`, dispara o deploy hook do [Render](https://render.com) (blueprint em [`render.yaml`](render.yaml)). Configuração única necessária: veja [`docs/deploy-render.md`](docs/deploy-render.md).
 
 ### Variáveis de ambiente
 

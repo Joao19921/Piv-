@@ -24,6 +24,11 @@ export function createApiRouter(): Router {
   const router = express.Router();
   router.use(express.json());
 
+  // Health check leve para orquestradores (Render, etc.): nao toca fontes externas nem exige Basic Auth.
+  router.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   router.get("/system-health", async (_req, res) => {
     const [ptax, azure] = await Promise.all([getPtax(), getAzureUnitPrice("us-east-1")]);
 
