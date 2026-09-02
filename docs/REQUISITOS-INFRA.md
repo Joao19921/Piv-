@@ -102,7 +102,10 @@ Se preferir criar manualmente:
 
 Projeto Supabase dedicado `pivo` (Postgres 17, plano free, regiao `sa-east-1`) ja criado e com o schema aplicado (`server/db/migrations/`). Cobre catalogo de cloud, precos, PTAX e historico de benchmark — ver `docs/ARQUITETURA.md`.
 
-**Use sempre o Connection Pooler, nunca o "Direct connection".** O host direto (`db.<projeto>.supabase.co:5432`) so tem registro DNS IPv6 — testado e confirmado que Lambda (fora de VPC) falha com `getaddrinfo ENOTFOUND` nele. Use o pooler em modo "Transaction": host `aws-0-sa-east-1.pooler.supabase.com`, porta `6543`, usuario `postgres.hiwpskashaypuvwvibds` (nao so `postgres`). Isso vale tanto para o Render quanto para a Lambda.
+**Use sempre o Connection Pooler, nunca o "Direct connection".** O host direto (`db.<projeto>.supabase.co:5432`) so tem registro DNS IPv6 — testado e confirmado que Lambda (fora de VPC) falha com `getaddrinfo ENOTFOUND` nele. Use o pooler: host `aws-0-sa-east-1.pooler.supabase.com`, usuario `postgres.hiwpskashaypuvwvibds` (nao so `postgres`) — a porta muda conforme o consumidor:
+
+- **Render**: porta `5432` (modo "Session" — recomendado para processo unico com pool de conexao de vida longa).
+- **Lambda**: porta `6543` (modo "Transaction" — recomendado para uma invocacao por vez). Ja configurado assim no deploy atual.
 
 Limitacoes do plano free do Supabase:
 
