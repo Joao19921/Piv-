@@ -3,7 +3,10 @@ import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import { isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME } from "./src/infrastructure/auth/session";
 import { createApiRouter } from "./src/presentation/app";
+
+const PUBLIC_AUTH_PATHS = new Set(["/api/v1/healthz", "/api/v1/auth/login", "/api/v1/auth/session", "/api/v1/auth/logout"]);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,23 +19,22 @@ async function startServer() {
   const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
 
   if (isProduction && testAccessUser && testAccessPassword) {
+    // Gate por sessao (cookie assinado), nao Basic Auth: o popup nativo do navegador nao
+    // reflete a identidade visual do produto. A SPA sempre carrega; e o React quem decide
+    // se mostra a tela de login ou o app, consultando GET /api/v1/auth/session.
     app.use((req, res, next) => {
-      if (req.path === "/api/v1/healthz") {
+      if (!req.path.startsWith("/api/v1/") || PUBLIC_AUTH_PATHS.has(req.path)) {
         next();
         return;
       }
 
-      const header = req.headers.authorization;
-      const encoded = header?.startsWith("Basic ") ? header.slice("Basic ".length) : "";
-      const [user, password] = Buffer.from(encoded, "base64").toString("utf-8").split(":");
-
-      if (user === testAccessUser && password === testAccessPassword) {
+      const token = parseCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+      if (isSessionCookieValid(token, testAccessPassword)) {
         next();
         return;
       }
 
-      res.setHeader("WWW-Authenticate", 'Basic realm="Pivo Testes"');
-      res.status(401).send("Acesso restrito ao ambiente de testes.");
+      res.status(401).json({ error: "unauthorized" });
     });
   }
 

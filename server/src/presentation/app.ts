@@ -4,6 +4,7 @@ import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/servic
 import { computeCloudEstimate } from "../domain/services/cloudPricing";
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
+import { createSessionCookieValue, isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../infrastructure/auth/session";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { AWS_REGION_AVG_USD_PER_HOUR, DEFAULT_REGION_KEY, GCP_REGION_AVG_USD_PER_HOUR, getPendingSources } from "../infrastructure/collectors/staticFallbacks";
@@ -51,9 +52,51 @@ export function createApiRouter(): Router {
   const router = express.Router();
   router.use(express.json());
 
-  // Health check leve para orquestradores (Render, etc.): nao toca fontes externas nem exige Basic Auth.
+  // Health check leve para orquestradores (Render, etc.): nao toca fontes externas nem exige login.
   router.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Login do ambiente de teste (substitui o popup nativo de Basic Auth por uma tela do produto).
+  // Credencial unica compartilhada (TEST_ACCESS_USER/TEST_ACCESS_PASSWORD) — sem sistema de usuarios.
+  router.get("/auth/session", (req, res) => {
+    const testAccessUser = process.env.TEST_ACCESS_USER;
+    const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
+    const authRequired = process.env.NODE_ENV === "production" && Boolean(testAccessUser && testAccessPassword);
+    if (!authRequired) {
+      res.json({ authenticated: true, required: false });
+      return;
+    }
+    const token = parseCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+    res.json({ authenticated: isSessionCookieValid(token, testAccessPassword!), required: true });
+  });
+
+  router.post("/auth/login", (req, res) => {
+    const testAccessUser = process.env.TEST_ACCESS_USER;
+    const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
+    if (!testAccessUser || !testAccessPassword) {
+      res.status(503).json({ error: "Autenticacao nao configurada neste ambiente." });
+      return;
+    }
+
+    const { username, password } = (req.body ?? {}) as Record<string, unknown>;
+    if (username !== testAccessUser || password !== testAccessPassword) {
+      res.status(401).json({ error: "Usuario ou senha invalidos." });
+      return;
+    }
+
+    res.cookie(SESSION_COOKIE_NAME, createSessionCookieValue(testAccessPassword), {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: SESSION_TTL_MS,
+    });
+    res.json({ ok: true });
+  });
+
+  router.post("/auth/logout", (_req, res) => {
+    res.clearCookie(SESSION_COOKIE_NAME);
+    res.json({ ok: true });
   });
 
   router.get("/system-health", async (_req, res) => {
