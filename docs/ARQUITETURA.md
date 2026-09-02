@@ -152,7 +152,9 @@ Sem `DATABASE_URL` configurado, ou se o Postgres estiver fora do ar, AWS/GCP/ben
 
 ## Banco De Dados
 
-Projeto Supabase dedicado (Postgres 17, plano free, regiao `sa-east-1`). Acesso via `pg` com connection string direta (`DATABASE_URL`), sem ORM. RLS habilitado em todas as tabelas sem policies, bloqueando qualquer acesso via PostgREST/anon key — o backend conecta como usuario com privilegios diretos no Postgres, que ignora RLS.
+Projeto Supabase dedicado (Postgres 17, plano free, regiao `sa-east-1`). Acesso via `pg`, sem ORM. RLS habilitado em todas as tabelas sem policies, bloqueando qualquer acesso via PostgREST/anon key — o backend conecta como usuario com privilegios diretos no Postgres, que ignora RLS.
+
+**`DATABASE_URL` deve apontar para o Connection Pooler (Supavisor), nao para o "Direct connection".** O host direto (`db.<projeto>.supabase.co`) so resolve em IPv6; Lambda (fora de VPC) e a maioria dos PaaS (Render incluso) so tem saida IPv4, entao a conexao falha com `getaddrinfo ENOTFOUND` — descoberto ao testar a Lambda pela primeira vez. O pooler (`aws-0-<regiao>.pooler.supabase.com:6543`, usuario `postgres.<projeto>`) resolve em IPv4 e funciona nos dois lugares.
 
 Tabelas (`server/db/migrations/0001_core_schema.sql`):
 

@@ -47,9 +47,7 @@ Variaveis:
 | `TEST_ACCESS_USER` | usuario de teste do time |
 | `TEST_ACCESS_PASSWORD` | senha forte compartilhada apenas internamente |
 | `MARKET_BENCHMARK_CONNECTOR_URL` | vazio, ate existir conector real |
-| `DATABASE_URL` | connection string do Postgres (Supabase, projeto `pivo`) — ver "Banco De Dados" abaixo |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | credencial IAM somente-leitura (`pricing:GetProducts`), usada pela ingestao AWS |
-| `GOOGLE_CLOUD_BILLING_API_KEY` | API key restrita a "Cloud Billing API", usada pela ingestao GCP |
+| `DATABASE_URL` | connection string do **pooler** do Postgres (Supabase, projeto `pivo`) — ver aviso de IPv4/IPv6 em "Banco De Dados" abaixo. O app web nao precisa de credencial AWS/GCP: so le precos ja gravados no Postgres pela Lambda. |
 
 Limitacoes do plano gratuito:
 
@@ -103,6 +101,8 @@ Se preferir criar manualmente:
 ## Banco De Dados (Supabase)
 
 Projeto Supabase dedicado `pivo` (Postgres 17, plano free, regiao `sa-east-1`) ja criado e com o schema aplicado (`server/db/migrations/`). Cobre catalogo de cloud, precos, PTAX e historico de benchmark — ver `docs/ARQUITETURA.md`.
+
+**Use sempre o Connection Pooler, nunca o "Direct connection".** O host direto (`db.<projeto>.supabase.co:5432`) so tem registro DNS IPv6 — testado e confirmado que Lambda (fora de VPC) falha com `getaddrinfo ENOTFOUND` nele. Use o pooler em modo "Transaction": host `aws-0-sa-east-1.pooler.supabase.com`, porta `6543`, usuario `postgres.hiwpskashaypuvwvibds` (nao so `postgres`). Isso vale tanto para o Render quanto para a Lambda.
 
 Limitacoes do plano free do Supabase:
 
