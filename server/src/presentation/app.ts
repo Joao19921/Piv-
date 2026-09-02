@@ -64,11 +64,12 @@ export function createApiRouter(): Router {
     const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
     const authRequired = process.env.NODE_ENV === "production" && Boolean(testAccessUser && testAccessPassword);
     if (!authRequired) {
-      res.json({ authenticated: true, required: false });
+      res.json({ authenticated: true, required: false, username: null });
       return;
     }
     const token = parseCookie(req.headers.cookie, SESSION_COOKIE_NAME);
-    res.json({ authenticated: isSessionCookieValid(token, testAccessPassword!), required: true });
+    const authenticated = isSessionCookieValid(token, testAccessPassword!);
+    res.json({ authenticated, required: true, username: authenticated ? testAccessUser : null });
   });
 
   router.post("/auth/login", (req, res) => {
