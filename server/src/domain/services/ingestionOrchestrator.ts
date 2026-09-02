@@ -4,7 +4,7 @@
  * `pnpm run refresh-sources`) e o handler da Lambda (`server/lambda/refreshSourcesHandler.ts`),
  * para nao duplicar a logica entre os dois pontos de entrada.
  */
-import { getAwsUnitPrice } from "../../infrastructure/collectors/awsCollector";
+import { getAwsEbsPrice, getAwsUnitPrice } from "../../infrastructure/collectors/awsCollector";
 import { getAzureUnitPrice } from "../../infrastructure/collectors/azureCollector";
 import { getPtax } from "../../infrastructure/collectors/bacenCollector";
 import { getGcpUnitPrice } from "../../infrastructure/collectors/gcpCollector";
@@ -13,6 +13,7 @@ import { logger } from "../../infrastructure/observability/logger";
 import { insertPrice, listRegions, listSkus, type CloudRegionRow, type CloudSkuRow } from "../../infrastructure/repositories/cloudPricingRepository";
 import { insertFxRate } from "../../infrastructure/repositories/fxRepository";
 import { recordIngestionRun, type IngestionStatus } from "../../infrastructure/repositories/ingestionRunsRepository";
+import { insertStoragePrice } from "../../infrastructure/repositories/storagePricingRepository";
 import type { ResilienceResult } from "../../infrastructure/resilience/resilienceManager";
 
 export interface IngestionSummary {
@@ -83,6 +84,45 @@ async function runProviderIngestion(provider: "AWS" | "Azure" | "GCP", skus: Clo
   logger.info(`Ingestao ${provider} concluida`, { ...summary, durationMs });
 }
 
+async function runAwsStorageIngestion(regions: CloudRegionRow[]): Promise<void> {
+  const serviceName = "AWS_STORAGE_INGESTION";
+  const startedAt = new Date();
+  const summary: ProviderRunSummary = { serviceName, status: "OPERATIONAL", recordsUpserted: 0, errorMessages: [] };
+
+  const awsRegions = regions.filter((region) => region.provider === "AWS");
+  for (const region of awsRegions) {
+    try {
+      const result = await getAwsEbsPrice(region.provider_region);
+      summary.status = worstStatus(summary.status, result.status);
+      if (result.warning) summary.errorMessages.push(`ebs-gp3/${region.region_key}: ${result.warning}`);
+      if (result.data) {
+        await insertStoragePrice({
+          provider: "AWS",
+          regionKey: region.region_key,
+          storageType: "gp3",
+          pricePerGbMonthUsd: result.data.pricePerGbMonthUsd,
+          sourceStatus: result.status,
+        });
+        summary.recordsUpserted += 1;
+      }
+    } catch (err) {
+      summary.status = "OFFLINE";
+      summary.errorMessages.push(`ebs-gp3/${region.region_key}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const durationMs = Date.now() - startedAt.getTime();
+  await recordIngestionRun({
+    serviceName,
+    status: summary.status,
+    recordsUpserted: summary.recordsUpserted,
+    durationMs,
+    errorMessage: summary.errorMessages.length ? summary.errorMessages.slice(0, 5).join(" | ") : undefined,
+    startedAt,
+  });
+  logger.info("Ingestao AWS EBS concluida", { ...summary, durationMs });
+}
+
 async function runFxIngestion(): Promise<void> {
   const startedAt = new Date();
   const result = await getPtax();
@@ -121,6 +161,7 @@ export async function runIngestion(): Promise<IngestionSummary> {
     runProviderIngestion("AWS", skus, regions),
     runProviderIngestion("Azure", skus, regions),
     runProviderIngestion("GCP", skus, regions),
+    runAwsStorageIngestion(regions),
     runFxIngestion(),
   ]);
 

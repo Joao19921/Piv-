@@ -1,5 +1,5 @@
 import express, { type Router } from "express";
-import { getCloudCatalog, getCloudSku, getLatestKnownPrice, type CloudPricePoint } from "../domain/services/cloudCatalog";
+import { getCloudCatalog, getCloudSku, getLatestKnownPrice, getLatestKnownStoragePrice, type CloudPricePoint } from "../domain/services/cloudCatalog";
 import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/services/catalogs";
 import { computeCloudEstimate } from "../domain/services/cloudPricing";
 import { computeLaborRate } from "../domain/services/laborPricing";
@@ -189,14 +189,21 @@ export function createApiRouter(): Router {
     const skuId = String(req.query.skuId ?? "");
     const instances = Number(req.query.instances);
     const hours = Number(req.query.hours);
+    const storageGb = req.query.storageGb !== undefined ? Number(req.query.storageGb) : 0;
 
     if (!Number.isFinite(instances) || !Number.isFinite(hours) || instances < 0 || hours < 0) {
       res.status(400).json({ error: "Parametros 'instances' e 'hours' sao obrigatorios e devem ser numericos." });
       return;
     }
+    if (!Number.isFinite(storageGb) || storageGb < 0) {
+      res.status(400).json({ error: "Parametro 'storageGb', quando informado, deve ser numerico e nao-negativo." });
+      return;
+    }
 
     const sku = await getCloudSku(skuId, provider);
     const knownPrice = await getLatestKnownPrice(sku.id, region);
+    // Storage (EBS gp3) so tem ingestao para AWS por enquanto.
+    const knownStoragePrice = provider === "AWS" && storageGb > 0 ? await getLatestKnownStoragePrice("AWS", region) : undefined;
 
     const [unitPriceResult, fxResult] = await Promise.all([
       provider === "Azure"
@@ -207,7 +214,8 @@ export function createApiRouter(): Router {
 
     const unitPriceUsd = (unitPriceResult.data as { pricePerHourUsd: number } | null)?.pricePerHourUsd ?? 0.08;
     const fxRate = (fxResult.data as { rate: number } | null)?.rate ?? 5.4;
-    const estimate = computeCloudEstimate({ unitPriceUsd, fxRate, instances, hours });
+    const storagePricePerGbMonthUsd = knownStoragePrice?.pricePerGbMonthUsd ?? 0;
+    const estimate = computeCloudEstimate({ unitPriceUsd, fxRate, instances, hours, storageGb, storagePricePerGbMonthUsd });
 
     // Azure e ao vivo por requisicao: aproveita para manter o Postgres fresco entre as janelas da Lambda.
     if (isDatabaseConfigured && provider === "Azure" && unitPriceResult.status === "OPERATIONAL") {
@@ -221,6 +229,15 @@ export function createApiRouter(): Router {
       sku,
       unitPrice: toSourceView(provider === "Azure" ? "Azure Retail API" : `${provider} Pricing (ingestao periodica)`, unitPriceResult),
       fx: toSourceView("BACEN - PTAX", fxResult),
+      storage:
+        provider === "AWS" && storageGb > 0
+          ? {
+              volumeType: "gp3",
+              pricePerGbMonthUsd: storagePricePerGbMonthUsd,
+              status: knownStoragePrice?.sourceStatus ?? "OFFLINE",
+              warning: knownStoragePrice ? undefined : "Ingestao de storage ainda nao rodou para esta regiao.",
+            }
+          : null,
     });
   });
 

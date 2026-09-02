@@ -49,6 +49,7 @@ export interface CloudEstimateParams {
   skuId: string;
   instances: number;
   hours: number;
+  storageGb?: number;
 }
 
 export interface CloudRegion {
@@ -80,10 +81,11 @@ export interface CloudCatalogResponse {
 }
 
 export interface CloudEstimateResponse {
-  estimate: { monthlyUsd: number; monthlyBrl: number };
+  estimate: { computeUsd: number; storageUsd: number; monthlyUsd: number; monthlyBrl: number };
   sku: CloudSku;
   unitPrice: ApiSourceResult<{ pricePerHourUsd: number; skuName?: string; armRegion?: string; sourceUrl?: string }>;
   fx: ApiSourceResult<{ rate: number; quotedAt: string }>;
+  storage: { volumeType: string; pricePerGbMonthUsd: number; status: SourceStatus; warning?: string } | null;
 }
 
 export async function fetchCloudCatalog(): Promise<CloudCatalogResponse> {
@@ -99,6 +101,7 @@ export async function fetchCloudEstimate(params: CloudEstimateParams): Promise<C
     skuId: params.skuId,
     instances: String(params.instances),
     hours: String(params.hours),
+    storageGb: String(params.storageGb ?? 0),
   });
   const res = await fetch(`${API_BASE}/cloud/estimate?${qs.toString()}`);
   if (!res.ok) throw new Error("Falha ao estimar o custo de infraestrutura.");

@@ -1,5 +1,6 @@
 import { isDatabaseConfigured } from "../../infrastructure/db/client";
 import { listLatestPrices, listRegions, listSkus, type CloudPriceRow } from "../../infrastructure/repositories/cloudPricingRepository";
+import { getLatestStoragePrice } from "../../infrastructure/repositories/storagePricingRepository";
 import { logger } from "../../infrastructure/observability/logger";
 
 export type CloudProvider = "AWS" | "Azure" | "GCP";
@@ -154,4 +155,22 @@ export async function getCloudRegions(provider: string): Promise<CloudRegion[]> 
 export async function getLatestKnownPrice(skuId: string, regionKey: string): Promise<CloudPricePoint | undefined> {
   const { prices } = await getCloudCatalog();
   return prices.find((price) => price.skuId === skuId && price.regionKey === regionKey);
+}
+
+export interface StoragePricePoint {
+  pricePerGbMonthUsd: number;
+  sourceStatus: "OPERATIONAL" | "DEGRADED" | "FALLBACK_STALE" | "OFFLINE";
+}
+
+/** EBS gp3 (AWS) por enquanto — Azure/GCP ainda nao tem ingestao de storage. */
+export async function getLatestKnownStoragePrice(provider: CloudProvider, regionKey: string, storageType = "gp3"): Promise<StoragePricePoint | undefined> {
+  if (!isDatabaseConfigured) return undefined;
+  try {
+    const row = await getLatestStoragePrice(provider, regionKey, storageType);
+    if (!row) return undefined;
+    return { pricePerGbMonthUsd: Number(row.price_per_gb_month_usd), sourceStatus: row.source_status };
+  } catch (err) {
+    logger.error("Falha ao ler preco de storage do Postgres", { error: err instanceof Error ? err.message : String(err) });
+    return undefined;
+  }
 }

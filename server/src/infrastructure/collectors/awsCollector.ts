@@ -63,6 +63,64 @@ async function fetchAwsUnitPrice(regionKey: string, instanceType: string): Promi
   return { pricePerHourUsd: extractOnDemandUsd(priceListEntry as string), skuName: instanceType, regionCode: regionKey };
 }
 
+export interface AwsStoragePrice {
+  pricePerGbMonthUsd: number;
+  volumeType: string;
+  regionCode: string;
+}
+
+async function fetchAwsEbsPrice(regionKey: string, volumeApiName = "gp3"): Promise<AwsStoragePrice> {
+  const response = await getClient().send(
+    new GetProductsCommand({
+      ServiceCode: "AmazonEC2",
+      Filters: [
+        { Type: "TERM_MATCH", Field: "productFamily", Value: "Storage" },
+        { Type: "TERM_MATCH", Field: "volumeApiName", Value: volumeApiName },
+        { Type: "TERM_MATCH", Field: "regionCode", Value: regionKey },
+      ],
+      MaxResults: 5,
+    }),
+    { abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+  );
+
+  const priceListEntry = response.PriceList?.[0];
+  if (!priceListEntry) throw new Error(`AWS Pricing API sem itens de storage (${volumeApiName}) em ${regionKey}`);
+
+  return { pricePerGbMonthUsd: extractOnDemandUsd(priceListEntry as string), volumeType: volumeApiName, regionCode: regionKey };
+}
+
+/** Aproximacao generica de EBS gp3 por regiao, usada apenas se nao houver cache nem ingestao ainda. */
+const AWS_EBS_GP3_AVG_USD_PER_GB_MONTH: Record<string, number> = {
+  "us-east-1": 0.08,
+  "sa-east-1": 0.114,
+  "eu-west-1": 0.088,
+  "us-west-2": 0.08,
+};
+
+export async function getAwsEbsPrice(regionKey: string, fallbackPrice?: number): Promise<ResilienceResult<AwsStoragePrice>> {
+  const cacheKey = `aws-ebs-price-${regionKey}`;
+  return executeWithFallback<AwsStoragePrice>({
+    serviceName: `AWS_EBS_${regionKey}`,
+    primary: async () => {
+      const price = await fetchAwsEbsPrice(regionKey);
+      writeCache(cacheKey, price);
+      return price;
+    },
+    fallback: async () => {
+      const cached = readCache<AwsStoragePrice>(cacheKey);
+      if (cached) return cached;
+      return {
+        data: {
+          pricePerGbMonthUsd: fallbackPrice ?? AWS_EBS_GP3_AVG_USD_PER_GB_MONTH[regionKey] ?? AWS_EBS_GP3_AVG_USD_PER_GB_MONTH[DEFAULT_REGION_KEY],
+          volumeType: "gp3",
+          regionCode: regionKey,
+        },
+        updatedAt: new Date().toISOString(),
+      };
+    },
+  });
+}
+
 export async function getAwsUnitPrice(regionKey: string, instanceType: string, fallbackPrice?: number): Promise<ResilienceResult<AwsUnitPrice>> {
   const cacheKey = `aws-unit-price-${regionKey}-${instanceType}`;
   return executeWithFallback<AwsUnitPrice>({
