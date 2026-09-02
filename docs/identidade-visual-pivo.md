@@ -97,43 +97,47 @@ Para o lockup horizontal, manter uma distância entre símbolo e nome equivalent
 
 ---
 
-## 5. Paleta cromática
+## 5. Paleta cromática (atualizada em 02/09/2026)
 
-A paleta combina a seriedade de um instrumento de decisão com a materialidade de um relatório executivo. O azul ancora a marca; o marfim abre espaço para leitura; o coral indica ação e desvio; o verde sálvia informa estabilidade sem competir com o sinal principal.
+> **Nota de revisão:** a paleta original desta secao (Azul Pivo `#16263D` + Coral de Margem `#E85B45`, tom "marfim/papel") foi substituida pela direcao abaixo (Teal + Amber Orange), a pedido do time, com base no material em `identidade visual/Identidade Visual.jpg`. O restante deste documento (arquitetura do nome, conceito do simbolo, voz da marca) permanece valido; apenas cor e tipografia mudaram.
+
+A nova paleta e mais proxima de um SaaS limpo: fundo neutro claro/branco, Teal como cor primaria (estrutura, marca, sidebar) e Amber Orange como cor de acao (CTA, foco, alertas).
 
 | Nome | HEX | RGB aproximado | Uso |
 |---|---|---|---|
-| **Azul Pivô** | `#16263D` | 22, 38, 61 | Wordmark, sidebar, títulos e superfícies institucionais |
-| **Coral de Margem** | `#E85B45` | 232, 91, 69 | Ponto do símbolo, CTA, anomalias, foco e marcadores |
-| **Marfim Técnico** | `#F5F1E8` | 245, 241, 232 | Fundo principal, briefing e áreas de leitura |
-| **Sálvia Operacional** | `#87A28B` | 135, 162, 139 | Estados online, confirmação e continuidade |
-| **Grafite de Apoio** | `#66717C` | 102, 113, 124 | Corpo de texto, metadados e timestamps |
-| **Areia de Cache** | `#E9DDC9` | 233, 221, 201 | Fallback, cache local e estados históricos |
+| **Teal Primario** | `#008080` | 0, 128, 128 | Wordmark, sidebar, simbolo, superficies escuras |
+| **Amber Orange** | `#F57F17` | 245, 127, 23 | CTA, ponto de pivo do simbolo, foco, anomalias |
+| **Cinza Escuro** | `#333333` | 51, 51, 51 | Corpo de texto e titulos sobre fundo claro |
+| **Cinza Claro (Secundaria)** | `#E0E0E0` | 224, 224, 224 | Bordas, divisores, superficies neutras |
+| **Mint Green** | `#4DB6AC` | 77, 182, 172 | Estados online, confirmacao e continuidade |
+| **Branco** | `#FFFFFF` | 255, 255, 255 | Fundo principal e texto sobre superficies escuras |
 
-### Regra de uso do coral
+### Regra de uso do Amber Orange
 
-O **Coral de Margem** deve ser aplicado de modo cirúrgico. Ele sinaliza uma ação, uma anomalia, uma margem, um ponto de convergência ou um elemento que merece atenção. Não deve ser utilizado como preenchimento decorativo de grandes áreas nem como cor padrão de todos os controles.
+O **Amber Orange** deve ser aplicado de modo cirurgico, no mesmo espirito que o Coral de Margem tinha antes: sinaliza uma acao, uma anomalia, o ponto de pivo do simbolo ou um elemento que merece atencao. Nao deve virar preenchimento decorativo de grandes areas.
 
 ---
 
-## 6. Tipografia
+## 6. Tipografia (atualizada em 02/09/2026)
 
-### Fonte de display e marca: Space Grotesk
+> **Nota de revisao:** o material de referencia da nova marca especifica "Geaphik Bold" (Graphik, fonte paga, sem licenca disponivel para uso no produto) para display e Inter para UI. Adotamos **Manrope** como substituto livre de Graphik para display/headline — geometria semelhante, boa presenca em telas — mantendo **Inter** para corpo e UI, exatamente como especificado.
 
-Usar em **Pivô**, títulos, números principais, códigos de propostas, indicadores e títulos de módulos. A fonte tem geometria técnica, boa presença em telas e personalidade suficiente para diferenciar o produto de uma interface administrativa comum.
+### Fonte de display: Manrope
 
-### Fonte de apoio: DM Sans
+Usar em **Pivô**, titulos, numeros principais, codigos de propostas, indicadores e titulos de modulos.
 
-Usar em textos corridos, tabelas, labels, tooltips, mensagens de sistema, status e descrições de fonte. Ela garante leitura confortável em alta densidade de informação.
+### Fonte de corpo e UI: Inter
 
-| Nível | Fonte | Tratamento |
+Usar em textos corridos, tabelas, labels, tooltips, mensagens de sistema, status, descricoes de fonte e todos os controles de interface.
+
+| Nivel | Fonte | Tratamento |
 |---|---|---|
-| Wordmark | Space Grotesk Semibold | Caixa baixa, espaçamento discreto e acento preservado |
-| Headline | Space Grotesk Semibold | Contraste forte e tracking levemente negativo |
-| Métrica | Space Grotesk Semibold | Números grandes, leitura imediata |
-| Label | DM Sans Semibold | Caixa alta, 10–11 px, tracking amplo |
-| Corpo | DM Sans Regular | 13–15 px, line-height entre 1,45 e 1,65 |
-| Metadado | DM Sans Medium | 10–12 px, cor grafite e informação situacional |
+| Wordmark | Manrope Semibold | Caixa baixa, espacamento discreto e acento preservado |
+| Headline | Manrope Semibold/Bold | Contraste forte e tracking levemente negativo |
+| Metrica | Manrope Semibold/Bold | Numeros grandes, leitura imediata |
+| Label | Inter Semibold | Caixa alta, 10–11 px, tracking amplo |
+| Corpo | Inter Regular | 13–15 px, line-height entre 1,45 e 1,65 |
+| Metadado | Inter Medium | 10–12 px, cor cinza e informacao situacional |
 
 ---
 
