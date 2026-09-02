@@ -114,17 +114,15 @@ Pendente para persistir propostas, usuarios individuais e auditoria de simulacoe
 - entidades de dominio para `Proposal`, `CostLine` e `User`;
 - migrations adicionais no mesmo projeto Supabase (ou um projeto separado, se quiser isolar o billing).
 
-## Segredos Do GitHub Actions (Cron De Ingestao)
+## Ingestao Periodica (Lambda + EventBridge)
 
-O workflow `.github/workflows/refresh-sources.yml` roda a cada ~5 dias e precisa destes secrets em Settings > Secrets and variables > Actions:
+A ingestao a cada ~5 dias roda como uma AWS Lambda (`pivo-refresh-sources`) disparada por um EventBridge Scheduled Rule, na conta AWS pessoal do time. Deploy/atualizacao via `scripts/deploy-lambda.ps1` (ver `docs/ARQUITETURA.md`):
 
-| Secret | Uso |
-| :--- | :--- |
-| `DATABASE_URL` | connection string do Postgres (mesma do Render) |
-| `AWS_PRICING_ACCESS_KEY_ID` / `AWS_PRICING_SECRET_ACCESS_KEY` | credencial IAM somente-leitura (`pricing:GetProducts`) |
-| `GOOGLE_CLOUD_BILLING_API_KEY` | API key restrita a "Cloud Billing API" |
+1. `pnpm run build:lambda` — gera `dist-lambda/index.cjs`.
+2. Definir no PowerShell: `$env:DATABASE_URL` (mesma connection string do Render) e `$env:GOOGLE_CLOUD_BILLING_API_KEY`.
+3. `powershell -File scripts/deploy-lambda.ps1` — cria/atualiza a IAM Role (policy minima `pricing:GetProducts`/`pricing:DescribeServices`, sem acesso a nenhum outro recurso da conta), a funcao Lambda e o EventBridge Rule.
 
-Sem `DATABASE_URL`, o job detecta a ausencia e sai sem erro (mesmo padrao do deploy hook do Render).
+Nao ha access key da AWS armazenada em lugar nenhum: a Lambda autentica via a propria IAM Role de execucao. `GOOGLE_CLOUD_BILLING_API_KEY` fica salva como variavel de ambiente da funcao (Lambda criptografa em repouso por padrao).
 
 ## Segurança Do Ambiente De Teste
 

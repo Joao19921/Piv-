@@ -103,7 +103,7 @@ Arquivos principais:
 
 - `collectors/bacenCollector.ts`: PTAX via BACEN Olinda API.
 - `collectors/azureCollector.ts`: Azure Retail Prices API (consulta ao vivo, por requisicao).
-- `collectors/awsCollector.ts`: AWS Pricing API (`GetProducts`, SDK `@aws-sdk/client-pricing`); exige `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` com permissao somente-leitura `pricing:GetProducts`.
+- `collectors/awsCollector.ts`: AWS Pricing API (`GetProducts`, SDK `@aws-sdk/client-pricing`); usa a cadeia padrao de credenciais do SDK — na Lambda, a IAM Role de execucao (sem access key fixa); localmente, uma sessao `aws configure`/`aws sso login` se existir.
 - `collectors/gcpCollector.ts`: GCP Cloud Billing Catalog API; exige `GOOGLE_CLOUD_BILLING_API_KEY`. Precifica instancias predefinidas como vCPU-preco + RAM-preco (GCP nao tem SKU unico "por instancia").
 - `collectors/staticFallbacks.ts`: valores estaticos para operacao degradada (ultimo nivel de fallback).
 - `resilience/resilienceManager.ts`: politica de resiliencia (circuit breaker, retry, cache, fallback).
@@ -162,11 +162,18 @@ Tabelas (`server/db/migrations/0001_core_schema.sql`):
 - `market_benchmark_searches` / `market_benchmark_sources`: historico de buscas de benchmark salarial (substitui o cache em arquivo `data/cache/market-benchmark-history`).
 - `ingestion_runs`: uma linha por execucao de coletor/ingestao (servico, status, registros atualizados, duracao, erro) — base do painel de observabilidade em `/system-health` e na tela "Fontes".
 
-## Ingestao Periodica (Cron)
+## Ingestao Periodica (Lambda + EventBridge)
 
-`server/scripts/refreshSources.ts` roda via GitHub Actions (`.github/workflows/refresh-sources.yml`, `schedule: cron: "0 6 1,6,11,16,21,26 * *"`, aproximando "a cada 5 dias"; cron e baseado em calendario, entao o intervalo real varia entre 4 e 6 dias na virada do mes) ou manualmente (`pnpm run refresh-sources` com `DATABASE_URL` no ambiente). Para cada SKU/regiao do catalogo, consulta o coletor real (Azure/AWS/GCP) e grava o preco em `cloud_prices`; tambem atualiza `fx_rates`. Cada fonte grava um resumo em `ingestion_runs`.
+A logica de ingestao vive em `server/src/domain/services/ingestionOrchestrator.ts` (compartilhada entre dois pontos de entrada, para nao duplicar codigo):
 
-Azure tambem continua com consulta ao vivo por requisicao (nao depende so do cron). Qualquer chamada ao vivo bem-sucedida (seja do cron ou de uma requisicao normal de `/cloud/estimate`) grava uma nova linha em `cloud_prices`, mantendo o Postgres fresco entre as janelas do cron.
+- `server/lambda/refreshSourcesHandler.ts`: handler da Lambda `pivo-refresh-sources`, disparada por um EventBridge Scheduled Rule a cada ~5 dias (`cron(0 6 1,6,11,16,21,26 * ? *)`; cron e baseado em calendario, entao o intervalo real varia entre 4 e 6 dias na virada do mes). Autentica na AWS Pricing API via **IAM Role de execucao** — nao usa access key fixa. `DATABASE_URL` e `GOOGLE_CLOUD_BILLING_API_KEY` sao variaveis de ambiente da funcao.
+- `server/scripts/refreshSources.ts`: mesma logica, para rodar manualmente em dev (`pnpm run refresh-sources`).
+
+Empacotamento: `pnpm run build:lambda` gera um bundle CJS unico (`dist-lambda/index.cjs`, via esbuild) e `scripts/deploy-lambda.ps1` cria/atualiza a IAM Role (policy minima `pricing:GetProducts`/`pricing:DescribeServices`), a funcao Lambda e o EventBridge Scheduled Rule via AWS CLI. A Lambda nao fica em VPC (acesso direto a internet, sem custo de NAT Gateway) para alcancar o Postgres (Supabase) e as APIs HTTPS publicas.
+
+Para cada SKU/regiao do catalogo, a ingestao consulta o coletor real (Azure/AWS/GCP) e grava o preco em `cloud_prices`; tambem atualiza `fx_rates`. Cada fonte grava um resumo em `ingestion_runs`.
+
+Azure tambem continua com consulta ao vivo por requisicao a partir do proprio app web (nao depende da Lambda). AWS e GCP **nao** sao consultados ao vivo pelo app web — `/cloud/estimate` so le o ultimo preco gravado em `cloud_prices` (ou o snapshot estatico, se ainda nao houver ingestao para aquele SKU/regiao). Isso evita expor credencial AWS/GCP no servico web e evita o custo/latencia de uma chamada cara (o coletor GCP pagina milhares de SKUs) por requisicao. Toda chamada Azure ao vivo bem-sucedida tambem grava uma linha em `cloud_prices`, mantendo o Postgres fresco entre as janelas da Lambda.
 
 ## Observabilidade
 
@@ -217,7 +224,7 @@ Detalhes:
 
 - Substituir snapshots de CAGED/MTE por pipeline real de ingestao.
 - Implementar PNCP.
-- Configurar credenciais reais (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, `GOOGLE_CLOUD_BILLING_API_KEY`) e validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
+- Rodar `scripts/deploy-lambda.ps1` (cria a IAM Role/policy, a Lambda e o EventBridge Rule) e configurar `GOOGLE_CLOUD_BILLING_API_KEY` para validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
 - Ampliar dimensoes de custo da calculadora cloud: storage (EBS/Persistent Disk), transferencia de dados, banco gerenciado (RDS/Cloud SQL) — hoje cobre so compute on-demand.
 - Persistir propostas, usuarios e auditoria de fontes por proposta no Postgres.
 - Separar dominio em modulos menores quando o volume de regras crescer.

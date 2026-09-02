@@ -16,9 +16,3 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: GOOGLE_CLOUD_BILLING_API_KEY
-        sync: false

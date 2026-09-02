@@ -12,7 +12,8 @@
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
-    "refresh-sources": "tsx server/scripts/refreshSources.ts"
+    "refresh-sources": "tsx server/scripts/refreshSources.ts",
+    "build:lambda": "esbuild server/lambda/refreshSourcesHandler.ts --platform=node --target=node22 --bundle --format=cjs --outfile=dist-lambda/index.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-pricing": "^3.1124.0",

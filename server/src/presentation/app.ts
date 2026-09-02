@@ -1,19 +1,17 @@
 import express, { type Router } from "express";
-import { getCloudCatalog, getCloudRegions, getCloudSku, getLatestKnownPrice } from "../domain/services/cloudCatalog";
+import { getCloudCatalog, getCloudSku, getLatestKnownPrice, type CloudPricePoint } from "../domain/services/cloudCatalog";
 import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/services/catalogs";
 import { computeCloudEstimate } from "../domain/services/cloudPricing";
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
-import { getAwsUnitPrice } from "../infrastructure/collectors/awsCollector";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
-import { getGcpUnitPrice } from "../infrastructure/collectors/gcpCollector";
-import { getPendingSources } from "../infrastructure/collectors/staticFallbacks";
+import { AWS_REGION_AVG_USD_PER_HOUR, DEFAULT_REGION_KEY, GCP_REGION_AVG_USD_PER_HOUR, getPendingSources } from "../infrastructure/collectors/staticFallbacks";
 import { isDatabaseConfigured } from "../infrastructure/db/client";
-import { logger } from "../infrastructure/observability/logger";
-import { getQueryStats } from "../infrastructure/observability/queryStats";
 import { insertPrice } from "../infrastructure/repositories/cloudPricingRepository";
 import { getLatestIngestionRuns, type IngestionRun } from "../infrastructure/repositories/ingestionRunsRepository";
+import { logger } from "../infrastructure/observability/logger";
+import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
@@ -115,6 +113,32 @@ export function createApiRouter(): Router {
     });
   });
 
+  /**
+   * AWS e GCP nao sao consultados ao vivo a partir do app web: a Lambda de ingestao periodica
+   * (IAM Role, sem access key fixa) e quem fala com essas APIs a cada ~5 dias e grava em
+   * cloud_prices. Aqui so lemos o ultimo preco conhecido (Postgres, ou o snapshot estatico
+   * quando o Postgres esta indisponivel/ainda sem dado para esse SKU/regiao).
+   */
+  function resolveIngestedUnitPrice(provider: "AWS" | "GCP", knownPrice: CloudPricePoint | undefined, region: string): ResilienceResult<{ pricePerHourUsd: number }> {
+    if (knownPrice) {
+      return {
+        status: knownPrice.sourceStatus,
+        source: "SCHEDULED_INGESTION",
+        timestamp: new Date().toISOString(),
+        warning: knownPrice.sourceStatus === "OPERATIONAL" ? undefined : "Preco vem da ultima ingestao periodica bem-sucedida; pode nao refletir o valor mais recente.",
+        data: { pricePerHourUsd: knownPrice.pricePerHourUsd },
+      };
+    }
+    const table = provider === "AWS" ? AWS_REGION_AVG_USD_PER_HOUR : GCP_REGION_AVG_USD_PER_HOUR;
+    return {
+      status: "OFFLINE",
+      source: "NONE",
+      timestamp: new Date().toISOString(),
+      warning: "Ingestao periodica ainda nao rodou para este SKU/regiao; usando media generica de custo por regiao.",
+      data: { pricePerHourUsd: table[region] ?? table[DEFAULT_REGION_KEY] },
+    };
+  }
+
   router.get("/cloud/estimate", async (req, res) => {
     const provider = String(req.query.provider ?? "AWS") as "AWS" | "Azure" | "GCP";
     const region = String(req.query.region ?? "us-east-1");
@@ -127,26 +151,22 @@ export function createApiRouter(): Router {
       return;
     }
 
-    const [sku, regions] = await Promise.all([getCloudSku(skuId, provider), getCloudRegions(provider)]);
-    const providerRegion = regions.find((r) => r.key === region)?.providerRegion ?? region;
+    const sku = await getCloudSku(skuId, provider);
     const knownPrice = await getLatestKnownPrice(sku.id, region);
-    const fallbackPrice = knownPrice?.pricePerHourUsd;
 
     const [unitPriceResult, fxResult] = await Promise.all([
       provider === "Azure"
-        ? getAzureUnitPrice(region, sku.azureArmSkuName ?? sku.skuName, fallbackPrice)
-        : provider === "AWS"
-          ? getAwsUnitPrice(providerRegion, sku.skuName, fallbackPrice)
-          : getGcpUnitPrice(providerRegion, sku.skuName, sku.vcpu, sku.memoryGiB, fallbackPrice),
+        ? getAzureUnitPrice(region, sku.azureArmSkuName ?? sku.skuName, knownPrice?.pricePerHourUsd)
+        : Promise.resolve(resolveIngestedUnitPrice(provider, knownPrice, region)),
       getPtax(),
     ]);
 
-    const unitPriceUsd = (unitPriceResult.data as { pricePerHourUsd: number } | null)?.pricePerHourUsd ?? fallbackPrice ?? 0.08;
+    const unitPriceUsd = (unitPriceResult.data as { pricePerHourUsd: number } | null)?.pricePerHourUsd ?? 0.08;
     const fxRate = (fxResult.data as { rate: number } | null)?.rate ?? 5.4;
     const estimate = computeCloudEstimate({ unitPriceUsd, fxRate, instances, hours });
 
-    // Aproveita a consulta ao vivo para manter o Postgres fresco entre as janelas do cron (nao bloqueia a resposta).
-    if (isDatabaseConfigured && unitPriceResult.status === "OPERATIONAL") {
+    // Azure e ao vivo por requisicao: aproveita para manter o Postgres fresco entre as janelas da Lambda.
+    if (isDatabaseConfigured && provider === "Azure" && unitPriceResult.status === "OPERATIONAL") {
       insertPrice({ skuId: sku.id, regionKey: region, pricePerHourUsd: unitPriceUsd, sourceStatus: "OPERATIONAL" }).catch((err) =>
         logger.error("Falha ao gravar preco ao vivo no Postgres", { error: err instanceof Error ? err.message : String(err) }),
       );
@@ -155,7 +175,7 @@ export function createApiRouter(): Router {
     res.json({
       estimate,
       sku,
-      unitPrice: toSourceView(`${provider} Pricing`, unitPriceResult),
+      unitPrice: toSourceView(provider === "Azure" ? "Azure Retail API" : `${provider} Pricing (ingestao periodica)`, unitPriceResult),
       fx: toSourceView("BACEN - PTAX", fxResult),
     });
   });

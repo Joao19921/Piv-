@@ -34,9 +34,10 @@ function extractOnDemandUsd(rawProduct: string): number {
 }
 
 async function fetchAwsUnitPrice(regionKey: string, instanceType: string): Promise<AwsUnitPrice> {
-  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-    throw new Error("Credenciais AWS (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) nao configuradas");
-  }
+  // Sem checagem explicita de env vars: o PricingClient usa a cadeia padrao de credenciais do
+  // SDK (env vars, shared config, ou a IAM Role de execucao quando rodando na Lambda). Se nao
+  // houver credencial nenhuma disponivel, o proprio SDK lanca um erro claro, capturado abaixo
+  // pelo resilienceManager (circuit breaker/retry/fallback).
 
   // Filtra por instancia Linux, tenancy compartilhada, sem software pre-instalado e capacidade sob demanda
   // (exclui reserva de capacidade nao utilizada), igual ao que o console de precos da AWS usa.
