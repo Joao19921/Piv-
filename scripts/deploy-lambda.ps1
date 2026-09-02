@@ -3,9 +3,11 @@
 # Pre-requisitos:
 #   1. AWS CLI autenticado nesta maquina (aws configure / aws sso login).
 #   2. pnpm run build:lambda  (gera dist-lambda/index.cjs)
-#   3. Variaveis de ambiente definidas nesta sessao do PowerShell:
-#        $env:DATABASE_URL = "postgresql://postgres:...@db....supabase.co:5432/postgres"
-#        $env:GOOGLE_CLOUD_BILLING_API_KEY = "..."   (pode ficar vazia se ainda nao tiver a key)
+#   3. Um arquivo .env na raiz do repo (nao versionado) com:
+#        DATABASE_URL=postgresql://postgres:...@db....supabase.co:5432/postgres
+#        GOOGLE_CLOUD_BILLING_API_KEY=...          (pode ficar vazia se ainda nao tiver a key)
+#      (alternativa: exportar $env:DATABASE_URL / $env:GOOGLE_CLOUD_BILLING_API_KEY
+#      manualmente antes de chamar o script, na mesma sessao)
 #
 # Uso:
 #   pnpm run build:lambda
@@ -19,14 +21,29 @@ $RuleName = "pivo-refresh-sources-schedule"
 $Region = "us-east-1"
 $Schedule = "cron(0 6 1,6,11,16,21,26 * ? *)"
 
+$repoRoot = Split-Path -Parent $PSScriptRoot
+
+# Carrega .env da raiz do repo para variaveis que ainda nao estiverem definidas na sessao atual
+# (nao sobrescreve $env:* ja setado manualmente).
+$envFilePath = Join-Path $repoRoot ".env"
+if (Test-Path $envFilePath) {
+  Get-Content $envFilePath | ForEach-Object {
+    if ($_ -match '^\s*#' -or $_ -notmatch '=') { return }
+    $key, $value = $_ -split '=', 2
+    $key = $key.Trim()
+    if ($key -and (-not (Test-Path "env:$key"))) {
+      Set-Item -Path "env:$key" -Value $value.Trim()
+    }
+  }
+}
+
 if (-not $env:DATABASE_URL) {
-  throw "Defina `$env:DATABASE_URL antes de rodar este script."
+  throw "DATABASE_URL nao encontrado (nem em `$env:DATABASE_URL nem em .env). Crie um .env na raiz do repo ou exporte a variavel antes de rodar este script."
 }
 if ($null -eq $env:GOOGLE_CLOUD_BILLING_API_KEY) {
   $env:GOOGLE_CLOUD_BILLING_API_KEY = ""
 }
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
 $bundlePath = Join-Path $repoRoot "dist-lambda\index.cjs"
 if (-not (Test-Path $bundlePath)) {
   throw "dist-lambda/index.cjs nao encontrado. Rode 'pnpm run build:lambda' antes."
