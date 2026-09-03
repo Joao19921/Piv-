@@ -4,7 +4,7 @@ import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/servic
 import { computeCloudEstimate } from "../domain/services/cloudPricing";
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
-import { createSessionCookieValue, isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../infrastructure/auth/session";
+import { createSessionCookieValue, isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME, SESSION_TTL_MS, SESSION_TTL_REMEMBER_MS } from "../infrastructure/auth/session";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { AWS_REGION_AVG_USD_PER_HOUR, DEFAULT_REGION_KEY, GCP_REGION_AVG_USD_PER_HOUR, getPendingSources } from "../infrastructure/collectors/staticFallbacks";
@@ -80,17 +80,18 @@ export function createApiRouter(): Router {
       return;
     }
 
-    const { username, password } = (req.body ?? {}) as Record<string, unknown>;
+    const { username, password, remember } = (req.body ?? {}) as Record<string, unknown>;
     if (username !== testAccessUser || password !== testAccessPassword) {
       res.status(401).json({ error: "Usuario ou senha invalidos." });
       return;
     }
 
-    res.cookie(SESSION_COOKIE_NAME, createSessionCookieValue(testAccessPassword), {
+    const ttlMs = remember === true ? SESSION_TTL_REMEMBER_MS : SESSION_TTL_MS;
+    res.cookie(SESSION_COOKIE_NAME, createSessionCookieValue(testAccessPassword, ttlMs), {
       httpOnly: true,
       secure: true,
       sameSite: "lax",
-      maxAge: SESSION_TTL_MS,
+      maxAge: ttlMs,
     });
     res.json({ ok: true });
   });

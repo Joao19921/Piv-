@@ -1,12 +1,28 @@
 import { useState } from "react";
 import { PivoMark } from "@/components/PivoMark";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+/** Oferece ao navegador salvar a credencial (Credential Management API). So Chrome/Edge
+ * suportam PasswordCredential; em outros navegadores essa chamada e um no-op seguro —
+ * o autocomplete="username"/"current-password" nos campos ja cobre o resto. */
+async function offerToSaveCredential(username: string, password: string): Promise<void> {
+  try {
+    const PasswordCredentialCtor = (window as unknown as { PasswordCredential?: new (data: unknown) => Credential }).PasswordCredential;
+    if (!PasswordCredentialCtor || !navigator.credentials?.store) return;
+    const credential = new PasswordCredentialCtor({ id: username, password, name: username });
+    await navigator.credentials.store(credential);
+  } catch {
+    // Navegador recusou ou nao suporta; sem problema, o login ja foi concluido.
+  }
+}
 
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -18,13 +34,14 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, remember }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         setError(data?.error ?? "Usuario ou senha invalidos.");
         return;
       }
+      await offerToSaveCredential(username, password);
       onSuccess();
     } catch {
       setError("Nao foi possivel conectar. Tente novamente.");
@@ -57,6 +74,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             </Label>
             <Input
               id="username"
+              name="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="mt-2 h-11 border-[#D4D1CC] bg-white text-sm text-[#333333]"
@@ -64,18 +82,26 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
               autoComplete="username"
             />
           </div>
-          <div className="mb-5">
+          <div className="mb-4">
             <Label htmlFor="password" className="text-xs font-semibold text-[#345555]">
               Senha
             </Label>
             <Input
               id="password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="mt-2 h-11 border-[#D4D1CC] bg-white text-sm text-[#333333]"
               autoComplete="current-password"
             />
+          </div>
+
+          <div className="mb-5 flex items-center gap-2">
+            <Checkbox id="remember" checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
+            <Label htmlFor="remember" className="text-xs font-medium text-[#345555]">
+              Continuar conectado por 30 dias neste dispositivo
+            </Label>
           </div>
 
           {error && (
