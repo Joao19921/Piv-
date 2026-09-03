@@ -42,14 +42,48 @@ const HISTORY_CACHE_KEY = "market-benchmark-history";
 const BENCHMARK_CACHE_VERSION = "v4";
 const REQUEST_TIMEOUT_MS = 8_000;
 
+/**
+ * Ordem importa: matchProfilesForRole usa a primeira categoria cuja regex casar, entao os
+ * padroes mais especificos (ex.: "gerente de suporte") ficam antes dos genericos (ex.: "suporte").
+ * Os perfis "sgd-*" vem das tabelas oficiais de referencia salarial SISP/MGI (Portarias
+ * SGD/MGI no 6.055/2025 e no 4.777/2026); os demais sao o catalogo interno pre-existente.
+ */
 const roleCategories: Array<{ pattern: RegExp; profileIds: string[] }> = [
+  { pattern: /gerente.*suporte|suporte.*gerente/i, profileIds: ["sgd-gersup"] },
+  { pattern: /gerente.*infraestrutura/i, profileIds: ["sgd-gerinf"] },
+  { pattern: /gerente.*seguranca|ciso\b/i, profileIds: ["sgd-gerseg"] },
+  { pattern: /gerente.*projetos?|project manager|\bpmo\b/i, profileIds: ["sgd-gerpro"] },
+  { pattern: /manutencao.*equipamentos|tecnico.*hardware/i, profileIds: ["sgd-tecman-01", "sgd-tecman-02", "sgd-tecman-03"] },
+  { pattern: /tecnico.*rede|rede.*telecom|telecomunicacoes/i, profileIds: ["sgd-tecred-01", "sgd-tecred-02", "sgd-tecred-03"] },
+  { pattern: /helpdesk|help desk|tecnico.*suporte|suporte.*usuario/i, profileIds: ["sgd-tecsup-01", "sgd-tecsup-02", "sgd-tecsup-03"] },
+  { pattern: /suporte computacional/i, profileIds: ["sgd-asupcomp-01", "sgd-asupcomp-02", "sgd-asupcomp-03"] },
+  { pattern: /administrador.*banco de dados|\bdba\b/i, profileIds: ["sgd-abd-01", "sgd-abd-02", "sgd-abd-03"] },
+  { pattern: /administrador.*sistemas operacionais|sysadmin/i, profileIds: ["sgd-aso-01", "sgd-aso-02", "sgd-aso-03"] },
+  { pattern: /analista.*rede|comunicacao de dados/i, profileIds: ["sgd-ared-01", "sgd-ared-02", "sgd-ared-03"] },
+  { pattern: /especialista.*cloud|cloud engineer|cloud architect/i, profileIds: ["sgd-cloud-01", "sgd-cloud-02"] },
+  { pattern: /arquiteto.*software|software architect/i, profileIds: ["sgd-arqsof-01", "sgd-arqsof-02"] },
+  { pattern: /arquiteto.*dados|data architect/i, profileIds: ["sgd-arqdados-01", "sgd-arqdados-02", "sgd-arqdados-03"] },
+  { pattern: /cientista.*dados|data scientist/i, profileIds: ["sgd-cdados-01", "sgd-cdados-02", "sgd-cdados-03"] },
+  { pattern: /engenheiro.*ia\b|machine learning|inteligencia artificial|\bml engineer\b/i, profileIds: ["sgd-ia-eng-01", "sgd-ia-eng-02", "sgd-ia-eng-03"] },
+  { pattern: /administrador.*dados/i, profileIds: ["sgd-adados-02", "sgd-adados-03"] },
+  { pattern: /analista.*bi\b|business intelligence/i, profileIds: ["sgd-abi-01", "sgd-abi-02", "sgd-abi-03"] },
+  { pattern: /analista.*metricas|metrics analyst/i, profileIds: ["sgd-metrica-01", "sgd-metrica-02", "sgd-metrica-03"] },
+  { pattern: /teste|qualidade|\bqa\b|quality assurance/i, profileIds: ["sgd-atq-01", "sgd-atq-02", "sgd-atq-03"] },
+  { pattern: /negocios|requisitos|business analyst/i, profileIds: ["sgd-anr-01", "sgd-anr-02", "sgd-anr-03"] },
+  { pattern: /seguranca.*informacao|security analyst|infosec|cyber/i, profileIds: ["sgd-aseg-01", "sgd-aseg-02", "sgd-aseg-03"] },
+  { pattern: /lider.*desenvolvimento|tech lead/i, profileIds: ["sgd-ldesenv"] },
+  { pattern: /scrum/i, profileIds: ["sgd-scrum"] },
+  { pattern: /ux\/?ui|user experience|product designer/i, profileIds: ["sgd-auxui-01", "sgd-auxui-02"] },
+  {
+    pattern: /backend|api|java|node|full stack|frontend|desenvolvedor|developer|dev\b/i,
+    profileIds: ["dev-pleno-clt", "dev-senior-pj", "sgd-desenv-01", "sgd-desenv-02", "sgd-desenv-03", "sgd-destec-01", "sgd-destec-02", "sgd-destec-03"],
+  },
   { pattern: /dados|data|bi\b|analytics/i, profileIds: ["dados-especialista-pj"] },
   { pattern: /arquiteto|solution|solucao|solucoes/i, profileIds: ["arquiteto-senior-pj"] },
   { pattern: /analista|sistemas|business analyst|requisitos/i, profileIds: ["analista-pleno-clt"] },
-  { pattern: /backend|api|java|node|full stack|frontend|desenvolvedor|developer|dev\b/i, profileIds: ["dev-pleno-clt", "dev-senior-pj"] },
 ];
 
-const FALLBACK_PROFILE_IDS = ["analista-pleno-clt"];
+const FALLBACK_PROFILE_IDS = ["analista-pleno-clt", "sgd-asupcomp-02"];
 
 function normalize(text: string): string {
   return text
