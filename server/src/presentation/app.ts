@@ -420,6 +420,7 @@ export function createApiRouter(): Router {
         source: "STATIC_SNAPSHOT",
         timestamp: laborProfiles[0]?.updatedAt ?? new Date().toISOString(),
         warning: "Ingestao real do CAGED ainda pendente; perfis usam snapshot parametrizado de CBOs de tecnologia.",
+        data: null,
       },
     });
   });
@@ -463,6 +464,7 @@ export function createApiRouter(): Router {
         source: "STATIC_TABLE",
         timestamp: licenseCatalog[0]?.updatedAt ?? new Date().toISOString(),
         warning: "Catalogo baseado em paginas oficiais de precos; conectores comerciais por fornecedor ainda nao foram configurados.",
+        data: null,
       },
     });
   });

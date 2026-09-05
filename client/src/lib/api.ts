@@ -21,7 +21,11 @@ function apiSourceResultSchema<T extends z.ZodTypeAny>(dataSchema: T) {
     source: z.string(),
     timestamp: z.string(),
     warning: z.string().optional(),
-    data: dataSchema.nullable(),
+    // .default(null): algumas rotas (snapshot estatico sem payload de dado real, ex. labor/profiles,
+    // licenses/catalog) nunca incluem a chave "data" no JSON. nullable() sozinho so aceita null
+    // explicito, nao chave ausente (undefined) — ja causou parse() falhar em producao com esses
+    // dois endpoints. default(null) trata ausente e null da mesma forma, sem afetar quem ja envia null.
+    data: dataSchema.nullable().default(null),
   });
 }
 
