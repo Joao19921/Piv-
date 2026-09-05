@@ -56,8 +56,10 @@ Um workflow GitHub Actions pode ser adicionado depois, mas isso exige uma creden
 Depois do deploy:
 
 ```bash
-curl https://SEU-SERVICO.onrender.com/api/v1/healthz
+curl https://pivo-i8m3.onrender.com/api/v1/healthz
 ```
+
+URL real do servico em producao: `https://pivo-i8m3.onrender.com` — o Render sufixou o nome porque `pivo` sozinho ja estava em uso por outro servico de outra conta (nomes sao globais na plataforma). **Nao confundir com `pivo.onrender.com`, que nao e o nosso app.**
 
 Resposta esperada:
 
