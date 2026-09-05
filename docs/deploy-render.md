@@ -32,7 +32,7 @@ O `render.yaml` define:
 
 ## Acesso Do Time
 
-Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem definidos, o app inteiro fica protegido por Basic Auth, exceto `/api/v1/healthz`.
+Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem definidos, o app inteiro fica protegido por login com sessao (tela propria do produto), exceto `/api/v1/healthz` e as proprias rotas de `/api/v1/auth/*`.
 
 Compartilhe com o time:
 
@@ -70,7 +70,7 @@ Resposta esperada:
 Depois valide no navegador:
 
 - tela inicial carrega;
-- Basic Auth solicita usuario/senha;
+- tela de login solicita usuario/senha;
 - `Fontes` mostra estados reais;
 - `Mao de obra` executa benchmark;
 - `Infra cloud` calcula estimativa;

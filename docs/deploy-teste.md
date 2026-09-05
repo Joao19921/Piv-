@@ -25,7 +25,7 @@ docker run --rm -p 3000:3000 \
 
 ## Acessos de Teste
 
-Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem configurados em producao, o app inteiro fica protegido por Basic Auth.
+Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem configurados em producao, o app inteiro fica protegido por login com sessao (tela propria do produto, cookie assinado — nao o popup nativo de Basic Auth).
 
 Compartilhe com o time:
 

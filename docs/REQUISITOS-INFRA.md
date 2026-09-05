@@ -14,14 +14,14 @@ Por que encaixa:
 - o `render.yaml` ja descreve o servico;
 - nao exige adaptar a API para serverless;
 - permite URL publica com TLS gerenciado;
-- suporta variaveis secretas para Basic Auth.
+- suporta variaveis secretas para o login de teste (sessao).
 
 Topologia:
 
 ```text
 Usuario do time
   |
-  | HTTPS + Basic Auth
+  | HTTPS + login com sessao
   v
 Render Free Web Service
   |
@@ -162,7 +162,7 @@ Nao ha access key da AWS armazenada em lugar nenhum: a Lambda autentica via a pr
 
 ## Segurança Do Ambiente De Teste
 
-O Basic Auth atual e suficiente para teste fechado, desde que:
+O login de teste atual (sessao via cookie assinado, tela propria do produto) e suficiente para teste fechado, desde que:
 
 - a senha nao seja commitada;
 - seja compartilhada apenas com o time;
@@ -180,7 +180,7 @@ Para producao real, substituir por:
 
 - Render build concluiu com sucesso.
 - `/api/v1/healthz` esta verde.
-- Basic Auth esta ativo.
+- Login de teste (sessao) esta ativo.
 - Dashboard carrega no navegador.
 - `Fontes` mostra estados reais.
 - `Mao de obra`, `Infra cloud` e `Licencas` estao navegaveis.

@@ -2,7 +2,7 @@
 
 Pivo e uma aplicacao full-stack para precificacao de projetos de TI. A solucao consolida custos de mao de obra, infraestrutura cloud, cambio, licencas SaaS e benchmark salarial em uma interface unica, sempre mostrando a origem e o estado de confiabilidade de cada dado.
 
-O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md).
 
 ## O Que Existe Hoje
 
@@ -15,10 +15,12 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
 | PNCP | Implementado (checagem de saude) | API de consulta publica ao vivo, sem chave; aparece em `/system-health`. Ainda nao busca preco de referencia por item. |
 | Resiliencia | Implementado | Circuit breaker, retry, cache em disco e fallback estatico. |
-| Ambiente de teste | Implementado | Docker + Render Free + Basic Auth opcional. |
+| Banco persistente | Implementado | Postgres (Supabase) para catalogo de cloud, precos, PTAX e historico de benchmark. Cache em arquivo continua so como fallback de nivel 3. |
+| Observabilidade externa | Implementado | Sentry (error tracking) + UptimeRobot (uptime) + keep-alive do Supabase via cron externo — ver [REQUISITOS-INFRA.md](docs/REQUISITOS-INFRA.md#observabilidade-gratuita-sentry--uptimerobot). |
+| Ambiente de teste | Implementado | Docker + Render Free + login com sessao. URL real: `https://pivo-i8m3.onrender.com`. |
 | CAGED ao vivo | Pendente | MTE so disponibiliza microdados via FTP (sem API); hoje aparece como snapshot/fallback. |
 | MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
-| Banco persistente | Pendente | Hoje existe cache local em arquivo. |
+| Propostas/usuarios persistidos | Pendente | Postgres ja existe (ver acima), mas ainda sem entidades de `Proposal`/`User`/auditoria por proposta. |
 
 ## Stack
 
@@ -62,8 +64,8 @@ Veja tambem [.env.example](.env.example).
 | :--- | :--- | :--- |
 | `NODE_ENV` | Nao | Use `production` em deploy. |
 | `PORT` | Nao | Porta do Express; padrao 3000 em producao e 3001 em dev. |
-| `TEST_ACCESS_USER` | Nao | Usuario do Basic Auth para ambiente de teste. |
-| `TEST_ACCESS_PASSWORD` | Nao | Senha do Basic Auth para ambiente de teste. |
+| `TEST_ACCESS_USER` | Nao | Usuario da tela de login (sessao) do ambiente de teste. |
+| `TEST_ACCESS_PASSWORD` | Nao | Senha da tela de login (sessao) do ambiente de teste. |
 | `MARKET_BENCHMARK_CONNECTOR_URL` | Nao | Conector externo para benchmark salarial ao vivo. |
 
 BACEN PTAX e Azure Retail Prices API nao exigem chave.
@@ -79,7 +81,7 @@ Pivo/
 |       |-- lib/api.ts            # Cliente HTTP tipado
 |       `-- components/ui/        # Componentes shadcn/ui
 |-- server/
-|   |-- index.ts                  # Bootstrap Express, static files e Basic Auth
+|   |-- index.ts                  # Bootstrap Express, static files e gate de sessao (login)
 |   `-- src/
 |       |-- domain/services/      # Regras de precificacao e catalogos
 |       |-- infrastructure/       # Coletores, cache e resiliencia

@@ -31,8 +31,8 @@ Em producao existe um unico processo Express:
 
 - serve a API em `/api/v1/*`;
 - serve os arquivos estaticos do frontend gerados em `dist/public`;
-- aplica Basic Auth quando `NODE_ENV=production` e `TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD` estao definidos;
-- mantem `/api/v1/healthz` fora do Basic Auth para health check de orquestrador.
+- aplica um gate de sessao (cookie assinado, tela de login propria do produto — nao o popup nativo de Basic Auth) quando `NODE_ENV=production` e `TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD` estao definidos;
+- mantem `/api/v1/healthz`, `/api/v1/auth/login`, `/api/v1/auth/session` e `/api/v1/auth/logout` fora desse gate.
 
 ## Modulos De Codigo
 
@@ -135,6 +135,17 @@ O contrato retornado e:
 
 O frontend usa esse contrato diretamente para mostrar se um numero veio de fonte ao vivo, cache ou snapshot.
 
+## Qualidade E Resiliencia Das Consultas Ao Postgres
+
+Decisoes tomadas numa revisao dedicada das consultas ao banco (detalhe completo em `CHANGELOG.md`):
+
+- **TLS sem verificacao de certificado, deliberadamente**: `db/client.ts` usa `ssl: { rejectUnauthorized: false }`. Ja tentamos `true` (verificacao real) e quebrou a conexao em producao — o pooler Supavisor da Supabase devolve um erro de `"self-signed certificate in certificate chain"` mesmo sendo uma conexao TLS legitima. A conexao continua criptografada, so sem checagem de identidade do servidor. Nao reverter essa configuracao sem antes pinar o CA correto da Supabase (`ssl.ca`) e testar contra o pooler de producao.
+- **Insercoes em lote, nao em loop**: escrita de multiplas linhas relacionadas (ex.: fontes de um benchmark salarial) usa um unico `INSERT ... VALUES (...), (...), ...` em vez de um `INSERT` por item.
+- **Concorrencia limitada na ingestao periodica**: `ingestionOrchestrator.ts` processa combinacoes SKU×regiao com um limite de chamadas simultaneas (`mapWithConcurrency`), nao sequencial puro nem paralelismo total (evita martelar as APIs externas de preco).
+- **Throttle de escrita por trafego de usuario**: `cloud_prices` e uma tabela historica insert-only; escritas disparadas por request de usuario (nao por ingestao agendada) sao throttladas por SKU/regiao para a tabela nao crescer proporcional ao trafego.
+- **Sem `SELECT *`**: leituras de catalogo usam colunas explicitas.
+- **Erros nunca ficam so em fallback silencioso**: todo `catch` que cai para fallback estatico tambem loga via `logger.error(...)` — que agora tambem vai para o Sentry quando configurado (ver "Observabilidade" abaixo).
+
 ## Fontes De Dados
 
 | Fonte | Implementacao atual | Estado |
@@ -182,8 +193,12 @@ Azure tambem continua com consulta ao vivo por requisicao a partir do proprio ap
 
 ## Observabilidade
 
-- **Servicos externos**: `/system-health` combina checagem ao vivo (BACEN, Azure) com a ultima linha de `ingestion_runs` por servico (AWS, GCP) — status, quantidade de registros atualizados, duracao e erro da ultima execucao.
-- **Consultas ao Postgres**: `server/src/infrastructure/db/client.ts` mede duracao e erro de cada consulta nomeada e acumula contadores em memoria (`observability/queryStats.ts`), expostos em `/system-health` (`database.queries`) e na tela "Fontes". Consultas acima de 500ms geram um log de aviso estruturado. Isso e observabilidade leve (contadores desde o start do processo + logs), nao uma APM completa — adequado ao estagio atual (instancia unica, free tier); os logs estruturados (JSON por linha) ficam disponiveis no log viewer do Render para investigacao mais profunda.
+- **Servicos externos**: `/system-health` combina checagem ao vivo (BACEN, Azure, PNCP) com a ultima linha de `ingestion_runs` por servico (AWS, GCP) — status, quantidade de registros atualizados, duracao e erro da ultima execucao.
+- **Consultas ao Postgres**: `server/src/infrastructure/db/client.ts` mede duracao e erro de cada consulta nomeada e acumula contadores em memoria (`observability/queryStats.ts`), expostos em `/system-health` (`database.queries`) e na tela "Fontes". Consultas acima de 500ms geram um log de aviso estruturado.
+- **Error tracking (Sentry)**: `observability/logger.ts` encaminha todo `logger.error(...)` para o Sentry quando `SENTRY_DSN` esta configurada (`observability/sentry.ts`) — no-op sem a variavel, entao nao ha dependencia dura do servico. Testado e confirmado em producao (ver `CHANGELOG.md`). Plano free (5.000 eventos/mes, 1 usuario).
+- **Uptime monitoring (UptimeRobot)**: monitor HTTP(s) externo (fora do repositorio) checando `GET /api/v1/healthz` a cada 5 minutos. Cuidado ao reconfigurar: a URL real de producao e `https://pivo-i8m3.onrender.com` (ver "URL De Producao" em `REQUISITOS-INFRA.md`), nao `pivo.onrender.com` (dominio de outra conta).
+- Isso e observabilidade leve (contadores desde o start do processo + logs + error tracking gratuito), nao uma APM completa — adequado ao estagio atual (instancia unica, free tier); os logs estruturados (JSON por linha) ficam disponiveis no log viewer do Render para investigacao mais profunda.
+- Setup detalhado (contas, DSN, URLs): [REQUISITOS-INFRA.md](REQUISITOS-INFRA.md#observabilidade-gratuita-sentry--uptimerobot).
 
 ## API Publica
 
@@ -217,7 +232,7 @@ O artefato principal e o `Dockerfile`. O `render.yaml` descreve um Web Service g
 - runtime Docker;
 - health check em `/api/v1/healthz`;
 - `NODE_ENV=production`;
-- variaveis secretas para Basic Auth e conector opcional.
+- variaveis secretas para login de teste (sessao) e conector opcional.
 
 Detalhes:
 
