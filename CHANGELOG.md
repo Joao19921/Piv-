@@ -2,6 +2,17 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-05 — Handler de erro global na API (lacuna real de observabilidade)
+
+Motivado por um bug relatado em produção (seção Licenças retornando "0 de 0 itens", sem nenhum rastro útil no console do navegador). Ao investigar, não foi possível confirmar a causa raiz porque **nada era logado no backend nem no Sentry** — o gap:
+
+- Uma exceção síncrona numa rota do Express virava a página HTML de erro padrão, sem passar pelo nosso `logger.error()` (e portanto sem chegar no Sentry).
+- Uma exceção numa rota `async` (a maioria das rotas do app) — sem `express-async-errors` — nem chega a virar um erro tratado: vira uma promise rejeitada solta, a requisição trava sem resposta, e nada é logado.
+
+Corrigido: `express-async-errors` (encaminha erros async pro middleware de erro, igual já acontecia com síncronos) + um handler de erro global em `server/index.ts` sob `/api/v1` que loga via `logger.error` (forwarding pro Sentry) e devolve JSON 500. Testado localmente com rotas de teste síncrona e assíncrona antes do commit — ambas confirmadas no log com stack trace completo.
+
+Não foi possível confirmar se esse handler teria capturado o incidente original do dia (o Network tab do navegador não chegou a ser inspecionado com sucesso durante o diagnóstico), mas fecha a lacuna para qualquer erro de rota daqui pra frente.
+
 ## 2026-09-05 — Preço ao vivo para Azure Storage/SQL/Load Balancer/Functions
 
 Usuário compartilhou dois scripts Python (`azure_pricing_export.py`, `gcp_pricing_export.py`) que exportam o catálogo de preços da Azure Retail Prices API e da GCP Cloud Billing Catalog API para Excel. Pedido: verificar se já estava implementado e, se válido, implementar.
