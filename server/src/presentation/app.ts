@@ -61,13 +61,6 @@ export function createApiRouter(): Router {
     res.json({ status: "ok" });
   });
 
-  // TEMPORARIO: verificacao manual do encaminhamento logger.error -> Sentry em producao.
-  // Remover apos a confirmacao (protegido pelo mesmo gate de sessao das demais rotas).
-  router.get("/_debug/sentry-test", (_req, res) => {
-    logger.error("Teste de verificacao Sentry em producao (remover apos confirmacao)", { origem: "verificacao-producao-claude" });
-    res.json({ ok: true, message: "Evento enviado via logger.error(); confira no Sentry." });
-  });
-
   // Login do ambiente de teste (substitui o popup nativo de Basic Auth por uma tela do produto).
   // Credencial unica compartilhada (TEST_ACCESS_USER/TEST_ACCESS_PASSWORD) — sem sistema de usuarios.
   router.get("/auth/session", (req, res) => {
