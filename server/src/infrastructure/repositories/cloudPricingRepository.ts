@@ -32,7 +32,12 @@ export interface CloudPriceRow {
 }
 
 export async function listSkus(): Promise<CloudSkuRow[]> {
-  return query<CloudSkuRow>("cloud_skus.list", `select * from cloud_skus order by provider, family, sku_name`);
+  return query<CloudSkuRow>(
+    "cloud_skus.list",
+    `select id, provider, family, sku_name, display_name, vcpu, memory_gib, os, pricing_model, azure_arm_sku_name, source_name, source_url, notes
+     from cloud_skus
+     order by provider, family, sku_name`,
+  );
 }
 
 export async function listRegions(): Promise<CloudRegionRow[]> {

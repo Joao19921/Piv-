@@ -1,6 +1,9 @@
+import { z } from "zod";
+
 const API_BASE = "/api/v1";
 
-export type SourceStatus = "OPERATIONAL" | "DEGRADED" | "FALLBACK_STALE" | "OFFLINE";
+const sourceStatusSchema = z.enum(["OPERATIONAL", "DEGRADED", "FALLBACK_STALE", "OFFLINE"]);
+export type SourceStatus = z.infer<typeof sourceStatusSchema>;
 
 export interface ApiSourceResult<T = unknown> {
   name: string;
@@ -11,36 +14,50 @@ export interface ApiSourceResult<T = unknown> {
   data: T | null;
 }
 
-export interface IngestionRun {
-  serviceName: string;
-  status: SourceStatus;
-  recordsUpserted: number;
-  durationMs: number;
-  errorMessage: string | null;
-  startedAt: string;
-  finishedAt: string;
+function apiSourceResultSchema<T extends z.ZodTypeAny>(dataSchema: T) {
+  return z.object({
+    name: z.string(),
+    status: sourceStatusSchema,
+    source: z.string(),
+    timestamp: z.string(),
+    warning: z.string().optional(),
+    data: dataSchema.nullable(),
+  });
 }
 
-export interface QueryStat {
-  name: string;
-  count: number;
-  errorCount: number;
-  avgMs: number;
-  maxMs: number;
-  lastRanAt: string;
-  lastError?: string;
-}
+const ingestionRunSchema = z.object({
+  serviceName: z.string(),
+  status: sourceStatusSchema,
+  recordsUpserted: z.number(),
+  durationMs: z.number(),
+  errorMessage: z.string().nullable(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+});
+export type IngestionRun = z.infer<typeof ingestionRunSchema>;
 
-export interface SystemHealthResponse {
-  sources: ApiSourceResult[];
-  ingestion: IngestionRun[];
-  database: { configured: boolean; queries: QueryStat[] };
-}
+const queryStatSchema = z.object({
+  name: z.string(),
+  count: z.number(),
+  errorCount: z.number(),
+  avgMs: z.number(),
+  maxMs: z.number(),
+  lastRanAt: z.string(),
+  lastError: z.string().optional(),
+});
+export type QueryStat = z.infer<typeof queryStatSchema>;
+
+const systemHealthResponseSchema = z.object({
+  sources: z.array(apiSourceResultSchema(z.unknown())),
+  ingestion: z.array(ingestionRunSchema),
+  database: z.object({ configured: z.boolean(), queries: z.array(queryStatSchema) }),
+});
+export type SystemHealthResponse = z.infer<typeof systemHealthResponseSchema>;
 
 export async function fetchSystemHealth(): Promise<SystemHealthResponse> {
   const res = await fetch(`${API_BASE}/system-health`);
   if (!res.ok) throw new Error("Falha ao consultar o estado das fontes.");
-  return res.json();
+  return systemHealthResponseSchema.parse(await res.json());
 }
 
 export interface CloudEstimateParams {
@@ -52,46 +69,55 @@ export interface CloudEstimateParams {
   storageGb?: number;
 }
 
-export interface CloudRegion {
-  key: string;
-  provider: "AWS" | "Azure" | "GCP";
-  label: string;
-  providerRegion: string;
-}
+const cloudRegionSchema = z.object({
+  key: z.string(),
+  provider: z.enum(["AWS", "Azure", "GCP"]),
+  label: z.string(),
+  providerRegion: z.string(),
+});
+export type CloudRegion = z.infer<typeof cloudRegionSchema>;
 
-export interface CloudSku {
-  id: string;
-  provider: "AWS" | "Azure" | "GCP";
-  family: "Burstable" | "General purpose" | "Compute optimized" | "Memory optimized";
-  skuName: string;
-  displayName: string;
-  vcpu: number;
-  memoryGiB: number;
-  os: "Linux";
-  pricingModel: "OnDemand";
-  sourceName: string;
-  sourceUrl: string;
-  notes: string;
-}
+const cloudSkuSchema = z.object({
+  id: z.string(),
+  provider: z.enum(["AWS", "Azure", "GCP"]),
+  family: z.enum(["Burstable", "General purpose", "Compute optimized", "Memory optimized"]),
+  skuName: z.string(),
+  displayName: z.string(),
+  vcpu: z.number(),
+  memoryGiB: z.number(),
+  os: z.literal("Linux"),
+  pricingModel: z.literal("OnDemand"),
+  azureArmSkuName: z.string().optional(),
+  sourceName: z.string(),
+  sourceUrl: z.string(),
+  notes: z.string(),
+});
+export type CloudSku = z.infer<typeof cloudSkuSchema>;
 
-export interface CloudCatalogResponse {
-  regions: CloudRegion[];
-  skus: CloudSku[];
-  source: ApiSourceResult<null>;
-}
+const cloudCatalogResponseSchema = z.object({
+  regions: z.array(cloudRegionSchema),
+  skus: z.array(cloudSkuSchema),
+  source: apiSourceResultSchema(z.null()),
+});
+export type CloudCatalogResponse = z.infer<typeof cloudCatalogResponseSchema>;
 
-export interface CloudEstimateResponse {
-  estimate: { computeUsd: number; storageUsd: number; monthlyUsd: number; monthlyBrl: number };
-  sku: CloudSku;
-  unitPrice: ApiSourceResult<{ pricePerHourUsd: number; skuName?: string; armRegion?: string; sourceUrl?: string }>;
-  fx: ApiSourceResult<{ rate: number; quotedAt: string }>;
-  storage: { volumeType: string; pricePerGbMonthUsd: number; status: SourceStatus; warning?: string } | null;
-}
+const cloudEstimateResponseSchema = z.object({
+  estimate: z.object({ computeUsd: z.number(), storageUsd: z.number(), monthlyUsd: z.number(), monthlyBrl: z.number() }),
+  sku: cloudSkuSchema,
+  unitPrice: apiSourceResultSchema(
+    z.object({ pricePerHourUsd: z.number(), skuName: z.string().optional(), armRegion: z.string().optional(), sourceUrl: z.string().optional() }),
+  ),
+  fx: apiSourceResultSchema(z.object({ rate: z.number(), quotedAt: z.string() })),
+  storage: z
+    .object({ volumeType: z.string(), pricePerGbMonthUsd: z.number(), status: sourceStatusSchema, warning: z.string().optional() })
+    .nullable(),
+});
+export type CloudEstimateResponse = z.infer<typeof cloudEstimateResponseSchema>;
 
 export async function fetchCloudCatalog(): Promise<CloudCatalogResponse> {
   const res = await fetch(`${API_BASE}/cloud/catalog`);
   if (!res.ok) throw new Error("Falha ao carregar catalogo de cloud.");
-  return res.json();
+  return cloudCatalogResponseSchema.parse(await res.json());
 }
 
 export async function fetchCloudEstimate(params: CloudEstimateParams): Promise<CloudEstimateResponse> {
@@ -105,31 +131,33 @@ export async function fetchCloudEstimate(params: CloudEstimateParams): Promise<C
   });
   const res = await fetch(`${API_BASE}/cloud/estimate?${qs.toString()}`);
   if (!res.ok) throw new Error("Falha ao estimar o custo de infraestrutura.");
-  return res.json();
+  return cloudEstimateResponseSchema.parse(await res.json());
 }
 
-export interface LaborProfile {
-  id: string;
-  title: string;
-  seniority: "Junior" | "Pleno" | "Senior" | "Especialista";
-  cbo: string;
-  employmentModel: "CLT" | "PJ";
-  monthlyCompensation: number;
-  factorK: number;
-  benchmarkSource: string;
-  sourceStatus: "FALLBACK_STALE";
-  updatedAt: string;
-}
+const laborProfileSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  seniority: z.enum(["Junior", "Pleno", "Senior", "Especialista"]),
+  cbo: z.string(),
+  employmentModel: z.enum(["CLT", "PJ"]),
+  monthlyCompensation: z.number(),
+  factorK: z.number(),
+  benchmarkSource: z.string(),
+  sourceStatus: z.literal("FALLBACK_STALE"),
+  updatedAt: z.string(),
+});
+export type LaborProfile = z.infer<typeof laborProfileSchema>;
 
-export interface LaborProfilesResponse {
-  profiles: LaborProfile[];
-  source: ApiSourceResult<null>;
-}
+const laborProfilesResponseSchema = z.object({
+  profiles: z.array(laborProfileSchema),
+  source: apiSourceResultSchema(z.null()),
+});
+export type LaborProfilesResponse = z.infer<typeof laborProfilesResponseSchema>;
 
 export async function fetchLaborProfiles(): Promise<LaborProfilesResponse> {
   const res = await fetch(`${API_BASE}/labor/profiles`);
   if (!res.ok) throw new Error("Falha ao carregar perfis de mao de obra.");
-  return res.json();
+  return laborProfilesResponseSchema.parse(await res.json());
 }
 
 export interface LaborEstimateParams {
@@ -139,13 +167,14 @@ export interface LaborEstimateParams {
   marginPct: number;
 }
 
-export interface LaborEstimateResponse {
-  monthlyCost: number;
-  hourlyCost: number;
-  suggestedRate: number;
-  billableHours: number;
-  profile?: LaborProfile;
-}
+const laborEstimateResponseSchema = z.object({
+  monthlyCost: z.number(),
+  hourlyCost: z.number(),
+  suggestedRate: z.number(),
+  billableHours: z.number(),
+  profile: laborProfileSchema.optional(),
+});
+export type LaborEstimateResponse = z.infer<typeof laborEstimateResponseSchema>;
 
 export async function fetchLaborEstimate(params: LaborEstimateParams): Promise<LaborEstimateResponse> {
   const res = await fetch(`${API_BASE}/labor/estimate`, {
@@ -154,40 +183,41 @@ export async function fetchLaborEstimate(params: LaborEstimateParams): Promise<L
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error("Falha ao calcular taxa de mao de obra.");
-  return res.json();
+  return laborEstimateResponseSchema.parse(await res.json());
 }
 
-export interface MarketBenchmarkSalarySource {
-  employmentModel: "CLT" | "PJ";
-  profileId: string;
-  profileTitle: string;
-  seniority: LaborProfile["seniority"];
-  monthlyCompensation: number;
-  factorK: number;
-  observation: string;
-}
+const marketBenchmarkSalarySourceSchema = z.object({
+  employmentModel: z.enum(["CLT", "PJ"]),
+  profileId: z.string(),
+  profileTitle: z.string(),
+  seniority: laborProfileSchema.shape.seniority,
+  monthlyCompensation: z.number(),
+  factorK: z.number(),
+  observation: z.string(),
+});
+export type MarketBenchmarkSalarySource = z.infer<typeof marketBenchmarkSalarySourceSchema>;
 
-export interface MarketBenchmarkResult {
-  roleSearched: string;
-  state: string;
-  city: string;
-  notes?: string;
-  sources: MarketBenchmarkSalarySource[];
-  suggestedMonthlyCompensation: number;
-  sourceMode: "LIVE_CONNECTOR" | "STATIC_SNAPSHOT";
-  summary: string;
-  generatedAt: string;
-}
+const marketBenchmarkResultSchema = z.object({
+  roleSearched: z.string(),
+  state: z.string(),
+  city: z.string(),
+  notes: z.string().optional(),
+  sources: z.array(marketBenchmarkSalarySourceSchema),
+  suggestedMonthlyCompensation: z.number(),
+  sourceMode: z.enum(["LIVE_CONNECTOR", "STATIC_SNAPSHOT"]),
+  summary: z.string(),
+  generatedAt: z.string(),
+});
+export type MarketBenchmarkResult = z.infer<typeof marketBenchmarkResultSchema>;
 
-export interface MarketBenchmarkResponse extends ApiSourceResult<MarketBenchmarkResult> {}
+const marketBenchmarkResponseSchema = apiSourceResultSchema(marketBenchmarkResultSchema);
+export type MarketBenchmarkResponse = z.infer<typeof marketBenchmarkResponseSchema>;
 
-export interface MarketBenchmarkHistoryEntry extends MarketBenchmarkResult {
-  id: string;
-}
+const marketBenchmarkHistoryEntrySchema = marketBenchmarkResultSchema.extend({ id: z.string() });
+export type MarketBenchmarkHistoryEntry = z.infer<typeof marketBenchmarkHistoryEntrySchema>;
 
-export interface MarketBenchmarkHistoryResponse {
-  entries: MarketBenchmarkHistoryEntry[];
-}
+const marketBenchmarkHistoryResponseSchema = z.object({ entries: z.array(marketBenchmarkHistoryEntrySchema) });
+export type MarketBenchmarkHistoryResponse = z.infer<typeof marketBenchmarkHistoryResponseSchema>;
 
 export async function searchMarketBenchmark(params: { role: string; state: string; city: string; notes?: string }): Promise<MarketBenchmarkResponse> {
   const res = await fetch(`${API_BASE}/market-benchmark/search`, {
@@ -196,39 +226,41 @@ export async function searchMarketBenchmark(params: { role: string; state: strin
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error("Falha ao buscar benchmark de mercado.");
-  return res.json();
+  return marketBenchmarkResponseSchema.parse(await res.json());
 }
 
 export async function fetchMarketBenchmarkHistory(): Promise<MarketBenchmarkHistoryResponse> {
   const res = await fetch(`${API_BASE}/market-benchmark/history`);
   if (!res.ok) throw new Error("Falha ao carregar historico de benchmark.");
-  return res.json();
+  return marketBenchmarkHistoryResponseSchema.parse(await res.json());
 }
 
-export interface LicenseCatalogItem {
-  id: string;
-  vendor: string;
-  product: string;
-  plan: string;
-  billingMetric: string;
-  unitPriceUsd: number;
-  minimumSeats: number;
-  category: "DevOps" | "Produtividade" | "Observabilidade" | "Seguranca" | "Dados" | "Colaboracao" | "ITSM";
-  billingCycle?: "monthly" | "annual-paid-monthly";
-  sourceUrl?: string;
-  source: string;
-  sourceStatus: "FALLBACK_STALE";
-  notes?: string;
-  updatedAt: string;
-}
+const licenseCatalogItemSchema = z.object({
+  id: z.string(),
+  vendor: z.string(),
+  product: z.string(),
+  plan: z.string(),
+  billingMetric: z.string(),
+  unitPriceUsd: z.number(),
+  minimumSeats: z.number(),
+  category: z.enum(["DevOps", "Produtividade", "Observabilidade", "Seguranca", "Dados", "Colaboracao", "ITSM"]),
+  billingCycle: z.enum(["monthly", "annual-paid-monthly"]).optional(),
+  sourceUrl: z.string().optional(),
+  source: z.string(),
+  sourceStatus: z.literal("FALLBACK_STALE"),
+  notes: z.string().optional(),
+  updatedAt: z.string(),
+});
+export type LicenseCatalogItem = z.infer<typeof licenseCatalogItemSchema>;
 
-export interface LicenseCatalogResponse {
-  items: LicenseCatalogItem[];
-  source: ApiSourceResult<null>;
-}
+const licenseCatalogResponseSchema = z.object({
+  items: z.array(licenseCatalogItemSchema),
+  source: apiSourceResultSchema(z.null()),
+});
+export type LicenseCatalogResponse = z.infer<typeof licenseCatalogResponseSchema>;
 
 export async function fetchLicenseCatalog(): Promise<LicenseCatalogResponse> {
   const res = await fetch(`${API_BASE}/licenses/catalog`);
   if (!res.ok) throw new Error("Falha ao carregar catalogo de licencas.");
-  return res.json();
+  return licenseCatalogResponseSchema.parse(await res.json());
 }

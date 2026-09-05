@@ -33,12 +33,20 @@ export async function insertBenchmarkSearch(result: MarketBenchmarkResult): Prom
     [result.roleSearched, result.state, result.city, result.notes ?? null, result.suggestedMonthlyCompensation, result.sourceMode, result.summary, result.generatedAt],
   );
 
-  for (const source of result.sources) {
+  if (result.sources.length) {
+    const valuePlaceholders: string[] = [];
+    const params: unknown[] = [];
+    result.sources.forEach((source, i) => {
+      const base = i * 8;
+      valuePlaceholders.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`);
+      params.push(row.id, source.employmentModel, source.profileId, source.profileTitle, source.seniority, source.monthlyCompensation, source.factorK, source.observation);
+    });
+
     await query(
-      "market_benchmark_sources.insert",
+      "market_benchmark_sources.insert_batch",
       `insert into market_benchmark_sources (search_id, employment_model, profile_id, profile_title, seniority, monthly_compensation, factor_k, observation)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [row.id, source.employmentModel, source.profileId, source.profileTitle, source.seniority, source.monthlyCompensation, source.factorK, source.observation],
+       values ${valuePlaceholders.join(", ")}`,
+      params,
     );
   }
 

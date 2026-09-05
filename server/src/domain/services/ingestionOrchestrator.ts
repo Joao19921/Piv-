@@ -33,6 +33,21 @@ function worstStatus(a: IngestionStatus, b: IngestionStatus): IngestionStatus {
   return rank[b] > rank[a] ? b : a;
 }
 
+const INGESTION_CONCURRENCY = 4;
+
+/** Processa `items` com no maximo `limit` chamadas de `fn` em voo simultaneamente (evita martelar as APIs externas de preco). */
+async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < items.length) {
+      const item = items[cursor];
+      cursor += 1;
+      await fn(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
 async function ingestSkuPrice(sku: CloudSkuRow, region: CloudRegionRow, summary: ProviderRunSummary): Promise<void> {
   let result: ResilienceResult<{ pricePerHourUsd: number }>;
 
@@ -60,17 +75,16 @@ async function runProviderIngestion(provider: "AWS" | "Azure" | "GCP", skus: Clo
 
   const providerSkus = skus.filter((sku) => sku.provider === provider);
   const providerRegions = regions.filter((region) => region.provider === provider);
+  const pairs = providerSkus.flatMap((sku) => providerRegions.map((region) => ({ sku, region })));
 
-  for (const sku of providerSkus) {
-    for (const region of providerRegions) {
-      try {
-        await ingestSkuPrice(sku, region, summary);
-      } catch (err) {
-        summary.status = "OFFLINE";
-        summary.errorMessages.push(`${sku.id}/${region.region_key}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+  await mapWithConcurrency(pairs, INGESTION_CONCURRENCY, async ({ sku, region }) => {
+    try {
+      await ingestSkuPrice(sku, region, summary);
+    } catch (err) {
+      summary.status = "OFFLINE";
+      summary.errorMessages.push(`${sku.id}/${region.region_key}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  });
 
   const durationMs = Date.now() - startedAt.getTime();
   await recordIngestionRun({
@@ -90,7 +104,7 @@ async function runAwsStorageIngestion(regions: CloudRegionRow[]): Promise<void> 
   const summary: ProviderRunSummary = { serviceName, status: "OPERATIONAL", recordsUpserted: 0, errorMessages: [] };
 
   const awsRegions = regions.filter((region) => region.provider === "AWS");
-  for (const region of awsRegions) {
+  await mapWithConcurrency(awsRegions, INGESTION_CONCURRENCY, async (region) => {
     try {
       const result = await getAwsEbsPrice(region.provider_region);
       summary.status = worstStatus(summary.status, result.status);
@@ -109,7 +123,7 @@ async function runAwsStorageIngestion(regions: CloudRegionRow[]): Promise<void> 
       summary.status = "OFFLINE";
       summary.errorMessages.push(`ebs-gp3/${region.region_key}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  });
 
   const durationMs = Date.now() - startedAt.getTime();
   await recordIngestionRun({

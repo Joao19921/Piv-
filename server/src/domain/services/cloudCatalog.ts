@@ -33,6 +33,7 @@ export interface CloudPricePoint {
   regionKey: string;
   pricePerHourUsd: number;
   sourceStatus: "OPERATIONAL" | "DEGRADED" | "FALLBACK_STALE" | "OFFLINE";
+  capturedAt?: string;
 }
 
 /**
@@ -97,7 +98,7 @@ export interface CloudCatalog {
 }
 
 function toCloudPricePoint(row: CloudPriceRow): CloudPricePoint {
-  return { skuId: row.sku_id, regionKey: row.region_key, pricePerHourUsd: Number(row.price_per_hour_usd), sourceStatus: row.source_status };
+  return { skuId: row.sku_id, regionKey: row.region_key, pricePerHourUsd: Number(row.price_per_hour_usd), sourceStatus: row.source_status, capturedAt: row.captured_at };
 }
 
 let cachedCatalog: { catalog: CloudCatalog; expiresAt: number } | null = null;

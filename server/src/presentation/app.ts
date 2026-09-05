@@ -15,6 +15,9 @@ import { logger } from "../infrastructure/observability/logger";
 import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
 
+/** Evita reinserir o preco Azure a cada request de estimativa: so grava se o ultimo preco conhecido tiver mais de 1h. */
+const PRICE_REFRESH_THROTTLE_MS = 60 * 60 * 1000;
+
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
   return {
     name,
@@ -105,7 +108,12 @@ export function createApiRouter(): Router {
     const [ptax, azure, ingestionRuns] = await Promise.all([
       getPtax(),
       getAzureUnitPrice("us-east-1"),
-      isDatabaseConfigured ? getLatestIngestionRuns().catch(() => ({}) as Record<string, IngestionRun>) : Promise.resolve({} as Record<string, IngestionRun>),
+      isDatabaseConfigured
+        ? getLatestIngestionRuns().catch((err) => {
+            logger.error("Falha ao ler ingestion_runs do Postgres", { error: err instanceof Error ? err.message : String(err) });
+            return {} as Record<string, IngestionRun>;
+          })
+        : Promise.resolve({} as Record<string, IngestionRun>),
     ]);
 
     const sources = [
@@ -219,7 +227,9 @@ export function createApiRouter(): Router {
     const estimate = computeCloudEstimate({ unitPriceUsd, fxRate, instances, hours, storageGb, storagePricePerGbMonthUsd });
 
     // Azure e ao vivo por requisicao: aproveita para manter o Postgres fresco entre as janelas da Lambda.
-    if (isDatabaseConfigured && provider === "Azure" && unitPriceResult.status === "OPERATIONAL") {
+    // Throttlado por sku/regiao (1h) para o historico insert-only de cloud_prices nao crescer proporcional ao trafego de usuarios.
+    const knownPriceAgeMs = knownPrice?.capturedAt ? Date.now() - new Date(knownPrice.capturedAt).getTime() : Infinity;
+    if (isDatabaseConfigured && provider === "Azure" && unitPriceResult.status === "OPERATIONAL" && knownPriceAgeMs > PRICE_REFRESH_THROTTLE_MS) {
       insertPrice({ skuId: sku.id, regionKey: region, pricePerHourUsd: unitPriceUsd, sourceStatus: "OPERATIONAL" }).catch((err) =>
         logger.error("Falha ao gravar preco ao vivo no Postgres", { error: err instanceof Error ? err.message : String(err) }),
       );
