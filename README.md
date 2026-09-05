@@ -10,7 +10,7 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | :--- | :--- | :--- |
 | Dashboard de fontes | Implementado | Mostra saude, latencia e degradacao das fontes. |
 | Mao de obra | Implementado | Perfis profissionais, Fator K, CLT/PJ e filtro por UF/cidade no benchmark. |
-| Infra cloud | Implementado | Catalogo por provider, regiao, familia e SKU; Azure ao vivo, AWS/GCP por snapshot oficial. Unica coisa que o produto persiste com nome: arquiteturas de cloud salvas (`cloud_architectures`). |
+| Infra cloud | Implementado | Cloud Architecture Calculator: monta arquiteturas com N servicos (Compute/Storage/Database/Networking/Containers/Serverless/CDN) por AWS/Azure/GCP, com diagrama visual, resumo de custo e CRUD completo (criar/editar/duplicar/excluir). Unica coisa que o produto persiste com nome. Compute tem preco ao vivo/ingestao; os demais sao catalogo estimado com fonte explicita. |
 | Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais e calculo por assentos. |
 | Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
 | PNCP | Implementado (checagem de saude) | API de consulta publica ao vivo, sem chave; aparece em `/system-health`. Ainda nao busca preco de referencia por item. |
@@ -105,7 +105,7 @@ Os fluxos de uso e operacao estao documentados em [docs/FLUXOS.md](docs/FLUXOS.m
 - validacao de saude das fontes;
 - benchmark de mao de obra por cargo, UF e cidade;
 - calculo de taxa-hora com perfil profissional;
-- estimativa de infra cloud por provider/regiao/SKU;
+- montagem de arquitetura de cloud multi-servico (Cloud Architecture Calculator), com diagrama visual e custo mensal/anual;
 - composicao de licencas por fornecedor e numero de assentos;
 - publicacao de ambiente de teste.
 
@@ -118,8 +118,14 @@ Todas as rotas ficam sob `/api/v1`.
 | `GET` | `/healthz` | Health check leve para orquestradores. |
 | `GET` | `/system-health` | Estado agregado das fontes de dados. |
 | `GET` | `/fx/ptax` | Cambio PTAX via BACEN com resiliencia. |
-| `GET` | `/cloud/catalog` | Regioes e SKUs disponiveis por provider. |
-| `GET` | `/cloud/estimate` | Estimativa mensal de cloud. |
+| `GET` | `/cloud/services` | Catalogo pesquisavel de servicos cloud (busca + filtro). |
+| `POST` | `/cloud/services/:serviceId/price` | Calcula o preco de 1 servico. |
+| `POST` | `/cloud/architectures` | Cria uma arquitetura (N servicos). |
+| `GET` | `/cloud/architectures` | Lista arquiteturas salvas. |
+| `GET` | `/cloud/architectures/:id` | Detalhe de uma arquitetura. |
+| `PUT` | `/cloud/architectures/:id` | Atualiza uma arquitetura. |
+| `DELETE` | `/cloud/architectures/:id` | Exclui uma arquitetura. |
+| `POST` | `/cloud/architectures/:id/duplicate` | Duplica uma arquitetura. |
 | `GET` | `/labor/profiles` | Perfis profissionais de mao de obra. |
 | `POST` | `/labor/estimate` | Calculo de custo/hora e taxa-hora sugerida. |
 | `POST` | `/market-benchmark/search` | Benchmark salarial por cargo, UF e cidade. |
@@ -165,6 +171,7 @@ docker run --rm -p 3000:3000 \
 4. ~~Persistir simulacoes/propostas em Postgres~~ — decisao de produto: nao havera modulo de propostas; a unica persistencia por nome e a arquitetura de cloud salva (ja implementado).
 5. Implementar MCP server para consumo por assistentes.
 6. Criar pipeline CI/CD quando o token GitHub tiver escopo `workflow`.
+7. Trocar o preco de catalogo (estimado) dos servicos alem de compute (RDS, S3, Lambda, EKS, Load Balancer, CDN, etc. — ver `cloudServiceCatalog.ts`) por ingestao real via API de precos de cada provider (AWS Price List API ja e usada para EC2; os mesmos endpoints cobrem RDS/S3/etc. com outro `ServiceCode`).
 
 ## Licenca
 

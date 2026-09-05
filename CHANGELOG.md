@@ -2,6 +2,38 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-05 — Infra Cloud vira um Cloud Architecture Calculator completo
+
+Pedido explícito do produto (spec detalhada, inspirada no AWS/Azure Pricing Calculator): transformar "Infra Cloud" de uma cesta de 1 SKU numa ferramenta real de montar/calcular/salvar arquiteturas com múltiplos serviços.
+
+### Auditoria (antes de qualquer mudança de código)
+
+Levantamento pedido explicitamente pelo produto: mapeamento de rotas, páginas, hooks, banco, código morto. Achados: nenhuma rota de proposta/CRM jamais existiu no backend (era decoração de frontend, já removida em 2026-09-04); catálogo de cloud era só compute (sem RDS/S3/Lambda/etc.); `cloud_architectures` guardava 1 SKU por linha; sem testes (`vitest` never configurado); dois componentes órfãos nunca importados por nada (`Map.tsx`, `ManusDialog.tsx`, sobras do scaffold original) — removidos junto desta mudança.
+
+### Decisões de escopo (perguntadas ao usuário antes de implementar)
+
+- Mão de obra e Licenças **continuam** como módulos separados (o pedido mirava especificamente Infra Cloud, não o produto inteiro).
+- GCP **continua** como 3º provider — já tinha preço ao vivo real via Cloud Billing API; removê-lo seria regressão.
+- Catálogo de serviços: **completo** já nesta entrega (Compute, Storage, Database, Networking, Containers, Serverless, CDN × AWS/Azure/GCP — 21 entradas).
+- Diagrama visual da arquitetura: **incluído** já nesta entrega.
+
+### Backend
+
+- `cloudServiceCatalog.ts`: catálogo pesquisável de 21 serviços. Compute (EC2/Azure VM/GCE) reaproveita o preço ao vivo já existente; os demais (RDS, S3, Lambda, VPC→Load Balancer, EKS, CloudFront, etc.) são catálogo estático com preço de referência pública, **sempre** com `source`/`estimated`/`sourceUrl` explícitos — nunca apresentados como preço oficial ao vivo.
+- `pricingEngine.ts`: motor de cálculo único, separado da UI e das rotas (`calculateServicePrice(serviceId, region, config)`).
+- Migration `0005`: `cloud_architectures` deixa de ter 1 SKU e vira 1-N com `architecture_services` (serviço + config jsonb + preço, um por linha).
+- `withTransaction()` novo em `db/client.ts`: criar/editar uma arquitetura agora é atômico (nunca fica com serviços parciais se algo falhar no meio).
+- Rotas: `GET /cloud/services`, `POST /cloud/services/:id/price`, e CRUD completo de `/cloud/architectures` (criar, listar, detalhar, editar, excluir, duplicar). Substituem `/cloud/catalog` e `/cloud/estimate` (aposentadas).
+
+### Frontend
+
+- `client/src/pages/cloud/CloudArchitect.tsx`: tela nova com lista de arquiteturas (estado vazio real, sem métrica fictícia) e um builder em 3 painéis — catálogo pesquisável | serviços adicionados + diagrama visual por camada (Edge/Rede → Aplicação → Dados, sem inventar conexão ponto-a-ponto) | resumo de custo por categoria com toggle BRL/USD.
+- Modal de configuração por serviço com campos dinâmicos e preço recalculado ao vivo (debounced) a cada mudança.
+
+### Validação
+
+Rodado com Playwright (headless Chromium) contra o app real (Vite dev + backend + Postgres de produção): busca de serviço → configuração → preço ao vivo aparecendo no modal → adicionar → nomear → salvar → aparece na lista. Zero erros de console relacionados à feature (os 3 erros 500 encontrados eram as imagens decorativas do dashboard, que já falhavam antes desta mudança por falta de config do proxy de storage em dev local — não relacionado). Build de produção (vite + esbuild) e `tsc --noEmit` limpos. Registro de teste removido do banco após validação.
+
 ## 2026-09-05 — Remove UI não-funcional; "salvar" vira uma feature real (arquiteturas de cloud)
 
 Pedido explícito do produto: o site tinha vários elementos que pareciam funcionais mas não eram — sobras da primeira versão (protótipo visual) que nunca foram plugadas a nada real.

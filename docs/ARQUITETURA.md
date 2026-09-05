@@ -40,6 +40,7 @@ Em producao existe um unico processo Express:
 
 ```text
 client/src/pages/Home.tsx
+client/src/pages/cloud/CloudArchitect.tsx  # Cloud Architecture Calculator (builder multi-servico)
 client/src/hooks/*
 client/src/lib/api.ts
 client/src/components/ui/*
@@ -75,16 +76,17 @@ Responsabilidades:
 
 - calcular taxa-hora de mao de obra;
 - aplicar Fator K, margem e horas faturaveis;
-- manter catalogos de perfis, licencas, regioes e SKUs;
-- calcular custo mensal de cloud;
+- manter catalogos de perfis, licencas, regioes, SKUs de compute e servicos cloud (Storage/Database/Networking/Containers/Serverless/CDN);
+- calcular custo mensal de cada servico cloud (Pricing Engine, separado da UI e das rotas);
 - estimar benchmark salarial por cargo, UF e cidade.
 
 Arquivos principais:
 
 - `laborPricing.ts`: custo mensal, custo/hora e taxa sugerida.
 - `marketBenchmark.ts`: benchmark por cargo/regiao com historico.
-- `cloudPricing.ts`: composicao de custo cloud em BRL/USD.
-- `cloudCatalog.ts`: providers, regioes e SKUs.
+- `cloudCatalog.ts`: providers, regioes e SKUs de compute (fonte de verdade para EC2/Azure VM/GCE, com preco ao vivo/ingestao).
+- `cloudServiceCatalog.ts`: catalogo pesquisavel de servicos cloud alem de compute (Storage/Database/Networking/Containers/Serverless/CDN) — 21 entradas (AWS/Azure/GCP), cada uma com campos de configuracao (`configFields`) e uma formula pura de preco. Compute nao tem formula aqui (delega para `pricingEngine.ts` -> `cloudCatalog.ts`); os demais sao preco de catalogo (referencia publica, nao API ao vivo), sempre com `pricingInfo.estimated`/`sourceUrl` explicitos.
+- `pricingEngine.ts`: unico ponto que calcula preco de um servico (`calculateServicePrice(serviceId, region, config)`). Para Compute, delega ao pipeline ao vivo existente (`cloudCatalog.ts` + coletores); para os demais, aplica a formula do catalogo. Nao broadcasta ao vivo/estimado sem etiqueta — todo `ServicePricing` carrega `source`/`estimated`/`lastUpdated`/`sourceUrl`.
 - `catalogs.ts`: perfis profissionais e licencas SaaS.
 
 ### Infrastructure
@@ -108,8 +110,8 @@ Arquivos principais:
 - `collectors/staticFallbacks.ts`: valores estaticos para operacao degradada (ultimo nivel de fallback).
 - `resilience/resilienceManager.ts`: politica de resiliencia (circuit breaker, retry, cache, fallback).
 - `cache/fileCache.ts`: cache JSON em `data/cache` (fallback de nivel 3 quando o Postgres nao esta configurado).
-- `db/client.ts`: pool `pg` para o Postgres (Supabase), com observabilidade de consultas (duracao, erros) via `observability/queryStats.ts`.
-- `repositories/`: `cloudPricingRepository`, `fxRepository`, `marketBenchmarkRepository`, `ingestionRunsRepository` — leitura/escrita das tabelas descritas em "Banco De Dados" abaixo.
+- `db/client.ts`: pool `pg` para o Postgres (Supabase), com observabilidade de consultas (duracao, erros) via `observability/queryStats.ts`. Exporta `withTransaction()` para operacoes que gravam mais de uma tabela atomicamente (BEGIN/COMMIT/ROLLBACK numa unica conexao).
+- `repositories/`: `cloudPricingRepository`, `cloudArchitectureRepository` (arquiteturas + servicos, com `insertArchitecture`/`updateArchitecture` transacionais), `storagePricingRepository`, `fxRepository`, `marketBenchmarkRepository`, `ingestionRunsRepository` — leitura/escrita das tabelas descritas em "Banco De Dados" abaixo.
 - `observability/logger.ts` e `observability/queryStats.ts`: logging estruturado (JSON por linha, capturado pelo log viewer do Render) e contadores em memoria por consulta.
 
 ## Padrao De Resiliencia
@@ -178,7 +180,7 @@ Tabelas (`server/db/migrations/`):
 - `market_benchmark_searches` / `market_benchmark_sources` (`0001`): historico de buscas de benchmark salarial (substitui o cache em arquivo `data/cache/market-benchmark-history`).
 - `ingestion_runs` (`0001`): uma linha por execucao de coletor/ingestao (servico, status, registros atualizados, duracao, erro) — base do painel de observabilidade em `/system-health` e na tela "Fontes".
 - `storage_prices` (`0003`): historico de preco de armazenamento (EBS gp3), mesmo padrao insert-only de `cloud_prices`.
-- `cloud_architectures` (`0004`): unica coisa que o usuario salva com nome — snapshot dos parametros de uma estimativa de infra cloud (provider, regiao, SKU, instancias, horas, storage, preco/hora, PTAX e o custo mensal calculado no momento do save). Sem versionamento/edicao: cada save cria uma linha nova.
+- `cloud_architectures` + `architecture_services` (`0004`, recriada em `0005`): unica coisa que o usuario persiste com nome — uma arquitetura de infra cloud como composicao de N servicos (Cloud Architecture Calculator). `cloud_architectures` guarda nome, provider/regiao "primarios" (do primeiro servico), moeda e os totais agregados; `architecture_services` guarda 1 linha por servico (service_id, categoria, regiao, `configuration` jsonb, preco calculado no momento do save). Insert/update sao transacionais (`withTransaction`) — nunca fica uma arquitetura com servicos parciais. Editar/duplicar recalculam ou copiam o preco; nao ha versionamento historico (update sobrescreve).
 
 ## Ingestao Periodica (Lambda + EventBridge)
 
@@ -191,7 +193,7 @@ Empacotamento: `pnpm run build:lambda` gera um bundle CJS unico (`dist-lambda/in
 
 Para cada SKU/regiao do catalogo, a ingestao consulta o coletor real (Azure/AWS/GCP) e grava o preco em `cloud_prices`; tambem atualiza `fx_rates`. Cada fonte grava um resumo em `ingestion_runs`.
 
-Azure tambem continua com consulta ao vivo por requisicao a partir do proprio app web (nao depende da Lambda). AWS e GCP **nao** sao consultados ao vivo pelo app web — `/cloud/estimate` so le o ultimo preco gravado em `cloud_prices` (ou o snapshot estatico, se ainda nao houver ingestao para aquele SKU/regiao). Isso evita expor credencial AWS/GCP no servico web e evita o custo/latencia de uma chamada cara (o coletor GCP pagina milhares de SKUs) por requisicao. Toda chamada Azure ao vivo bem-sucedida tambem grava uma linha em `cloud_prices`, mantendo o Postgres fresco entre as janelas da Lambda.
+Azure tambem continua com consulta ao vivo por requisicao a partir do proprio app web (nao depende da Lambda). AWS e GCP **nao** sao consultados ao vivo pelo app web — o servico "Compute" do pricing engine (`POST /cloud/services/:id/price`) so le o ultimo preco gravado em `cloud_prices` (ou o snapshot estatico, se ainda nao houver ingestao para aquele SKU/regiao). Isso evita expor credencial AWS/GCP no servico web e evita o custo/latencia de uma chamada cara (o coletor GCP pagina milhares de SKUs) por requisicao. Toda chamada Azure ao vivo bem-sucedida tambem grava uma linha em `cloud_prices`, mantendo o Postgres fresco entre as janelas da Lambda.
 
 ## Observabilidade
 
@@ -209,8 +211,14 @@ Todas as rotas ficam sob `/api/v1`:
 - `GET /healthz`
 - `GET /system-health`
 - `GET /fx/ptax`
-- `GET /cloud/catalog`
-- `GET /cloud/estimate`
+- `GET /cloud/services` — catalogo pesquisavel de servicos (busca + filtro por provider/categoria).
+- `POST /cloud/services/:serviceId/price` — calcula o preco de 1 servico (Pricing Engine).
+- `POST /cloud/architectures` — cria uma arquitetura (recalcula o preco de cada servico no momento do save).
+- `GET /cloud/architectures` — lista resumida (nome, provider, regiao, moeda, totais, qtd. de servicos).
+- `GET /cloud/architectures/:id` — detalhe completo (com os servicos).
+- `PUT /cloud/architectures/:id` — atualiza (renomear/adicionar/remover servicos), recalcula os precos.
+- `DELETE /cloud/architectures/:id`
+- `POST /cloud/architectures/:id/duplicate` — copia o snapshot ja salvo, sem recalcular preco.
 - `GET /labor/profiles`
 - `POST /labor/estimate`
 - `POST /market-benchmark/search`

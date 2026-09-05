@@ -60,21 +60,19 @@ Entradas principais:
 - `marginPct`
 - `profileId`
 
-## 4. Infra Cloud
+## 4. Infra Cloud (Cloud Architecture Calculator)
 
-Objetivo: estimar custo mensal de compute por provedor, regiao e SKU.
+Objetivo: montar uma arquitetura com N servicos cloud (Compute, Storage, Database, Networking, Containers, Serverless, CDN), estimar o custo mensal/anual e salvar com nome.
 
-Fluxo:
+Fluxo (criar uma arquitetura):
 
-1. Usuario entra em `Infra cloud`.
-2. Seleciona provider (`AWS`, `Azure`, `GCP`).
-3. Seleciona familia, SKU, regiao, quantidade de instancias e horas/mes.
-4. Frontend chama `GET /api/v1/cloud/catalog` para montar as opcoes.
-5. Frontend chama `GET /api/v1/cloud/estimate` para calcular.
-6. Backend busca PTAX no BACEN e preco unitario:
-   - Azure: consulta Azure Retail Prices API ao vivo.
-   - AWS/GCP: usa snapshot oficial local.
-7. Resposta mostra custo em USD, custo em BRL, PTAX aplicada, fonte e status.
+1. Usuario entra em `Infra cloud` -> lista de arquiteturas salvas (ou estado vazio) -> `Nova arquitetura`.
+2. Frontend chama `GET /api/v1/cloud/services` (com busca/filtro por provider/categoria) para montar o catalogo pesquisavel.
+3. Usuario escolhe um servico (ex: RDS); o modal de configuracao mostra os campos especificos desse servico (`configFields`) e a regiao.
+4. A cada mudanca de configuracao, o frontend chama `POST /api/v1/cloud/services/:serviceId/price` (debounced) para recalcular o preco ao vivo — Compute usa o preco real (ingestao/Azure Retail API); os demais usam a formula do catalogo, sempre com a fonte explicita.
+5. Usuario adiciona o servico a arquitetura (repete para quantos servicos quiser); a visualizacao (diagrama por camada) e o resumo de custo (por categoria, mensal, anual) atualizam a cada adicao/remocao.
+6. Usuario da um nome e clica em salvar: `POST /api/v1/cloud/architectures` (ou `PUT .../:id` se estiver editando) recalcula o preco de cada servico no servidor e persiste tudo numa transacao.
+7. Arquitetura volta a aparecer na lista, com opcoes de abrir, duplicar (`POST .../:id/duplicate`) ou excluir (`DELETE .../:id`).
 
 ## 5. Licencas
 
