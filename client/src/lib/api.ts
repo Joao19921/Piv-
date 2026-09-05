@@ -60,78 +60,95 @@ export async function fetchSystemHealth(): Promise<SystemHealthResponse> {
   return systemHealthResponseSchema.parse(await res.json());
 }
 
-export interface CloudEstimateParams {
-  provider: string;
-  region: string;
-  skuId: string;
-  instances: number;
-  hours: number;
-  storageGb?: number;
-}
+export const cloudProviderSchema = z.enum(["AWS", "Azure", "GCP"]);
+export type CloudProvider = z.infer<typeof cloudProviderSchema>;
+
+export const serviceCategorySchema = z.enum(["Compute", "Storage", "Database", "Networking", "Containers", "Serverless", "CDN"]);
+export type ServiceCategory = z.infer<typeof serviceCategorySchema>;
 
 const cloudRegionSchema = z.object({
   key: z.string(),
-  provider: z.enum(["AWS", "Azure", "GCP"]),
+  provider: cloudProviderSchema,
   label: z.string(),
   providerRegion: z.string(),
 });
 export type CloudRegion = z.infer<typeof cloudRegionSchema>;
 
-const cloudSkuSchema = z.object({
-  id: z.string(),
-  provider: z.enum(["AWS", "Azure", "GCP"]),
-  family: z.enum(["Burstable", "General purpose", "Compute optimized", "Memory optimized"]),
-  skuName: z.string(),
-  displayName: z.string(),
-  vcpu: z.number(),
-  memoryGiB: z.number(),
-  os: z.literal("Linux"),
-  pricingModel: z.literal("OnDemand"),
-  azureArmSkuName: z.string().optional(),
-  sourceName: z.string(),
+const configFieldOptionSchema = z.object({ value: z.string(), label: z.string() });
+const configFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  type: z.enum(["select", "number", "toggle"]),
+  unit: z.string().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  default: z.union([z.string(), z.number(), z.boolean()]),
+  options: z.array(configFieldOptionSchema).optional(),
+});
+export type CloudServiceConfigField = z.infer<typeof configFieldSchema>;
+
+const pricingSourceInfoSchema = z.object({
+  source: z.enum(["catalog", "live_api"]),
+  estimated: z.boolean(),
+  lastUpdated: z.string(),
   sourceUrl: z.string(),
-  notes: z.string(),
+  note: z.string().optional(),
 });
-export type CloudSku = z.infer<typeof cloudSkuSchema>;
+export type PricingSourceInfo = z.infer<typeof pricingSourceInfoSchema>;
 
-const cloudCatalogResponseSchema = z.object({
+const cloudServiceSchema = z.object({
+  id: z.string(),
+  provider: cloudProviderSchema,
+  category: serviceCategorySchema,
+  name: z.string(),
+  description: z.string(),
+  pricingInfo: pricingSourceInfoSchema,
+  configFields: z.array(configFieldSchema),
   regions: z.array(cloudRegionSchema),
-  skus: z.array(cloudSkuSchema),
-  source: apiSourceResultSchema(z.null()),
 });
-export type CloudCatalogResponse = z.infer<typeof cloudCatalogResponseSchema>;
+export type CloudService = z.infer<typeof cloudServiceSchema>;
 
-const cloudEstimateResponseSchema = z.object({
-  estimate: z.object({ computeUsd: z.number(), storageUsd: z.number(), monthlyUsd: z.number(), monthlyBrl: z.number() }),
-  sku: cloudSkuSchema,
-  unitPrice: apiSourceResultSchema(
-    z.object({ pricePerHourUsd: z.number(), skuName: z.string().optional(), armRegion: z.string().optional(), sourceUrl: z.string().optional() }),
-  ),
-  fx: apiSourceResultSchema(z.object({ rate: z.number(), quotedAt: z.string() })),
-  storage: z
-    .object({ volumeType: z.string(), pricePerGbMonthUsd: z.number(), status: sourceStatusSchema, warning: z.string().optional() })
-    .nullable(),
-});
-export type CloudEstimateResponse = z.infer<typeof cloudEstimateResponseSchema>;
+const cloudServicesResponseSchema = z.object({ services: z.array(cloudServiceSchema) });
+export type CloudServicesResponse = z.infer<typeof cloudServicesResponseSchema>;
 
-export async function fetchCloudCatalog(): Promise<CloudCatalogResponse> {
-  const res = await fetch(`${API_BASE}/cloud/catalog`);
-  if (!res.ok) throw new Error("Falha ao carregar catalogo de cloud.");
-  return cloudCatalogResponseSchema.parse(await res.json());
+export async function fetchCloudServices(params: { q?: string; provider?: CloudProvider; category?: ServiceCategory } = {}): Promise<CloudServicesResponse> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.provider) qs.set("provider", params.provider);
+  if (params.category) qs.set("category", params.category);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(`${API_BASE}/cloud/services${suffix}`);
+  if (!res.ok) throw new Error("Falha ao carregar catalogo de servicos.");
+  return cloudServicesResponseSchema.parse(await res.json());
 }
 
-export async function fetchCloudEstimate(params: CloudEstimateParams): Promise<CloudEstimateResponse> {
-  const qs = new URLSearchParams({
-    provider: params.provider,
-    region: params.region,
-    skuId: params.skuId,
-    instances: String(params.instances),
-    hours: String(params.hours),
-    storageGb: String(params.storageGb ?? 0),
+const servicePricingSchema = z.object({
+  monthlyUsd: z.number(),
+  monthlyBrl: z.number(),
+  fxRate: z.number(),
+  source: z.enum(["catalog", "live_api", "scheduled_ingestion"]),
+  estimated: z.boolean(),
+  lastUpdated: z.string(),
+  sourceUrl: z.string(),
+  note: z.string().optional(),
+  warning: z.string().optional(),
+});
+export type ServicePricing = z.infer<typeof servicePricingSchema>;
+
+async function parseErrorOrThrow(res: Response, fallback: string): Promise<never> {
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
+  throw new Error(body?.error ?? fallback);
+}
+
+export async function priceCloudService(serviceId: string, params: { region: string; config: Record<string, unknown> }): Promise<ServicePricing> {
+  const res = await fetch(`${API_BASE}/cloud/services/${encodeURIComponent(serviceId)}/price`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
   });
-  const res = await fetch(`${API_BASE}/cloud/estimate?${qs.toString()}`);
-  if (!res.ok) throw new Error("Falha ao estimar o custo de infraestrutura.");
-  return cloudEstimateResponseSchema.parse(await res.json());
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao calcular o preco do servico.");
+  return z.object({ pricing: servicePricingSchema }).parse(await res.json()).pricing;
 }
 
 const laborProfileSchema = z.object({
@@ -265,58 +282,106 @@ export async function fetchLicenseCatalog(): Promise<LicenseCatalogResponse> {
   return licenseCatalogResponseSchema.parse(await res.json());
 }
 
-const cloudArchitectureSchema = z.object({
+const architectureServiceSchema = z.object({
+  id: z.string(),
+  serviceId: z.string(),
+  provider: cloudProviderSchema,
+  category: z.string(),
+  name: z.string(),
+  region: z.string(),
+  configuration: z.record(z.string(), z.unknown()),
+  monthlyUsd: z.number(),
+  monthlyBrl: z.number(),
+});
+export type ArchitectureService = z.infer<typeof architectureServiceSchema>;
+
+const architectureDetailSchema = z.object({
   id: z.string(),
   name: z.string(),
-  provider: z.enum(["AWS", "Azure", "GCP"]),
+  provider: cloudProviderSchema,
   region: z.string(),
-  skuId: z.string(),
-  skuDisplayName: z.string(),
-  instances: z.number(),
-  hours: z.number(),
-  storageGb: z.number(),
-  unitPriceUsd: z.number(),
-  fxRate: z.number(),
+  currency: z.enum(["BRL", "USD"]),
   monthlyUsd: z.number(),
   monthlyBrl: z.number(),
   createdAt: z.string(),
+  updatedAt: z.string(),
+  services: z.array(architectureServiceSchema),
 });
-export type CloudArchitecture = z.infer<typeof cloudArchitectureSchema>;
+export type ArchitectureDetail = z.infer<typeof architectureDetailSchema>;
 
-export interface SaveCloudArchitectureParams {
-  name: string;
-  provider: string;
+const architectureSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  provider: cloudProviderSchema,
+  region: z.string(),
+  currency: z.enum(["BRL", "USD"]),
+  monthlyUsd: z.number(),
+  monthlyBrl: z.number(),
+  serviceCount: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ArchitectureSummary = z.infer<typeof architectureSummarySchema>;
+
+export interface DraftArchitectureService {
+  serviceId: string;
   region: string;
-  skuId: string;
-  skuDisplayName: string;
-  instances: number;
-  hours: number;
-  storageGb: number;
-  unitPriceUsd: number;
-  fxRate: number;
-  monthlyUsd: number;
-  monthlyBrl: number;
+  config: Record<string, unknown>;
 }
 
-const saveCloudArchitectureResponseSchema = z.object({ architecture: cloudArchitectureSchema });
-const listCloudArchitecturesResponseSchema = z.object({ architectures: z.array(cloudArchitectureSchema) });
-export type ListCloudArchitecturesResponse = z.infer<typeof listCloudArchitecturesResponseSchema>;
+export interface SaveArchitectureParams {
+  name: string;
+  currency: "BRL" | "USD";
+  services: DraftArchitectureService[];
+}
 
-export async function saveCloudArchitecture(params: SaveCloudArchitectureParams): Promise<CloudArchitecture> {
+const architectureDetailResponseSchema = z.object({ architecture: architectureDetailSchema });
+const architectureListResponseSchema = z.object({ architectures: z.array(architectureSummarySchema) });
+export type ArchitectureListResponse = z.infer<typeof architectureListResponseSchema>;
+
+export async function createArchitecture(params: SaveArchitectureParams): Promise<ArchitectureDetail> {
   const res = await fetch(`${API_BASE}/cloud/architectures`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? "Falha ao salvar a arquitetura.");
-  }
-  return saveCloudArchitectureResponseSchema.parse(await res.json()).architecture;
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao salvar a arquitetura.");
+  return architectureDetailResponseSchema.parse(await res.json()).architecture;
 }
 
-export async function fetchCloudArchitectures(): Promise<ListCloudArchitecturesResponse> {
+export async function updateArchitecture(id: string, params: SaveArchitectureParams): Promise<ArchitectureDetail> {
+  const res = await fetch(`${API_BASE}/cloud/architectures/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao atualizar a arquitetura.");
+  return architectureDetailResponseSchema.parse(await res.json()).architecture;
+}
+
+export async function fetchArchitectures(): Promise<ArchitectureListResponse> {
   const res = await fetch(`${API_BASE}/cloud/architectures`);
   if (!res.ok) throw new Error("Falha ao carregar arquiteturas salvas.");
-  return listCloudArchitecturesResponseSchema.parse(await res.json());
+  return architectureListResponseSchema.parse(await res.json());
+}
+
+export async function fetchArchitecture(id: string): Promise<ArchitectureDetail> {
+  const res = await fetch(`${API_BASE}/cloud/architectures/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Falha ao carregar a arquitetura.");
+  return architectureDetailResponseSchema.parse(await res.json()).architecture;
+}
+
+export async function deleteArchitectureRequest(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/cloud/architectures/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao excluir a arquitetura.");
+}
+
+export async function duplicateArchitectureRequest(id: string, name?: string): Promise<ArchitectureDetail> {
+  const res = await fetch(`${API_BASE}/cloud/architectures/${encodeURIComponent(id)}/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao duplicar a arquitetura.");
+  return architectureDetailResponseSchema.parse(await res.json()).architecture;
 }

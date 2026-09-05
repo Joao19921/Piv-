@@ -7,8 +7,6 @@ import {
   ArrowUpRight,
   BriefcaseBusiness,
   Calculator,
-  Check,
-  CheckCircle,
   ChevronRight,
   CircleDollarSign,
   Cloud,
@@ -34,15 +32,13 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCloudArchitectures, useSaveCloudArchitecture } from "@/hooks/useCloudArchitectures";
-import { useCloudEstimate } from "@/hooks/useCloudEstimate";
-import { useCloudCatalog } from "@/hooks/useCloudCatalog";
 import { useLaborCatalog } from "@/hooks/useLaborCatalog";
 import { useLaborEstimate } from "@/hooks/useLaborEstimate";
 import { useLicenseCatalog } from "@/hooks/useLicenseCatalog";
 import { useMarketBenchmarkHistory, useMarketBenchmarkSearch } from "@/hooks/useMarketBenchmark";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, MarketBenchmarkSalarySource, QueryStat, SourceStatus } from "@/lib/api";
+import CloudArchitect from "@/pages/cloud/CloudArchitect";
 
 const heroAsset = "/manus-storage/pricing-engine-hero_b3241730.png";
 const laborAsset = "/manus-storage/pricing-engine-labor_15768d4a.png";
@@ -289,121 +285,6 @@ function LaborPricing() {
   </div>;
 }
 
-function CloudPricing() {
-  const [provider, setProvider] = useState("AWS");
-  const [region, setRegion] = useState("us-east-1");
-  const [family, setFamily] = useState("General purpose");
-  const [skuId, setSkuId] = useState("aws-m6i-large");
-  const [instances, setInstances] = useState(12);
-  const [hours, setHours] = useState(730);
-  const [storageGb, setStorageGb] = useState(100);
-  const { data: catalogData, isLoading: catalogLoading } = useCloudCatalog();
-  const skus = catalogData?.skus.filter((sku) => sku.provider === provider) ?? [];
-  const families = Array.from(new Set(skus.map((sku) => sku.family)));
-  const filteredSkus = skus.filter((sku) => sku.family === family);
-  const regions = catalogData?.regions.filter((item) => item.provider === provider) ?? [];
-  const selectedSku = skus.find((sku) => sku.id === skuId) ?? filteredSkus[0] ?? skus[0];
-  const supportsStorage = provider === "AWS";
-
-  const { data, isFetching } = useCloudEstimate({ provider, region, skuId: selectedSku?.id ?? skuId, instances, hours, storageGb: supportsStorage ? storageGb : 0 });
-  const monthly = data?.estimate.monthlyBrl ?? 0;
-  const computeUsd = data?.estimate.computeUsd ?? 0;
-  const storageUsd = data?.estimate.storageUsd ?? 0;
-  const unitPriceUsd = data?.unitPrice.data?.pricePerHourUsd ?? 0;
-  const fxRate = data?.fx.data?.rate ?? 0;
-  const fxState = data ? mapApiStatus(data.fx.status) : "stale";
-  const isDegraded = data ? data.unitPrice.status !== "OPERATIONAL" : false;
-  const statusMessage = !data
-    ? "Consultando fontes de preço…"
-    : data.unitPrice.status === "OPERATIONAL"
-      ? `Preço em tempo real via ${data.unitPrice.name}.`
-      : (data.unitPrice.warning ?? `${data.unitPrice.name} está em modo degradado.`);
-  const handleProviderChange = (nextProvider: string) => {
-    const nextSkus = catalogData?.skus.filter((sku) => sku.provider === nextProvider) ?? [];
-    setProvider(nextProvider);
-    setFamily(nextSkus[0]?.family ?? "General purpose");
-    setSkuId(nextSkus[0]?.id ?? "");
-    setRegion("us-east-1");
-  };
-
-  const [architectureName, setArchitectureName] = useState("");
-  const saveArchitecture = useSaveCloudArchitecture();
-  const { data: architecturesData } = useCloudArchitectures();
-  const savedArchitectures = architecturesData?.architectures ?? [];
-
-  const handleSaveArchitecture = () => {
-    if (!architectureName.trim()) {
-      toast.error("Dê um nome para a arquitetura antes de salvar.");
-      return;
-    }
-    if (!selectedSku || !data) {
-      toast.error("Aguarde a estimativa carregar antes de salvar.");
-      return;
-    }
-    toast.promise(
-      saveArchitecture.mutateAsync({
-        name: architectureName.trim(),
-        provider,
-        region,
-        skuId: selectedSku.id,
-        skuDisplayName: selectedSku.displayName,
-        instances,
-        hours,
-        storageGb: supportsStorage ? storageGb : 0,
-        unitPriceUsd,
-        fxRate,
-        monthlyUsd: data.estimate.monthlyUsd,
-        monthlyBrl: monthly,
-      }),
-      {
-        loading: "Salvando arquitetura...",
-        success: () => {
-          setArchitectureName("");
-          return "Arquitetura salva.";
-        },
-        error: (err) => (err instanceof Error ? err.message : "Não foi possível salvar agora."),
-      },
-    );
-  };
-
-  return <div>
-    <SectionHeading
-      eyebrow="Modulo 03 - Infraestrutura"
-      title="Infra cloud"
-      description="Monte a cesta por provedor, familia, SKU e regiao. Azure consulta preco ao vivo; AWS e GCP ficam rastreados como snapshot oficial."
-      action={
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input value={architectureName} onChange={(e) => setArchitectureName(e.target.value)} placeholder="Nome da arquitetura" className="h-10 w-full border-[#D4D1CC] bg-white text-sm text-[#333333] sm:w-56" />
-          <Button onClick={handleSaveArchitecture} disabled={saveArchitecture.isPending} className="pressable rounded-full bg-[#F57F17] px-5 text-xs text-white hover:bg-[#D96D0C]"><Check className="mr-2 h-4 w-4" /> Salvar arquitetura</Button>
-        </div>
-      }
-    />
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
-      <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Catalogo de compute</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Parametros de infraestrutura</h2></div><img src={cloudAsset} alt="Ilustracao editorial de infraestrutura cloud" className="hidden h-20 w-28 rounded-xl object-cover mix-blend-multiply sm:block" /></div><div className="mb-6 grid grid-cols-3 gap-2 rounded-xl bg-[#E8E9E9] p-1">{["AWS", "Azure", "GCP"].map((item) => <button key={item} onClick={() => handleProviderChange(item)} className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${provider === item ? "bg-white text-[#333333] shadow-sm" : "text-[#7C8B8B] hover:text-[#333333]"}`}>{item}</button>)}</div><div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="family" className="text-xs font-semibold text-[#345555]">Familia</Label><select id="family" value={family} onChange={(e) => { setFamily(e.target.value); setSkuId(skus.find((sku) => sku.family === e.target.value)?.id ?? ""); }} className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20" disabled={catalogLoading}>{families.map((item) => <option key={item} value={item}>{item}</option>)}</select><p className="mt-1.5 text-[11px] text-[#879A9A]">Filtra SKUs por perfil de workload</p></div><div><Label htmlFor="sku" className="text-xs font-semibold text-[#345555]">SKU</Label><select id="sku" value={selectedSku?.id ?? skuId} onChange={(e) => setSkuId(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20" disabled={catalogLoading}>{filteredSkus.map((sku) => <option key={sku.id} value={sku.id}>{sku.displayName}</option>)}</select><p className="mt-1.5 text-[11px] text-[#879A9A]">{selectedSku ? `${selectedSku.vcpu} vCPU / ${selectedSku.memoryGiB} GiB RAM` : "Carregando SKUs"}</p></div><div><Label htmlFor="region" className="text-xs font-semibold text-[#345555]">Regiao</Label><select id="region" value={region} onChange={(e) => setRegion(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20">{regions.map((item) => <option key={`${item.provider}-${item.key}`} value={item.key}>{item.key} - {item.label}</option>)}</select><p className="mt-1.5 text-[11px] text-[#879A9A]">Regiao normalizada para comparar provedores</p></div><div><Label className="text-xs font-semibold text-[#345555]">Fonte do preco</Label><div className="mt-2 flex h-10 w-full items-center justify-between rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333]"><span>{selectedSku?.sourceName ?? "Catalogo cloud"}</span><ServiceBadge state={data?.unitPrice.status === "OPERATIONAL" ? "live" : "stale"} /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">{selectedSku?.notes ?? catalogData?.source.warning}</p></div></div><div className="mt-7 border-t border-[#E7E1D6] pt-6"><div className="mb-3 flex items-center justify-between"><Label htmlFor="instances" className="text-xs font-semibold text-[#345555]">Quantidade de instancias</Label><span className="font-display text-sm font-semibold text-[#333333]">{instances}</span></div><input id="instances" type="range" min="1" max="80" value={instances} onChange={(e) => setInstances(Number(e.target.value))} className="w-full accent-[#F57F17]" /><div className="mt-5 mb-3 flex items-center justify-between"><Label htmlFor="hours" className="text-xs font-semibold text-[#345555]">Horas por mes</Label><span className="font-display text-sm font-semibold text-[#333333]">{hours} h</span></div><input id="hours" type="range" min="100" max="744" step="10" value={hours} onChange={(e) => setHours(Number(e.target.value))} className="w-full accent-[#F57F17]" />{supportsStorage && <><div className="mt-5 mb-3 flex items-center justify-between"><Label htmlFor="storage" className="text-xs font-semibold text-[#345555]">Armazenamento (EBS gp3, GB)</Label><span className="font-display text-sm font-semibold text-[#333333]">{storageGb} GB</span></div><input id="storage" type="range" min="0" max="2000" step="10" value={storageGb} onChange={(e) => setStorageGb(Number(e.target.value))} className="w-full accent-[#F57F17]" /></>}</div></Card><Card className="overflow-hidden rounded-2xl border-[#DDD7CC] bg-[#E7E8E9] p-5 shadow-paper sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Estimativa mensal</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Custo projetado</h2></div><div className="rounded-lg bg-[#0D5C5C] p-2 text-[#F7F2E8]"><Cloud className="h-4 w-4" /></div></div>{!data && isFetching ? <Skeleton className="mt-10 h-12 w-48" /> : <div className="mt-10 font-display text-5xl font-semibold tracking-[-0.06em] text-[#333333]">{formatBRL(monthly)}</div>}<div className="mt-2 flex items-center gap-2 text-xs text-[#687E7E]"><span className={`status-dot ${fxState}`} /> PTAX {fxRate ? fxRate.toFixed(2) : "-"} - {data ? formatRelativeTime(data.fx.timestamp) : "carregando"}</div><div className="mt-9 space-y-3 border-t border-[#D7CFC0] pt-5 text-xs"><div className="flex justify-between"><span className="text-[#778B8B]">SKU</span><strong className="font-medium text-[#333333]">{selectedSku?.skuName ?? "-"}</strong></div><div className="flex justify-between"><span className="text-[#778B8B]">Provedor / regiao</span><strong className="font-medium text-[#333333]">{provider} - {region}</strong></div><div className="flex justify-between"><span className="text-[#778B8B]">Preco unitario</span><strong className="font-medium text-[#333333]">US$ {unitPriceUsd.toFixed(4)} / h</strong></div><div className="flex justify-between"><span className="text-[#778B8B]">Instancias x horas</span><strong className="font-medium text-[#333333]">{instances} x {hours}</strong></div>{supportsStorage && storageGb > 0 && <><div className="flex justify-between"><span className="text-[#778B8B]">Compute</span><strong className="font-medium text-[#333333]">{formatBRL(computeUsd * (fxRate || 0))}</strong></div><div className="flex justify-between"><span className="text-[#778B8B]">Armazenamento ({storageGb} GB)</span><strong className="font-medium text-[#333333]">{formatBRL(storageUsd * (fxRate || 0))}</strong></div></>}</div><div className="mt-8 flex items-center gap-2 rounded-xl border border-[#D7CFC0] bg-white/50 p-3 text-[11px] leading-5 text-[#667C7C]">{isDegraded ? <AlertTriangle className="h-4 w-4 shrink-0 text-[#B77831]" /> : <CheckCircle className="h-4 w-4 shrink-0 text-[#4F8A82]" />} {statusMessage}</div></Card></div>
-    <Card className="mt-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7">
-      <div className="mb-4"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Persistido no Postgres</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Arquiteturas salvas</h2></div>
-      {savedArchitectures.length ? (
-        <div className="space-y-3">
-          {savedArchitectures.map((arch) => (
-            <div key={arch.id} className="flex flex-col gap-2 rounded-xl border border-[#E5E0D6] bg-white/55 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[#333333]">{arch.name}</p>
-                <p className="mt-1 truncate text-[11px] text-[#879A9A]">{arch.provider} · {arch.region} · {arch.skuDisplayName} · {arch.instances}x{arch.hours}h</p>
-              </div>
-              <div className="text-left sm:text-right">
-                <p className="font-display text-sm font-semibold text-[#333333]">{formatBRL(arch.monthlyBrl)}</p>
-                <p className="mt-1 text-[10px] text-[#899A9A]">{formatRelativeTime(arch.createdAt)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-[#879A9A]">Nenhuma arquitetura salva ainda.</p>
-      )}
-    </Card>
-  </div>;
-}
-
 function LicensesCatalog() {
   const { data, isLoading } = useLicenseCatalog();
   const [seatCounts, setSeatCounts] = useState<Record<string, number>>({});
@@ -470,6 +351,6 @@ export default function Home() {
   const sources = healthData?.sources ?? [];
   const onlineCount = sources.filter((s) => s.status === "OPERATIONAL").length;
   const sourcesSummary = sourcesLoading ? "Consultando fontes…" : `${onlineCount} de ${sources.length} fontes online`;
-  const renderContent = () => { if (activeSection === "labor") return <LaborPricing />; if (activeSection === "cloud") return <CloudPricing />; if (activeSection === "licenses") return <LicensesCatalog />; if (activeSection === "sources") return <SourcesView sources={sources} isLoading={sourcesLoading} onRefresh={refetchHealth} ingestion={healthData?.ingestion ?? []} database={healthData?.database} />; return <Dashboard onNavigate={navigate} sources={sources} sourcesLoading={sourcesLoading} />; };
+  const renderContent = () => { if (activeSection === "labor") return <LaborPricing />; if (activeSection === "cloud") return <CloudArchitect />; if (activeSection === "licenses") return <LicensesCatalog />; if (activeSection === "sources") return <SourcesView sources={sources} isLoading={sourcesLoading} onRefresh={refetchHealth} ingestion={healthData?.ingestion ?? []} database={healthData?.database} />; return <Dashboard onNavigate={navigate} sources={sources} sourcesLoading={sourcesLoading} />; };
   return <div className="min-h-screen bg-[#E8E9E9] text-[#333333]"><div className="flex min-h-screen"><aside className="nav-rail sticky top-0 hidden h-screen w-[242px] shrink-0 flex-col lg:flex"><div className="flex items-center gap-3 px-6 py-7"><PivoMark size={36} /><div><p className="font-display text-lg font-semibold leading-none tracking-[-0.04em]">Pivô</p><p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#9EB9B9]">strategic pricing</p></div></div><div className="mx-6 mb-6 h-px bg-white/10" /><div className="px-4"><p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#819F9F]">Workspace</p><nav className="space-y-1">{navigation.map((item) => { const Icon = item.icon; const active = item.id === activeSection; return <button key={item.id} onClick={() => navigate(item.id)} className={`group flex w-full items-center gap-3 rounded-xl border-l-2 px-3 py-3 text-left transition-colors ${active ? "border-[#F57F17] bg-white/10 text-white" : "border-transparent text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Icon className={`h-4 w-4 ${active ? "text-white" : "text-[#819F9F] group-hover:text-[#F57F17]"}`} /><span className="text-xs font-medium">{item.label}</span><span className={`ml-auto font-display text-[10px] ${active ? "text-white/70" : "text-[#648686]"}`}>{item.short}</span></button>; })}</nav></div><div className="mt-auto px-4 pb-5"><button onClick={() => navigate("sources")} className={`mb-4 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${activeSection === "sources" ? "border-white/20 bg-white/10" : "border-white/10 hover:bg-white/5"}`}><div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-[#E9EAEB] text-[#4F7E78]"><ShieldCheck className="h-4 w-4" /><span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#78A49E] ring-2 ring-[#0D5C5C]" /></div><div><p className="text-xs font-semibold text-white">Sistema estável</p><p className="mt-0.5 text-[10px] text-[#8DA8A8]">{sourcesSummary}</p></div></button><div className="flex items-center justify-between border-t border-white/10 pt-4"><div className="flex items-center gap-2 min-w-0"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#C7E5E5] font-display text-[10px] font-semibold text-[#333333]">{userInitials}</div><span className="truncate text-[11px] font-medium text-[#D8E4E4]">{userLabel}</span></div><div className="flex items-center gap-1"><button onClick={logout} className="rounded p-1.5 text-[#819F9F] hover:bg-white/10 hover:text-white" aria-label="Sair"><LogOut className="h-4 w-4" /></button></div></div></div></aside><div className="min-w-0 flex-1"><header className="sticky top-0 z-30 border-b border-[#DED8CE] bg-[#E8E9E9]/90 backdrop-blur-xl"><div className="container flex h-[72px] items-center justify-between gap-4"><div className="flex items-center gap-3"><button className="rounded-lg border border-[#D6D3CF] bg-[#F7F2E8] p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu className="h-4 w-4" /></button><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#929C9C] sm:flex"><span>Workspace</span><ChevronRight className="h-3 w-3" /><span className="text-[#436D6D]">{activeLabel}</span></div><div className="sm:hidden"><p className="font-display text-sm font-semibold text-[#333333]">{activeLabel}</p><p className="text-[9px] uppercase tracking-[0.16em] text-[#929C9C]">Pivô · pricing intelligence</p></div></div></div></header><main className="container py-7 sm:py-9 lg:py-11">{renderContent()}</main><footer className="container flex flex-col gap-2 border-t border-[#DCD6CC] py-5 text-[10px] text-[#929C9C] sm:flex-row sm:items-center sm:justify-between"><span>Pivô · camada de decisão para preços de TI</span><span className="flex items-center gap-2"><span className="status-dot live" /> BACEN PTAX + Azure Retail API em tempo real</span></footer></div></div>{mobileOpen && <div className="fixed inset-0 z-50 lg:hidden"><button className="absolute inset-0 bg-[#0D5C5C]/50 backdrop-blur-sm" onClick={() => setMobileOpen(false)} aria-label="Fechar menu" /><aside className="nav-rail relative flex h-full w-[282px] flex-col shadow-2xl"><div className="flex items-center justify-between px-6 py-7"><div className="flex items-center gap-3"><PivoMark size={36} /><div><p className="font-display text-lg font-semibold leading-none">Pivô</p><p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#9EB9B9]">strategic pricing</p></div></div><button onClick={() => setMobileOpen(false)} className="rounded p-2 text-[#AEC4C4] hover:bg-white/10" aria-label="Fechar"><X className="h-4 w-4" /></button></div><div className="mx-6 mb-6 h-px bg-white/10" /><div className="px-4"><p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#819F9F]">Workspace</p><nav className="space-y-1">{navigation.map((item) => { const Icon = item.icon; const active = item.id === activeSection; return <button key={item.id} onClick={() => navigate(item.id)} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left ${active ? "border-l-2 border-[#F57F17] bg-white/10 text-white" : "border-l-2 border-transparent text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Icon className="h-4 w-4" /><span className="text-xs font-medium">{item.label}</span><span className="ml-auto font-display text-[10px] opacity-60">{item.short}</span></button>; })}<button onClick={() => navigate("sources")} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left ${activeSection === "sources" ? "bg-[#F57F17] text-white" : "text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Database className="h-4 w-4" /><span className="text-xs font-medium">Fontes</span></button></nav></div></aside></div>}</div>;
 }
