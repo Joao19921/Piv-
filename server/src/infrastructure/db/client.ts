@@ -18,7 +18,12 @@ function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString,
-      ssl: { rejectUnauthorized: true },
+      // O pooler Supavisor da Supabase envia uma cadeia de certificados cuja raiz nao esta no
+      // bundle padrao de CAs do Node ("self-signed certificate in certificate chain"), mesmo
+      // sendo uma conexao TLS legitima. Verificado em producao (Lambda us-east-1) apos tentar
+      // rejectUnauthorized: true. Ate pinarmos o CA correto da Supabase, mantemos sem verificacao
+      // de certificado (ainda criptografado, mas sem checagem de identidade do servidor).
+      ssl: { rejectUnauthorized: false },
       max: 5,
       idleTimeoutMillis: 30_000,
     });
