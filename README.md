@@ -10,7 +10,7 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | :--- | :--- | :--- |
 | Dashboard de fontes | Implementado | Mostra saude, latencia e degradacao das fontes. |
 | Mao de obra | Implementado | Perfis profissionais, Fator K, CLT/PJ e filtro por UF/cidade no benchmark. |
-| Infra cloud | Implementado | Cloud Architecture Calculator: monta arquiteturas com N servicos (Compute/Storage/Database/Networking/Containers/Serverless/CDN) por AWS/Azure/GCP, com diagrama visual, resumo de custo e CRUD completo (criar/editar/duplicar/excluir). Unica coisa que o produto persiste com nome. Compute tem preco ao vivo/ingestao; os demais sao catalogo estimado com fonte explicita. |
+| Infra cloud | Implementado | Cloud Architecture Calculator: monta arquiteturas com N servicos (Compute/Storage/Database/Networking/Containers/Serverless/CDN) por AWS/Azure/GCP, com diagrama visual, resumo de custo e CRUD completo (criar/editar/duplicar/excluir). Unica coisa que o produto persiste com nome. Compute (todos providers) e 4 servicos Azure (Storage/SQL/Load Balancer/Functions) tem preco ao vivo/ingestao real; os demais (GCP/AWS nao-compute) sao catalogo estimado com fonte explicita. |
 | Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais e calculo por assentos. |
 | Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
 | PNCP | Implementado (checagem de saude) | API de consulta publica ao vivo, sem chave; aparece em `/system-health`. Ainda nao busca preco de referencia por item. |
@@ -171,7 +171,7 @@ docker run --rm -p 3000:3000 \
 4. ~~Persistir simulacoes/propostas em Postgres~~ — decisao de produto: nao havera modulo de propostas; a unica persistencia por nome e a arquitetura de cloud salva (ja implementado).
 5. Implementar MCP server para consumo por assistentes.
 6. Criar pipeline CI/CD quando o token GitHub tiver escopo `workflow`.
-7. Trocar o preco de catalogo (estimado) dos servicos alem de compute (RDS, S3, Lambda, EKS, Load Balancer, CDN, etc. — ver `cloudServiceCatalog.ts`) por ingestao real via API de precos de cada provider (AWS Price List API ja e usada para EC2; os mesmos endpoints cobrem RDS/S3/etc. com outro `ServiceCode`).
+7. Trocar o preco de catalogo (estimado) dos servicos alem de compute por preco real. Azure ja feito (Storage/SQL/Load Balancer/Functions, ao vivo via Azure Retail Prices API — ver CHANGELOG.md). GCP e AWS ainda pendentes: exigem estender a ingestao periodica da Lambda (nao dá pra chamar ao vivo por requisicao do app web, mesmo motivo do compute — custo/credencial).
 
 ## Licenca
 

@@ -2,6 +2,15 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-05 — Preço ao vivo para Azure Storage/SQL/Load Balancer/Functions
+
+Usuário compartilhou dois scripts Python (`azure_pricing_export.py`, `gcp_pricing_export.py`) que exportam o catálogo de preços da Azure Retail Prices API e da GCP Cloud Billing Catalog API para Excel. Pedido: verificar se já estava implementado e, se válido, implementar.
+
+- **Confirmado**: as duas APIs já eram usadas no projeto, mas só para compute (Azure VM, GCP Compute Engine). Os 4 serviços Azure não-compute do catálogo (Storage, SQL, Load Balancer, Functions) ainda eram preço estático estimado.
+- **Implementado só para Azure**: a Azure Retail Prices API é pública, sem chave, e o app já a chama ao vivo por requisição (mesmo padrão do compute). Estendido para os 4 serviços, com filtros verificados manualmente contra a API real antes de implementar (ver commit `e6ffe78`). Achado importante: o medidor de execuções/duração do Functions tem uma faixa gratuita inicial (`retailPrice: 0`) antes da faixa paga — pegar ingenuamente "o primeiro tier" teria zerado o preço; a função `representativePrice()` ignora faixas gratuitas quando existe uma paga.
+- **Não implementado para GCP/AWS**: a arquitetura atual chama GCP/AWS ao vivo só pela Lambda de ingestão periódica, nunca por requisição do app web — decisão deliberada, documentada em ARQUITETURA.md, para não expor credencial no serviço web e não pagar o custo de paginar milhares de SKUs a cada requisição. Replicar o script da GCP diretamente no app web quebraria esse princípio. O caminho correto é estender a ingestão da Lambda (já registrado no roadmap do README, item 7) — maior escopo, não feito nesta entrega.
+- Validado com curl contra a API real e contra o banco de produção (salvar uma arquitetura com os 4 serviços): todos os totais batem exatamente com o cálculo manual a partir dos preços retornados pela API.
+
 ## 2026-09-05 — Infra Cloud vira um Cloud Architecture Calculator completo
 
 Pedido explícito do produto (spec detalhada, inspirada no AWS/Azure Pricing Calculator): transformar "Infra Cloud" de uma cesta de 1 SKU numa ferramenta real de montar/calcular/salvar arquiteturas com múltiplos serviços.
