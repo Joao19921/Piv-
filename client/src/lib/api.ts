@@ -264,3 +264,59 @@ export async function fetchLicenseCatalog(): Promise<LicenseCatalogResponse> {
   if (!res.ok) throw new Error("Falha ao carregar catalogo de licencas.");
   return licenseCatalogResponseSchema.parse(await res.json());
 }
+
+const cloudArchitectureSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  provider: z.enum(["AWS", "Azure", "GCP"]),
+  region: z.string(),
+  skuId: z.string(),
+  skuDisplayName: z.string(),
+  instances: z.number(),
+  hours: z.number(),
+  storageGb: z.number(),
+  unitPriceUsd: z.number(),
+  fxRate: z.number(),
+  monthlyUsd: z.number(),
+  monthlyBrl: z.number(),
+  createdAt: z.string(),
+});
+export type CloudArchitecture = z.infer<typeof cloudArchitectureSchema>;
+
+export interface SaveCloudArchitectureParams {
+  name: string;
+  provider: string;
+  region: string;
+  skuId: string;
+  skuDisplayName: string;
+  instances: number;
+  hours: number;
+  storageGb: number;
+  unitPriceUsd: number;
+  fxRate: number;
+  monthlyUsd: number;
+  monthlyBrl: number;
+}
+
+const saveCloudArchitectureResponseSchema = z.object({ architecture: cloudArchitectureSchema });
+const listCloudArchitecturesResponseSchema = z.object({ architectures: z.array(cloudArchitectureSchema) });
+export type ListCloudArchitecturesResponse = z.infer<typeof listCloudArchitecturesResponseSchema>;
+
+export async function saveCloudArchitecture(params: SaveCloudArchitectureParams): Promise<CloudArchitecture> {
+  const res = await fetch(`${API_BASE}/cloud/architectures`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? "Falha ao salvar a arquitetura.");
+  }
+  return saveCloudArchitectureResponseSchema.parse(await res.json()).architecture;
+}
+
+export async function fetchCloudArchitectures(): Promise<ListCloudArchitecturesResponse> {
+  const res = await fetch(`${API_BASE}/cloud/architectures`);
+  if (!res.ok) throw new Error("Falha ao carregar arquiteturas salvas.");
+  return listCloudArchitecturesResponseSchema.parse(await res.json());
+}

@@ -10,6 +10,7 @@ import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
 import { AWS_REGION_AVG_USD_PER_HOUR, DEFAULT_REGION_KEY, GCP_REGION_AVG_USD_PER_HOUR, getPendingSources } from "../infrastructure/collectors/staticFallbacks";
 import { isDatabaseConfigured } from "../infrastructure/db/client";
+import { insertCloudArchitecture, listCloudArchitectures, type CloudArchitectureRow } from "../infrastructure/repositories/cloudArchitectureRepository";
 import { insertPrice } from "../infrastructure/repositories/cloudPricingRepository";
 import { getLatestIngestionRuns, type IngestionRun } from "../infrastructure/repositories/ingestionRunsRepository";
 import { logger } from "../infrastructure/observability/logger";
@@ -27,6 +28,25 @@ function toSourceView(name: string, result: ResilienceResult<unknown>) {
     timestamp: result.timestamp,
     warning: result.warning,
     data: result.data,
+  };
+}
+
+function toArchitectureView(row: CloudArchitectureRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    provider: row.provider,
+    region: row.region_key,
+    skuId: row.sku_id,
+    skuDisplayName: row.sku_display_name,
+    instances: row.instances,
+    hours: row.hours,
+    storageGb: Number(row.storage_gb),
+    unitPriceUsd: Number(row.unit_price_usd),
+    fxRate: Number(row.fx_rate),
+    monthlyUsd: Number(row.monthly_usd),
+    monthlyBrl: Number(row.monthly_brl),
+    createdAt: row.created_at,
   };
 }
 
@@ -253,6 +273,64 @@ export function createApiRouter(): Router {
             }
           : null,
     });
+  });
+
+  // Unica coisa que o produto persiste hoje alem do historico de precificacao: uma arquitetura
+  // de infra cloud salva com nome pelo usuario (snapshot dos parametros + estimativa no momento do save).
+  router.post("/cloud/architectures", async (req, res) => {
+    if (!isDatabaseConfigured) {
+      res.status(503).json({ error: "Banco nao configurado; nao e possivel salvar arquiteturas agora." });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const { name, provider, region, skuId, skuDisplayName, instances, hours, storageGb, unitPriceUsd, fxRate, monthlyUsd, monthlyBrl } = body;
+
+    if (typeof name !== "string" || !name.trim()) {
+      res.status(400).json({ error: "name e obrigatorio." });
+      return;
+    }
+    if (provider !== "AWS" && provider !== "Azure" && provider !== "GCP") {
+      res.status(400).json({ error: "provider deve ser AWS, Azure ou GCP." });
+      return;
+    }
+    if (typeof region !== "string" || !region.trim() || typeof skuId !== "string" || !skuId.trim() || typeof skuDisplayName !== "string" || !skuDisplayName.trim()) {
+      res.status(400).json({ error: "region, skuId e skuDisplayName sao obrigatorios." });
+      return;
+    }
+    const numericFields = { instances, hours, storageGb, unitPriceUsd, fxRate, monthlyUsd, monthlyBrl } as Record<string, unknown>;
+    for (const [key, value] of Object.entries(numericFields)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+        res.status(400).json({ error: `${key} deve ser numerico e nao-negativo.` });
+        return;
+      }
+    }
+
+    const saved = await insertCloudArchitecture({
+      name: name.trim().slice(0, 120),
+      provider,
+      regionKey: region,
+      skuId,
+      skuDisplayName,
+      instances: instances as number,
+      hours: hours as number,
+      storageGb: storageGb as number,
+      unitPriceUsd: unitPriceUsd as number,
+      fxRate: fxRate as number,
+      monthlyUsd: monthlyUsd as number,
+      monthlyBrl: monthlyBrl as number,
+    });
+
+    res.status(201).json({ architecture: toArchitectureView(saved) });
+  });
+
+  router.get("/cloud/architectures", async (_req, res) => {
+    if (!isDatabaseConfigured) {
+      res.json({ architectures: [] });
+      return;
+    }
+    const rows = await listCloudArchitectures();
+    res.json({ architectures: rows.map(toArchitectureView) });
   });
 
   router.get("/labor/profiles", (_req, res) => {
