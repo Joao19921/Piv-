@@ -137,9 +137,9 @@ const STORAGE_SERVICES: CloudServiceDefinition[] = [
       { key: "storageGb", label: "Volume armazenado (GB)", type: "number", min: 0, max: 1_000_000, step: 10, default: 100 },
       { key: "requestsThousands", label: "Requisicoes (milhares/mes)", type: "number", min: 0, max: 1_000_000, step: 10, default: 100 },
     ],
-    pricingInfo: catalogInfo("https://azure.microsoft.com/pricing/details/storage/blobs/", "Preco de referencia East US, Hot LRS; sem variacao regional neste catalogo."),
+    pricingInfo: { source: "live_api", estimated: false, lastUpdated: CATALOG_LAST_UPDATED, sourceUrl: "https://azure.microsoft.com/pricing/details/storage/blobs/", note: "Armazenamento (GB) e ao vivo via Azure Retail Prices API; requisicoes usam taxa de referencia." },
     calculateMonthlyUsd: (c) => {
-      const pricePerGb = c.tier === "cool" ? 0.01 : 0.018;
+      const pricePerGb = c.tier === "cool" ? 0.01 : 0.0208;
       return num(c, "storageGb") * pricePerGb + (num(c, "requestsThousands") / 1000) * 0.5;
     },
   },
@@ -195,7 +195,7 @@ const DATABASE_SERVICES: CloudServiceDefinition[] = [
       { key: "storageGb", label: "Storage (GB)", type: "number", min: 5, max: 4_000, step: 5, default: 100 },
       { key: "hours", label: "Horas/mes", type: "number", min: 1, max: 744, step: 1, default: 730 },
     ],
-    pricingInfo: catalogInfo("https://azure.microsoft.com/pricing/details/azure-sql-database/single/", "Preco de referencia East US, vCore; sem variacao regional neste catalogo."),
+    pricingInfo: { source: "live_api", estimated: false, lastUpdated: CATALOG_LAST_UPDATED, sourceUrl: "https://azure.microsoft.com/pricing/details/azure-sql-database/single/", note: "Compute (vCore/hora) e ao vivo via Azure Retail Prices API (apenas contagens de vCore reais, ex.: 1,2,4,6,8...; outros valores caem no preco de referencia); storage usa taxa de referencia." },
     calculateMonthlyUsd: (c) => {
       const perVcoreHour = c.tier === "business_critical" ? 0.3 : 0.15;
       return perVcoreHour * num(c, "vcores", 2) * num(c, "hours", 730) + num(c, "storageGb") * 0.138;
@@ -245,7 +245,7 @@ const NETWORKING_SERVICES: CloudServiceDefinition[] = [
       { key: "hours", label: "Horas/mes", type: "number", min: 1, max: 744, step: 1, default: 730 },
       { key: "dataProcessedGb", label: "Dados processados (GB/mes)", type: "number", min: 0, max: 1_000_000, step: 10, default: 500 },
     ],
-    pricingInfo: catalogInfo("https://azure.microsoft.com/pricing/details/load-balancer/", "Preco de referencia East US, Standard; sem variacao regional neste catalogo."),
+    pricingInfo: { source: "live_api", estimated: false, lastUpdated: CATALOG_LAST_UPDATED, sourceUrl: "https://azure.microsoft.com/pricing/details/load-balancer/", note: "Preco global (Load Balancer nao varia por regiao Azure), ao vivo via Azure Retail Prices API." },
     calculateMonthlyUsd: (c) => num(c, "hours", 730) * 0.025 + num(c, "dataProcessedGb") * 0.005,
   },
   {
@@ -326,7 +326,7 @@ const SERVERLESS_SERVICES: CloudServiceDefinition[] = [
       { key: "avgDurationMs", label: "Duracao media (ms)", type: "number", min: 1, max: 900_000, step: 10, default: 200 },
       { key: "memoryMb", label: "Memoria (MB)", type: "number", min: 128, max: 10_240, step: 64, default: 512 },
     ],
-    pricingInfo: catalogInfo("https://azure.microsoft.com/pricing/details/functions/", "Preco de referencia East US, plano Consumption; sem variacao regional neste catalogo."),
+    pricingInfo: { source: "live_api", estimated: false, lastUpdated: CATALOG_LAST_UPDATED, sourceUrl: "https://azure.microsoft.com/pricing/details/functions/", note: "Preco ao vivo via Azure Retail Prices API (plano Consumption 'Standard')." },
     calculateMonthlyUsd: (c) => {
       const requests = num(c, "requestsMillions", 5) * 1_000_000;
       const gbSeconds = requests * (num(c, "avgDurationMs", 200) / 1000) * (num(c, "memoryMb", 512) / 1024);
