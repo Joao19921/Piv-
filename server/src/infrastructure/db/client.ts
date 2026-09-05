@@ -58,6 +58,42 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   }
 }
 
+export interface TransactionQuery {
+  <T extends QueryResultRow = QueryResultRow>(name: string, text: string, params?: unknown[]): Promise<T[]>;
+}
+
+/**
+ * Executa `fn` dentro de uma transacao (BEGIN/COMMIT, ROLLBACK em erro) usando uma unica
+ * conexao do pool. Necessario para operacoes que gravam mais de uma tabela atomicamente
+ * (ex.: uma arquitetura + seus servicos).
+ */
+export async function withTransaction<T>(fn: (txQuery: TransactionQuery) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const txQuery: TransactionQuery = async (name, text, params = []) => {
+      const startedAt = Date.now();
+      try {
+        const result = await client.query(text, params);
+        recordQuery(name, Date.now() - startedAt);
+        return result.rows;
+      } catch (err) {
+        recordQuery(name, Date.now() - startedAt, err);
+        throw err;
+      }
+    };
+    const result = await fn(txQuery);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    logger.error("Transacao revertida (ROLLBACK)", { error: err instanceof Error ? err.message : String(err) });
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();

@@ -1,24 +1,32 @@
 import express, { type Router } from "express";
-import { getCloudCatalog, getCloudSku, getLatestKnownPrice, getLatestKnownStoragePrice, type CloudPricePoint } from "../domain/services/cloudCatalog";
+import { getCloudCatalog } from "../domain/services/cloudCatalog";
 import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/services/catalogs";
-import { computeCloudEstimate } from "../domain/services/cloudPricing";
+import { searchCloudServiceDefinitions, type CloudProvider } from "../domain/services/cloudServiceCatalog";
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
+import { calculateServicePrice } from "../domain/services/pricingEngine";
 import { createSessionCookieValue, isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME, SESSION_TTL_MS, SESSION_TTL_REMEMBER_MS } from "../infrastructure/auth/session";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
-import { AWS_REGION_AVG_USD_PER_HOUR, DEFAULT_REGION_KEY, GCP_REGION_AVG_USD_PER_HOUR, getPendingSources } from "../infrastructure/collectors/staticFallbacks";
+import { getPendingSources } from "../infrastructure/collectors/staticFallbacks";
 import { isDatabaseConfigured } from "../infrastructure/db/client";
-import { insertCloudArchitecture, listCloudArchitectures, type CloudArchitectureRow } from "../infrastructure/repositories/cloudArchitectureRepository";
-import { insertPrice } from "../infrastructure/repositories/cloudPricingRepository";
+import {
+  deleteArchitecture,
+  getArchitecture,
+  insertArchitecture,
+  listArchitectureSummaries,
+  updateArchitecture,
+  type ArchitectureInput,
+  type ArchitectureRow,
+  type ArchitectureServiceInput,
+  type ArchitectureServiceRow,
+  type ArchitectureSummaryRow,
+} from "../infrastructure/repositories/cloudArchitectureRepository";
 import { getLatestIngestionRuns, type IngestionRun } from "../infrastructure/repositories/ingestionRunsRepository";
 import { logger } from "../infrastructure/observability/logger";
 import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
-
-/** Evita reinserir o preco Azure a cada request de estimativa: so grava se o ultimo preco conhecido tiver mais de 1h. */
-const PRICE_REFRESH_THROTTLE_MS = 60 * 60 * 1000;
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
   return {
@@ -31,22 +39,47 @@ function toSourceView(name: string, result: ResilienceResult<unknown>) {
   };
 }
 
-function toArchitectureView(row: CloudArchitectureRow) {
+function toArchitectureSummaryView(row: ArchitectureSummaryRow) {
   return {
     id: row.id,
     name: row.name,
     provider: row.provider,
     region: row.region_key,
-    skuId: row.sku_id,
-    skuDisplayName: row.sku_display_name,
-    instances: row.instances,
-    hours: row.hours,
-    storageGb: Number(row.storage_gb),
-    unitPriceUsd: Number(row.unit_price_usd),
-    fxRate: Number(row.fx_rate),
+    currency: row.currency,
     monthlyUsd: Number(row.monthly_usd),
     monthlyBrl: Number(row.monthly_brl),
+    serviceCount: Number(row.service_count),
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toArchitectureServiceView(row: ArchitectureServiceRow) {
+  return {
+    id: row.id,
+    serviceId: row.service_id,
+    provider: row.provider,
+    category: row.category,
+    name: row.name,
+    region: row.region_key,
+    configuration: row.configuration,
+    monthlyUsd: Number(row.monthly_usd),
+    monthlyBrl: Number(row.monthly_brl),
+  };
+}
+
+function toArchitectureDetailView(architecture: ArchitectureRow, services: ArchitectureServiceRow[]) {
+  return {
+    id: architecture.id,
+    name: architecture.name,
+    provider: architecture.provider,
+    region: architecture.region_key,
+    currency: architecture.currency,
+    monthlyUsd: Number(architecture.monthly_usd),
+    monthlyBrl: Number(architecture.monthly_brl),
+    createdAt: architecture.created_at,
+    updatedAt: architecture.updated_at,
+    services: services.map(toArchitectureServiceView),
   };
 }
 
@@ -171,157 +204,120 @@ export function createApiRouter(): Router {
     res.json(await getPtax());
   });
 
-  router.get("/cloud/catalog", async (_req, res) => {
+  // Catalogo pesquisavel de servicos (Compute, Storage, Database, Networking, Containers,
+  // Serverless, CDN) por AWS/Azure/GCP. Compute tem as opcoes de SKU preenchidas ao vivo
+  // (mesmo catalogo/preco do /system-health); os demais sao catalogo estatico com fonte explicita.
+  router.get("/cloud/services", async (req, res) => {
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const provider = typeof req.query.provider === "string" ? (req.query.provider as CloudProvider) : undefined;
+    const category = typeof req.query.category === "string" ? req.query.category : undefined;
+
+    const definitions = searchCloudServiceDefinitions({ q, provider, category: category as never });
     const catalog = await getCloudCatalog();
-    res.json({
-      regions: catalog.regions,
-      skus: catalog.skus,
-      source: {
-        name: "Catalogo cloud",
-        status: catalog.origin === "DATABASE" ? "OPERATIONAL" : "FALLBACK_STALE",
-        source: catalog.origin === "DATABASE" ? "POSTGRES" : "STATIC_SNAPSHOT",
-        timestamp: new Date().toISOString(),
-        warning:
-          catalog.origin === "DATABASE"
-            ? "Catalogo carregado do Postgres. Azure tambem consulta preco ao vivo por requisicao; AWS/GCP sao atualizados pela ingestao periodica (a cada 5 dias)."
-            : "Postgres indisponivel ou ainda nao configurado (DATABASE_URL); usando snapshot estatico embutido no codigo.",
-      },
-    });
+
+    const services = definitions.map((definition) => ({
+      id: definition.id,
+      provider: definition.provider,
+      category: definition.category,
+      name: definition.name,
+      description: definition.description,
+      pricingInfo: definition.pricingInfo,
+      configFields: definition.configFields.map((field) => {
+        if (field.dynamicOptions !== "compute-sku") return field;
+        const options = catalog.skus
+          .filter((sku) => sku.provider === definition.provider)
+          .map((sku) => ({ value: sku.id, label: sku.displayName }));
+        return { ...field, options };
+      }),
+      regions: catalog.regions.filter((region) => region.provider === definition.provider),
+    }));
+
+    res.json({ services });
   });
 
-  /**
-   * AWS e GCP nao sao consultados ao vivo a partir do app web: a Lambda de ingestao periodica
-   * (IAM Role, sem access key fixa) e quem fala com essas APIs a cada ~5 dias e grava em
-   * cloud_prices. Aqui so lemos o ultimo preco conhecido (Postgres, ou o snapshot estatico
-   * quando o Postgres esta indisponivel/ainda sem dado para esse SKU/regiao).
-   */
-  function resolveIngestedUnitPrice(provider: "AWS" | "GCP", knownPrice: CloudPricePoint | undefined, region: string): ResilienceResult<{ pricePerHourUsd: number }> {
-    if (knownPrice) {
-      return {
-        status: knownPrice.sourceStatus,
-        source: "SCHEDULED_INGESTION",
-        timestamp: new Date().toISOString(),
-        warning: knownPrice.sourceStatus === "OPERATIONAL" ? undefined : "Preco vem da ultima ingestao periodica bem-sucedida; pode nao refletir o valor mais recente.",
-        data: { pricePerHourUsd: knownPrice.pricePerHourUsd },
-      };
+  router.post("/cloud/services/:serviceId/price", async (req, res) => {
+    const { serviceId } = req.params;
+    const { region, config } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof region !== "string" || !region.trim()) {
+      res.status(400).json({ error: "region e obrigatorio." });
+      return;
     }
-    const table = provider === "AWS" ? AWS_REGION_AVG_USD_PER_HOUR : GCP_REGION_AVG_USD_PER_HOUR;
+    if (config !== undefined && (typeof config !== "object" || config === null || Array.isArray(config))) {
+      res.status(400).json({ error: "config, quando informado, deve ser um objeto." });
+      return;
+    }
+
+    try {
+      const pricing = await calculateServicePrice(serviceId, region, (config as Record<string, unknown>) ?? {});
+      res.json({ pricing });
+    } catch (err) {
+      res.status(404).json({ error: err instanceof Error ? err.message : "Servico nao encontrado." });
+    }
+  });
+
+  /** Valida e recalcula os servicos de uma arquitetura (usado por create e update). */
+  async function buildArchitectureInput(body: Record<string, unknown>): Promise<{ error: string } | { input: ArchitectureInput }> {
+    const { name, currency, services } = body;
+
+    if (typeof name !== "string" || !name.trim()) return { error: "name e obrigatorio." };
+    if (currency !== "BRL" && currency !== "USD") return { error: "currency deve ser BRL ou USD." };
+    if (!Array.isArray(services) || services.length === 0) return { error: "services deve ser uma lista com pelo menos 1 servico." };
+
+    const resolvedServices: ArchitectureServiceInput[] = [];
+    for (const raw of services as Record<string, unknown>[]) {
+      const { serviceId, region, config } = raw ?? {};
+      if (typeof serviceId !== "string" || !serviceId.trim()) return { error: "Cada servico precisa de 'serviceId'." };
+      if (typeof region !== "string" || !region.trim()) return { error: "Cada servico precisa de 'region'." };
+
+      let pricing;
+      try {
+        pricing = await calculateServicePrice(serviceId, region, (config as Record<string, unknown>) ?? {});
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : `Servico '${serviceId}' invalido.` };
+      }
+
+      const definition = searchCloudServiceDefinitions({}).find((d) => d.id === serviceId);
+      if (!definition) return { error: `Servico '${serviceId}' nao encontrado no catalogo.` };
+
+      resolvedServices.push({
+        serviceId,
+        provider: definition.provider,
+        category: definition.category,
+        name: definition.name,
+        regionKey: region,
+        configuration: (config as Record<string, unknown>) ?? {},
+        monthlyUsd: pricing.monthlyUsd,
+        monthlyBrl: pricing.monthlyBrl,
+      });
+    }
+
     return {
-      status: "OFFLINE",
-      source: "NONE",
-      timestamp: new Date().toISOString(),
-      warning: "Ingestao periodica ainda nao rodou para este SKU/regiao; usando media generica de custo por regiao.",
-      data: { pricePerHourUsd: table[region] ?? table[DEFAULT_REGION_KEY] },
+      input: {
+        name: name.trim().slice(0, 120),
+        provider: resolvedServices[0].provider,
+        regionKey: resolvedServices[0].regionKey,
+        currency,
+        services: resolvedServices,
+      },
     };
   }
 
-  router.get("/cloud/estimate", async (req, res) => {
-    const provider = String(req.query.provider ?? "AWS") as "AWS" | "Azure" | "GCP";
-    const region = String(req.query.region ?? "us-east-1");
-    const skuId = String(req.query.skuId ?? "");
-    const instances = Number(req.query.instances);
-    const hours = Number(req.query.hours);
-    const storageGb = req.query.storageGb !== undefined ? Number(req.query.storageGb) : 0;
-
-    if (!Number.isFinite(instances) || !Number.isFinite(hours) || instances < 0 || hours < 0) {
-      res.status(400).json({ error: "Parametros 'instances' e 'hours' sao obrigatorios e devem ser numericos." });
-      return;
-    }
-    if (!Number.isFinite(storageGb) || storageGb < 0) {
-      res.status(400).json({ error: "Parametro 'storageGb', quando informado, deve ser numerico e nao-negativo." });
-      return;
-    }
-
-    const sku = await getCloudSku(skuId, provider);
-    const knownPrice = await getLatestKnownPrice(sku.id, region);
-    // Storage (EBS gp3) so tem ingestao para AWS por enquanto.
-    const knownStoragePrice = provider === "AWS" && storageGb > 0 ? await getLatestKnownStoragePrice("AWS", region) : undefined;
-
-    const [unitPriceResult, fxResult] = await Promise.all([
-      provider === "Azure"
-        ? getAzureUnitPrice(region, sku.azureArmSkuName ?? sku.skuName, knownPrice?.pricePerHourUsd)
-        : Promise.resolve(resolveIngestedUnitPrice(provider, knownPrice, region)),
-      getPtax(),
-    ]);
-
-    const unitPriceUsd = (unitPriceResult.data as { pricePerHourUsd: number } | null)?.pricePerHourUsd ?? 0.08;
-    const fxRate = (fxResult.data as { rate: number } | null)?.rate ?? 5.4;
-    const storagePricePerGbMonthUsd = knownStoragePrice?.pricePerGbMonthUsd ?? 0;
-    const estimate = computeCloudEstimate({ unitPriceUsd, fxRate, instances, hours, storageGb, storagePricePerGbMonthUsd });
-
-    // Azure e ao vivo por requisicao: aproveita para manter o Postgres fresco entre as janelas da Lambda.
-    // Throttlado por sku/regiao (1h) para o historico insert-only de cloud_prices nao crescer proporcional ao trafego de usuarios.
-    const knownPriceAgeMs = knownPrice?.capturedAt ? Date.now() - new Date(knownPrice.capturedAt).getTime() : Infinity;
-    if (isDatabaseConfigured && provider === "Azure" && unitPriceResult.status === "OPERATIONAL" && knownPriceAgeMs > PRICE_REFRESH_THROTTLE_MS) {
-      insertPrice({ skuId: sku.id, regionKey: region, pricePerHourUsd: unitPriceUsd, sourceStatus: "OPERATIONAL" }).catch((err) =>
-        logger.error("Falha ao gravar preco ao vivo no Postgres", { error: err instanceof Error ? err.message : String(err) }),
-      );
-    }
-
-    res.json({
-      estimate,
-      sku,
-      unitPrice: toSourceView(provider === "Azure" ? "Azure Retail API" : `${provider} Pricing (ingestao periodica)`, unitPriceResult),
-      fx: toSourceView("BACEN - PTAX", fxResult),
-      storage:
-        provider === "AWS" && storageGb > 0
-          ? {
-              volumeType: "gp3",
-              pricePerGbMonthUsd: storagePricePerGbMonthUsd,
-              status: knownStoragePrice?.sourceStatus ?? "OFFLINE",
-              warning: knownStoragePrice ? undefined : "Ingestao de storage ainda nao rodou para esta regiao.",
-            }
-          : null,
-    });
-  });
-
-  // Unica coisa que o produto persiste hoje alem do historico de precificacao: uma arquitetura
-  // de infra cloud salva com nome pelo usuario (snapshot dos parametros + estimativa no momento do save).
+  // Unica coisa que o produto persiste: uma arquitetura de infra cloud (composicao de N
+  // servicos) salva com nome pelo usuario. Preco de cada servico e recalculado no momento do
+  // save/edicao (nao reaproveita um valor que o cliente possa ter enviado desatualizado).
   router.post("/cloud/architectures", async (req, res) => {
     if (!isDatabaseConfigured) {
       res.status(503).json({ error: "Banco nao configurado; nao e possivel salvar arquiteturas agora." });
       return;
     }
-
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const { name, provider, region, skuId, skuDisplayName, instances, hours, storageGb, unitPriceUsd, fxRate, monthlyUsd, monthlyBrl } = body;
-
-    if (typeof name !== "string" || !name.trim()) {
-      res.status(400).json({ error: "name e obrigatorio." });
+    const result = await buildArchitectureInput((req.body ?? {}) as Record<string, unknown>);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error });
       return;
     }
-    if (provider !== "AWS" && provider !== "Azure" && provider !== "GCP") {
-      res.status(400).json({ error: "provider deve ser AWS, Azure ou GCP." });
-      return;
-    }
-    if (typeof region !== "string" || !region.trim() || typeof skuId !== "string" || !skuId.trim() || typeof skuDisplayName !== "string" || !skuDisplayName.trim()) {
-      res.status(400).json({ error: "region, skuId e skuDisplayName sao obrigatorios." });
-      return;
-    }
-    const numericFields = { instances, hours, storageGb, unitPriceUsd, fxRate, monthlyUsd, monthlyBrl } as Record<string, unknown>;
-    for (const [key, value] of Object.entries(numericFields)) {
-      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-        res.status(400).json({ error: `${key} deve ser numerico e nao-negativo.` });
-        return;
-      }
-    }
-
-    const saved = await insertCloudArchitecture({
-      name: name.trim().slice(0, 120),
-      provider,
-      regionKey: region,
-      skuId,
-      skuDisplayName,
-      instances: instances as number,
-      hours: hours as number,
-      storageGb: storageGb as number,
-      unitPriceUsd: unitPriceUsd as number,
-      fxRate: fxRate as number,
-      monthlyUsd: monthlyUsd as number,
-      monthlyBrl: monthlyBrl as number,
-    });
-
-    res.status(201).json({ architecture: toArchitectureView(saved) });
+    const id = await insertArchitecture(result.input);
+    const detail = await getArchitecture(id);
+    res.status(201).json({ architecture: toArchitectureDetailView(detail!.architecture, detail!.services) });
   });
 
   router.get("/cloud/architectures", async (_req, res) => {
@@ -329,8 +325,90 @@ export function createApiRouter(): Router {
       res.json({ architectures: [] });
       return;
     }
-    const rows = await listCloudArchitectures();
-    res.json({ architectures: rows.map(toArchitectureView) });
+    const rows = await listArchitectureSummaries();
+    res.json({ architectures: rows.map(toArchitectureSummaryView) });
+  });
+
+  router.get("/cloud/architectures/:id", async (req, res) => {
+    if (!isDatabaseConfigured) {
+      res.status(404).json({ error: "Banco nao configurado." });
+      return;
+    }
+    const detail = await getArchitecture(req.params.id);
+    if (!detail) {
+      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      return;
+    }
+    res.json({ architecture: toArchitectureDetailView(detail.architecture, detail.services) });
+  });
+
+  router.put("/cloud/architectures/:id", async (req, res) => {
+    if (!isDatabaseConfigured) {
+      res.status(503).json({ error: "Banco nao configurado; nao e possivel editar arquiteturas agora." });
+      return;
+    }
+    const existing = await getArchitecture(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      return;
+    }
+    const result = await buildArchitectureInput((req.body ?? {}) as Record<string, unknown>);
+    if ("error" in result) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    await updateArchitecture(req.params.id, result.input);
+    const detail = await getArchitecture(req.params.id);
+    res.json({ architecture: toArchitectureDetailView(detail!.architecture, detail!.services) });
+  });
+
+  router.delete("/cloud/architectures/:id", async (req, res) => {
+    if (!isDatabaseConfigured) {
+      res.status(503).json({ error: "Banco nao configurado." });
+      return;
+    }
+    const existing = await getArchitecture(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      return;
+    }
+    await deleteArchitecture(req.params.id);
+    res.status(204).send();
+  });
+
+  // Duplica com o snapshot ja salvo (nao recalcula preco): "duplicar" preserva exatamente o
+  // que foi salvo, sem depender de precos ao vivo ainda estarem disponiveis no momento da copia.
+  router.post("/cloud/architectures/:id/duplicate", async (req, res) => {
+    if (!isDatabaseConfigured) {
+      res.status(503).json({ error: "Banco nao configurado." });
+      return;
+    }
+    const existing = await getArchitecture(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      return;
+    }
+    const { name } = (req.body ?? {}) as Record<string, unknown>;
+    const newName = typeof name === "string" && name.trim() ? name.trim().slice(0, 120) : `${existing.architecture.name} (copia)`;
+
+    const id = await insertArchitecture({
+      name: newName,
+      provider: existing.architecture.provider,
+      regionKey: existing.architecture.region_key,
+      currency: existing.architecture.currency,
+      services: existing.services.map((service) => ({
+        serviceId: service.service_id,
+        provider: service.provider,
+        category: service.category,
+        name: service.name,
+        regionKey: service.region_key,
+        configuration: service.configuration,
+        monthlyUsd: Number(service.monthly_usd),
+        monthlyBrl: Number(service.monthly_brl),
+      })),
+    });
+    const detail = await getArchitecture(id);
+    res.status(201).json({ architecture: toArchitectureDetailView(detail!.architecture, detail!.services) });
   });
 
   router.get("/labor/profiles", (_req, res) => {
