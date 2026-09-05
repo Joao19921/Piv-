@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-05 — Licenças e Mão de obra retornavam vazio (bug real de validação zod)
+
+Usuário reportou "Licenças" mostrando "0 de 0 itens" em produção, reproduzível (não era transiente). O handler de erro global (item anterior) não pegou nada — porque o erro **não era no backend**. Diagnóstico final: pedi o cookie de sessão real do usuário e chamei a API de produção diretamente (`curl` autenticado) — resposta 200, JSON perfeito, 23 itens.
+
+Causa raiz: `apiSourceResultSchema()` (client/src/lib/api.ts) exige `data: dataSchema.nullable()` — aceita `null` explícito, mas **não** chave ausente (`undefined`). As rotas `/labor/profiles` e `/licenses/catalog` nunca incluíam `data` no objeto `source` (são snapshots estáticos sem payload real) — isso já estava assim desde antes, só que a validação zod (adicionada numa sessão anterior) nunca foi checada contra a resposta real de *todas* as rotas existentes na hora de implementar. Efeito: `fetchLicenseCatalog()`/`fetchLaborProfiles()` sempre lançavam `ZodError`, a query ficava em erro, e a tela renderizava vazio sem nenhum erro visível nem no console nem no backend (o erro acontecia no navegador, depois da resposta chegar).
+
+Corrigido nos dois lados: as 2 rotas passam a incluir `data: null` explicitamente; `apiSourceResultSchema()` usa `.nullable().default(null)` em vez de só `.nullable()`, tratando chave ausente e `null` da mesma forma (defesa contra qualquer outra rota com o mesmo padrão que não foi vista). Verificado rodando o schema real via `tsx` contra a resposta de produção capturada por `curl`: falhava antes do fix, passa depois.
+
+**Lição**: o handler de erro global do item anterior cobre erros de *backend*; esse aqui era um erro de *parsing no cliente*, invisível para ambos Sentry e logs até alguém literalmente rodar o parser contra os dados reais.
+
 ## 2026-09-05 — Handler de erro global na API (lacuna real de observabilidade)
 
 Motivado por um bug relatado em produção (seção Licenças retornando "0 de 0 itens", sem nenhum rastro útil no console do navegador). Ao investigar, não foi possível confirmar a causa raiz porque **nada era logado no backend nem no Sentry** — o gap:
