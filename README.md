@@ -10,7 +10,7 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | :--- | :--- | :--- |
 | Dashboard de fontes | Implementado | Mostra saude, latencia e degradacao das fontes. |
 | Mao de obra | Implementado | Perfis profissionais, Fator K, CLT/PJ e filtro por UF/cidade no benchmark. |
-| Infra cloud | Implementado | Catalogo por provider, regiao, familia e SKU; Azure ao vivo, AWS/GCP por snapshot oficial. |
+| Infra cloud | Implementado | Catalogo por provider, regiao, familia e SKU; Azure ao vivo, AWS/GCP por snapshot oficial. Unica coisa que o produto persiste com nome: arquiteturas de cloud salvas (`cloud_architectures`). |
 | Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais e calculo por assentos. |
 | Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
 | PNCP | Implementado (checagem de saude) | API de consulta publica ao vivo, sem chave; aparece em `/system-health`. Ainda nao busca preco de referencia por item. |
@@ -20,7 +20,7 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Ambiente de teste | Implementado | Docker + Render Free + login com sessao. URL real: `https://pivo-i8m3.onrender.com`. |
 | CAGED ao vivo | Pendente | MTE so disponibiliza microdados via FTP (sem API); hoje aparece como snapshot/fallback. |
 | MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
-| Propostas/usuarios persistidos | Pendente | Postgres ja existe (ver acima), mas ainda sem entidades de `Proposal`/`User`/auditoria por proposta. |
+| Multiusuario | Pendente | Login atual e sessao unica compartilhada (`TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD`), sem entidades de `User` nem por-usuario. Decisao de produto: nao havera modulo de "Propostas". |
 
 ## Stack
 
@@ -162,7 +162,7 @@ docker run --rm -p 3000:3000 \
 1. Ligar ingestao real de CAGED/MTE (exige pipeline de download/parse dos microdados via FTP, sem API disponivel).
 2. Expandir o PNCP de checagem de saude para preco de referencia por item (hoje so prova que a API esta no ar).
 3. Trocar snapshots AWS/GCP por coletores dedicados.
-4. Persistir simulacoes/propostas em Postgres.
+4. ~~Persistir simulacoes/propostas em Postgres~~ — decisao de produto: nao havera modulo de propostas; a unica persistencia por nome e a arquitetura de cloud salva (ja implementado).
 5. Implementar MCP server para consumo por assistentes.
 6. Criar pipeline CI/CD quando o token GitHub tiver escopo `workflow`.
 

@@ -170,13 +170,15 @@ Projeto Supabase dedicado (Postgres 17, plano free, regiao `sa-east-1`). Acesso 
 - **Render** (processo unico, `pg.Pool` de vida longa): porta **5432**, modo "Session".
 - **Lambda** (uma invocacao por vez, conexao curta): porta **6543**, modo "Transaction".
 
-Tabelas (`server/db/migrations/0001_core_schema.sql`):
+Tabelas (`server/db/migrations/`):
 
-- `cloud_skus` / `cloud_regions`: dimensao do catalogo de compute (metadados; sem preco embutido).
-- `cloud_prices`: historico insert-only de preco por SKU/regiao (o preco "atual" e a linha mais recente).
-- `fx_rates`: historico de cotacoes PTAX.
-- `market_benchmark_searches` / `market_benchmark_sources`: historico de buscas de benchmark salarial (substitui o cache em arquivo `data/cache/market-benchmark-history`).
-- `ingestion_runs`: uma linha por execucao de coletor/ingestao (servico, status, registros atualizados, duracao, erro) — base do painel de observabilidade em `/system-health` e na tela "Fontes".
+- `cloud_skus` / `cloud_regions` (`0001`): dimensao do catalogo de compute (metadados; sem preco embutido).
+- `cloud_prices` (`0001`): historico insert-only de preco por SKU/regiao (o preco "atual" e a linha mais recente).
+- `fx_rates` (`0001`): historico de cotacoes PTAX.
+- `market_benchmark_searches` / `market_benchmark_sources` (`0001`): historico de buscas de benchmark salarial (substitui o cache em arquivo `data/cache/market-benchmark-history`).
+- `ingestion_runs` (`0001`): uma linha por execucao de coletor/ingestao (servico, status, registros atualizados, duracao, erro) — base do painel de observabilidade em `/system-health` e na tela "Fontes".
+- `storage_prices` (`0003`): historico de preco de armazenamento (EBS gp3), mesmo padrao insert-only de `cloud_prices`.
+- `cloud_architectures` (`0004`): unica coisa que o usuario salva com nome — snapshot dos parametros de uma estimativa de infra cloud (provider, regiao, SKU, instancias, horas, storage, preco/hora, PTAX e o custo mensal calculado no momento do save). Sem versionamento/edicao: cada save cria uma linha nova.
 
 ## Ingestao Periodica (Lambda + EventBridge)
 
@@ -223,7 +225,7 @@ O Postgres (Supabase, ver "Banco De Dados" acima) e a fonte de verdade para cata
 - nao deve ser usado como registro permanente;
 - pode ser perdido em provedores com filesystem efemero, como Render Free (por isso a migracao para Postgres).
 
-Pendente para uma proxima fase: usuarios/acessos, propostas salvas e auditoria de fontes por proposta (a tabela `ingestion_runs` ja cobre auditoria de fontes de precificacao, mas nao de propostas individuais).
+Decisao de produto (2026-09-05): nao havera modulo de "Propostas" — a unica coisa que o produto persiste com nome e uma arquitetura de infra cloud (`cloud_architectures`, ver acima). Pendente para uma proxima fase: usuarios/acessos individuais (hoje e sessao unica compartilhada).
 
 ## Deploy
 
@@ -246,7 +248,7 @@ Detalhes:
 - Expandir o PNCP alem da checagem de saude: hoje `pncpCollector.ts` so prova que a API esta no ar (contagem de contratacoes recentes); buscar preco de referencia por item exigiria paginar `/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}` e casar a descricao do item com o catalogo do Pivo.
 - Rodar `scripts/deploy-lambda.ps1` (cria a IAM Role/policy, a Lambda e o EventBridge Rule) e configurar `GOOGLE_CLOUD_BILLING_API_KEY` para validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
 - Ampliar dimensoes de custo da calculadora cloud: storage (EBS/Persistent Disk), transferencia de dados, banco gerenciado (RDS/Cloud SQL) — hoje cobre so compute on-demand.
-- Persistir propostas, usuarios e auditoria de fontes por proposta no Postgres.
+- Persistir usuarios individuais no Postgres (hoje e sessao unica compartilhada). Sem modulo de propostas — decisao de produto.
 - Separar dominio em modulos menores quando o volume de regras crescer.
 - Criar MCP server previsto no PRD.
 - Publicar workflow CI/CD quando a credencial GitHub tiver escopo `workflow`.
