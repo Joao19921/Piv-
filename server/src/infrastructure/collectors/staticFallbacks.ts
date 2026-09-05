@@ -33,7 +33,13 @@ export interface StaticSourceInfo {
   warning: string;
 }
 
-/** Fontes cuja ingestão real (PNCP/CAGED) ainda não foi implementada nesta fase do projeto. */
+/**
+ * Fontes cuja ingestão real ainda não foi implementada nesta fase do projeto.
+ * PNCP saiu daqui: tem checagem ao vivo real em `pncpCollector.ts` (ver /system-health).
+ * CAGED/MTE continua aqui porque o Ministério do Trabalho só disponibiliza microdados via
+ * dump FTP (arquivos .txt mensais), sem API REST — exigiria um pipeline de download/parse
+ * periódico, não uma chamada HTTP simples como as demais fontes.
+ */
 export function getPendingSources(): StaticSourceInfo[] {
   const now = new Date().toISOString();
   return [
@@ -42,14 +48,7 @@ export function getPendingSources(): StaticSourceInfo[] {
       status: "FALLBACK_STALE",
       source: "STATIC_SNAPSHOT",
       timestamp: now,
-      warning: "Ingestão do CAGED ainda não implementada; usando snapshot histórico de CBOs de tecnologia.",
-    },
-    {
-      name: "PNCP",
-      status: "OFFLINE",
-      source: "NONE",
-      timestamp: now,
-      warning: "Integração com o PNCP prevista para uma próxima fase do projeto.",
+      warning: "Ingestão do CAGED ainda não implementada (só há microdados via FTP, sem API); usando snapshot histórico de CBOs de tecnologia.",
     },
   ];
 }

@@ -112,6 +112,16 @@ Limitacoes do plano free do Supabase:
 - o projeto pode pausar apos ~1 semana sem atividade (o cron de ingestao a cada 5 dias ajuda a manter o projeto ativo, mas nao e garantia absoluta — se pausar, o dashboard do Supabase reativa em segundos na proxima conexao);
 - 500MB de storage e 2 projetos ativos simultaneos no plano free da organizacao.
 
+### Keep-Alive Do Supabase (cron-job.org)
+
+Para eliminar de vez o risco de pausa por inatividade (a ingestao a cada 5 dias fica proxima do limite de ~7 dias), ha um cron job gratuito e sem codigo configurado fora do repositorio, em [cron-job.org](https://cron-job.org):
+
+- **Alvo**: `GET https://hiwpskashaypuvwvibds.supabase.co/rest/v1/` — endpoint raiz do PostgREST do projeto `pivo`. Usar a raiz (e nao uma tabela especifica) e proposital: todas as tabelas tem RLS habilitado sem policies (ver "Pendencias Arquiteturais" em [ARQUITETURA.md](ARQUITETURA.md)), entao uma chamada a uma tabela com a chave `anon` sempre voltaria vazia/negada; a raiz so precisa de uma `apikey` valida para responder `200`, o que basta para contar como atividade do projeto.
+- **Header**: `apikey: <anon key do projeto>` — pegar em Supabase Dashboard > Project Settings > API > Project API keys > `anon` `public`. **Nao commitar essa chave no repositorio nem em nenhum doc**: mesmo sendo a chave publica (papel `anon`, sem acesso a nada hoje por causa do RLS acima), ela e valida para qualquer requisicao daqui a decadas e deve ser tratada como as demais credenciais deste projeto (`.env`, nunca versionado).
+- **Frequencia configurada**: 1x por dia.
+
+Isso e puramente operacional — nao ha nada para deployar; a configuracao vive so no painel do cron-job.org. Se o cron job for recriado, os dois valores acima (URL com o project ref correto e a `anon key` do projeto `pivo`, nao de outro projeto Supabase) sao os unicos que importam.
+
 Pendente para persistir propostas, usuarios individuais e auditoria de simulacoes (proxima fase, fora do escopo desta migracao):
 
 - entidades de dominio para `Proposal`, `CostLine` e `User`;

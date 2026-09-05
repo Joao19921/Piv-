@@ -7,6 +7,7 @@ import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/serv
 import { createSessionCookieValue, isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME, SESSION_TTL_MS, SESSION_TTL_REMEMBER_MS } from "../infrastructure/auth/session";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
+import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
 import { AWS_REGION_AVG_USD_PER_HOUR, DEFAULT_REGION_KEY, GCP_REGION_AVG_USD_PER_HOUR, getPendingSources } from "../infrastructure/collectors/staticFallbacks";
 import { isDatabaseConfigured } from "../infrastructure/db/client";
 import { insertPrice } from "../infrastructure/repositories/cloudPricingRepository";
@@ -105,9 +106,10 @@ export function createApiRouter(): Router {
   });
 
   router.get("/system-health", async (_req, res) => {
-    const [ptax, azure, ingestionRuns] = await Promise.all([
+    const [ptax, azure, pncp, ingestionRuns] = await Promise.all([
       getPtax(),
       getAzureUnitPrice("us-east-1"),
+      getPncpStatus(),
       isDatabaseConfigured
         ? getLatestIngestionRuns().catch((err) => {
             logger.error("Falha ao ler ingestion_runs do Postgres", { error: err instanceof Error ? err.message : String(err) });
@@ -119,6 +121,7 @@ export function createApiRouter(): Router {
     const sources = [
       toSourceView("BACEN - PTAX", ptax),
       toSourceView("Azure Retail API", azure),
+      toSourceView("PNCP - Consulta Publica", pncp),
       fromIngestionRun("AWS Pricing API", ingestionRuns.AWS_PRICING_INGESTION),
       fromIngestionRun("GCP Cloud Billing Catalog", ingestionRuns.GCP_PRICING_INGESTION),
       {

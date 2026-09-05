@@ -146,7 +146,7 @@ O frontend usa esse contrato diretamente para mostrar se um numero veio de fonte
 | Perfis CAGED/MTE | Catalogo parametrizado local | Snapshot |
 | Benchmark salarial | Modelo local (catalogo interno CLT/PJ) + opcional `MARKET_BENCHMARK_CONNECTOR_URL`; historico persistido no Postgres | Snapshot ou conector |
 | Licencas SaaS | Catalogo local com URLs oficiais | Snapshot |
-| PNCP | Nao implementado | Pendente |
+| PNCP | API de consulta publica (`/v1/contratacoes/publicacao`), sem chave | Ao vivo (checagem de saude por requisicao em `/system-health`) |
 
 Sem `DATABASE_URL` configurado, ou se o Postgres estiver fora do ar, AWS/GCP/benchmark caem para o snapshot estatico embutido no codigo (mesmo comportamento da fase anterior) — o app nunca fica sem responder por falta de banco.
 
@@ -227,8 +227,8 @@ Detalhes:
 
 ## Pendencias Arquiteturais
 
-- Substituir snapshots de CAGED/MTE por pipeline real de ingestao.
-- Implementar PNCP.
+- Substituir snapshots de CAGED/MTE por pipeline real de ingestao (o MTE so disponibiliza microdados via FTP, sem API — exige um pipeline de download/parse periodico).
+- Expandir o PNCP alem da checagem de saude: hoje `pncpCollector.ts` so prova que a API esta no ar (contagem de contratacoes recentes); buscar preco de referencia por item exigiria paginar `/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}` e casar a descricao do item com o catalogo do Pivo.
 - Rodar `scripts/deploy-lambda.ps1` (cria a IAM Role/policy, a Lambda e o EventBridge Rule) e configurar `GOOGLE_CLOUD_BILLING_API_KEY` para validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
 - Ampliar dimensoes de custo da calculadora cloud: storage (EBS/Persistent Disk), transferencia de dados, banco gerenciado (RDS/Cloud SQL) — hoje cobre so compute on-demand.
 - Persistir propostas, usuarios e auditoria de fontes por proposta no Postgres.

@@ -13,9 +13,10 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Infra cloud | Implementado | Catalogo por provider, regiao, familia e SKU; Azure ao vivo, AWS/GCP por snapshot oficial. |
 | Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais e calculo por assentos. |
 | Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
+| PNCP | Implementado (checagem de saude) | API de consulta publica ao vivo, sem chave; aparece em `/system-health`. Ainda nao busca preco de referencia por item. |
 | Resiliencia | Implementado | Circuit breaker, retry, cache em disco e fallback estatico. |
 | Ambiente de teste | Implementado | Docker + Render Free + Basic Auth opcional. |
-| CAGED/PNCP ao vivo | Pendente | Hoje aparecem como snapshot/fallback ou pendente. |
+| CAGED ao vivo | Pendente | MTE so disponibiliza microdados via FTP (sem API); hoje aparece como snapshot/fallback. |
 | MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
 | Banco persistente | Pendente | Hoje existe cache local em arquivo. |
 
@@ -156,8 +157,8 @@ docker run --rm -p 3000:3000 \
 
 ## Roadmap Tecnico
 
-1. Ligar ingestao real de CAGED/MTE.
-2. Ligar PNCP para referencias de contratacoes publicas.
+1. Ligar ingestao real de CAGED/MTE (exige pipeline de download/parse dos microdados via FTP, sem API disponivel).
+2. Expandir o PNCP de checagem de saude para preco de referencia por item (hoje so prova que a API esta no ar).
 3. Trocar snapshots AWS/GCP por coletores dedicados.
 4. Persistir simulacoes/propostas em Postgres.
 5. Implementar MCP server para consumo por assistentes.
