@@ -122,6 +122,24 @@ Para eliminar de vez o risco de pausa por inatividade (a ingestao a cada 5 dias 
 
 Isso e puramente operacional — nao ha nada para deployar; a configuracao vive so no painel do cron-job.org. Se o cron job for recriado, os dois valores acima (URL com o project ref correto e a `anon key` do projeto `pivo`, nao de outro projeto Supabase) sao os unicos que importam.
 
+## Observabilidade Gratuita (Sentry + UptimeRobot)
+
+Duas lacunas identificadas na revisao das consultas ao banco: erros de Postgres/ingestao ficam so no log do Render (ninguem e avisado), e o Render Free "dorme" sem ninguem monitorando se voltou. Os dois servicos abaixo cobrem isso, ambos com plano gratuito.
+
+### Sentry (error tracking)
+
+- Criar conta: <https://sentry.io/signup/> (plano free: 5.000 erros/mes, 1 usuario, suporta Node).
+- Criar um projeto Node dentro da organizacao criada no signup.
+- Copiar o DSN em **Settings > Projects > `<projeto>` > Client Keys (DSN)**.
+- Colar esse valor na variavel `SENTRY_DSN` no Render (Dashboard do servico `pivo` > Environment) e, se for rodar a Lambda localmente/re-deployar, no `.env` local tambem.
+- Integracao ja esta pronta no codigo (`server/src/infrastructure/observability/sentry.ts` + `logger.ts`): todo `logger.error(...)` existente passa a ser enviado ao Sentry automaticamente assim que `SENTRY_DSN` existir. Sem a variavel, o app funciona exatamente como antes (so stdout).
+
+### UptimeRobot (uptime monitoring)
+
+- Criar conta: <https://uptimerobot.com/> (plano free: 50 monitores, checagem a cada 5 minutos).
+- Criar um monitor tipo **HTTP(s)** apontando para a URL publica do Render + `/api/v1/healthz` (ex.: `https://<nome-do-servico>.onrender.com/api/v1/healthz`).
+- Isso e 100% configuracao no painel do UptimeRobot — nao exige nenhuma mudanca no codigo do Pivo nem variavel de ambiente.
+
 Pendente para persistir propostas, usuarios individuais e auditoria de simulacoes (proxima fase, fora do escopo desta migracao):
 
 - entidades de dominio para `Proposal`, `CostLine` e `User`;

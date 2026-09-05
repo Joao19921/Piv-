@@ -6,7 +6,8 @@
 #   3. Um arquivo .env na raiz do repo (nao versionado) com:
 #        DATABASE_URL=postgresql://postgres:...@db....supabase.co:5432/postgres
 #        GOOGLE_CLOUD_BILLING_API_KEY=...          (pode ficar vazia se ainda nao tiver a key)
-#      (alternativa: exportar $env:DATABASE_URL / $env:GOOGLE_CLOUD_BILLING_API_KEY
+#        SENTRY_DSN=...                            (opcional; vazio = sem error tracking na Lambda)
+#      (alternativa: exportar $env:DATABASE_URL / $env:GOOGLE_CLOUD_BILLING_API_KEY / $env:SENTRY_DSN
 #      manualmente antes de chamar o script, na mesma sessao)
 #
 # Uso:
@@ -54,6 +55,7 @@ if (-not $env:DATABASE_URL) {
 # variavel comum (nao env:) para garantir uma string vazia de verdade no JSON abaixo —
 # Lambda rejeita null como valor de env var (precisa ser string, mesmo que vazia).
 $googleApiKey = if ($env:GOOGLE_CLOUD_BILLING_API_KEY) { $env:GOOGLE_CLOUD_BILLING_API_KEY } else { "" }
+$sentryDsn = if ($env:SENTRY_DSN) { $env:SENTRY_DSN } else { "" }
 
 $bundlePath = Join-Path $repoRoot "dist-lambda\index.cjs"
 if (-not (Test-Path $bundlePath)) {
@@ -111,6 +113,7 @@ $envVarsJson = @{
   Variables = @{
     DATABASE_URL = $env:DATABASE_URL
     GOOGLE_CLOUD_BILLING_API_KEY = $googleApiKey
+    SENTRY_DSN = $sentryDsn
   }
 } | ConvertTo-Json -Depth 5
 Write-Utf8NoBom -Path $envJsonPath -Content $envVarsJson

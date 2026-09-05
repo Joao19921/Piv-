@@ -37,6 +37,7 @@ Compartilhe com o time:
 ## Variaveis Opcionais
 
 - `MARKET_BENCHMARK_CONNECTOR_URL`: conector backend para benchmark salarial ao vivo. Sem essa variavel, o sistema usa snapshot/cache com estado `FALLBACK_STALE`.
+- `SENTRY_DSN`: ativa o envio de `logger.error(...)` para o Sentry (ver [REQUISITOS-INFRA.md](REQUISITOS-INFRA.md#observabilidade-gratuita-sentry--uptimerobot)). Sem essa variavel, os erros continuam so no log do Render, como antes.
 
 ## Checklist De Validacao
 

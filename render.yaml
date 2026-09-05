@@ -16,3 +16,5 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: SENTRY_DSN
+        sync: false

@@ -1,10 +1,14 @@
+import { captureError } from "./sentry";
+
 type LogFields = Record<string, unknown>;
 
 function emit(level: "info" | "warn" | "error", message: string, fields?: LogFields): void {
   const line = { level, message, timestamp: new Date().toISOString(), ...fields };
   const text = JSON.stringify(line);
-  if (level === "error") console.error(text);
-  else if (level === "warn") console.warn(text);
+  if (level === "error") {
+    console.error(text);
+    captureError(message, fields);
+  } else if (level === "warn") console.warn(text);
   else console.log(text);
 }
 
