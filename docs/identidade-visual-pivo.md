@@ -99,7 +99,7 @@ Para o lockup horizontal, manter uma distância entre símbolo e nome equivalent
 
 ## 5. Paleta cromática (atualizada em 02/09/2026)
 
-> **Nota de revisão:** a paleta original desta secao (Azul Pivo `#16263D` + Coral de Margem `#E85B45`, tom "marfim/papel") foi substituida pela direcao abaixo (Teal + Amber Orange), a pedido do time, com base no material em `identidade visual/Identidade Visual.jpg`. O restante deste documento (arquitetura do nome, conceito do simbolo, voz da marca) permanece valido; apenas cor e tipografia mudaram.
+> **Nota de revisão:** a paleta original desta secao (Azul Pivo `#16263D` + Coral de Margem `#E85B45`, tom "marfim/papel") foi substituida pela direcao abaixo (Teal + Amber Orange), a pedido do time, com base no material em `docs/assets/identidade-visual/identidade-visual.jpg`. O restante deste documento (arquitetura do nome, conceito do simbolo, voz da marca) permanece valido; apenas cor e tipografia mudaram.
 
 A nova paleta e mais proxima de um SaaS limpo: fundo neutro claro/branco, Teal como cor primaria (estrutura, marca, sidebar) e Amber Orange como cor de acao (CTA, foco, alertas).
 

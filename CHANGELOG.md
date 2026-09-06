@@ -2,6 +2,27 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-06 — Limpeza de governança: remove artefatos da plataforma de scaffolding (Manus) e arquivos órfãos
+
+Pedido do usuário: revisar o repositório todo com lente de compliance/governança/segurança e remover pastas e referências sem sentido, em particular vestígios de ferramentas de IA usadas no bootstrap do projeto.
+
+**Achado mais sério — telemetria de terceiros embarcada em produção**: `client/public/__manus__/debug-collector.js` (rastreado no git) é copiado pelo Vite para **todo build de produção** (`dist/public/__manus__/`). É um script da plataforma Manus (usada para gerar o scaffold inicial do projeto) que intercepta `console.*`, `fetch`/`XHR` (corpo de requisição e resposta incluídos) e todo evento de UI (clique, digitação, navegação), e envia tudo para `/__manus__/logs`. A redação de campos sensíveis é só por nome de chave (substring match em `password`/`token`/`secret`/etc.), não por valor — não cobre, por exemplo, um token dentro de uma URL ou de um corpo sem esse nome de campo. O script só era **injetado automaticamente** em dev (`transformIndexHtml` checava `NODE_ENV !== "production"`), mas o arquivo em si sempre foi servido publicamente em produção por estar em `client/public/`. Removido do repositório; build de produção verificado sem a pasta `__manus__` no output.
+
+Também removido de `vite.config.ts`:
+- Plugin `vite-plugin-manus-runtime` (runtime específico do ambiente hospedado da Manus, sem função fora dele).
+- Middleware de captura de logs (`/__manus__/logs`, escrevia em `.manus-logs/*.log` local — chegou a acumular >1MB de console/rede/replay de sessão).
+- Proxy `/manus-storage` (dependia de `BUILT_IN_FORGE_API_KEY`, credencial da plataforma Manus, inexistente fora dela).
+- `allowedHosts` com domínios `*.manus*.computer` do ambiente de preview hospedado.
+- `@builder.io/vite-plugin-jsx-loc`: injetava atributo `data-loc="arquivo:linha:coluna"` em todo elemento renderizado — vazava caminho de arquivo interno do servidor no HTML público. Confirmado via build: zero ocorrências de `data-loc` no bundle final após a remoção.
+
+**Efeito colateral descoberto durante a limpeza**: com o proxy `/manus-storage` fora do ar (só existia em dev), as 3 imagens decorativas do dashboard (`Home.tsx` — hero da Visão Geral e os 2 cards de atalho) já estavam quebradas em produção (404 silencioso, apontavam para `/manus-storage/pricing-engine-*.png`, hospedado só no storage da Manus). Removidas as referências às imagens; hero substituído por um fundo neutro (gradiente + grid), atalhos sem imagem de fundo. Validado com Playwright contra o build de produção local — sem ícone de imagem quebrada, dados reais das 7 fontes carregando normalmente.
+
+**Arquivos/pastas órfãos removidos** (sobras do scaffold inicial, sem relação com o produto atual, confirmado sem nenhuma referência restante no código): `template.json` (14KB de template genérico "Web App" de outra ferramenta, não usado), `ideas.md` e `todo.md` (notas de ideação de marca da fase de bootstrap, todos os itens já concluídos), `dev-server.log` (log solto na raiz), `.manus-logs/` (logs locais gerados pelo middleware removido). Pasta `identidade visual/` (nome com espaço, 3 JPGs de marca) movida para `docs/assets/identidade-visual/` com nomes de arquivo sem espaço; referência em `docs/identidade-visual-pivo.md` atualizada.
+
+**Não corrigido nesta entrega**: `docs/identidade-visual-pivo.md` e `docs/kit-de-marca-pivo.md` ainda linkam logos em `/manus-storage/pivo-logo-*.png` — essas imagens só existiam no storage da Manus e não há cópia local para restaurar; os links de imagem nesses dois documentos de marca ficam quebrados até alguém re-exportar os logos. Baixo risco (documentação, não o app), mas fica registrado.
+
+Verificado: `pnpm run check` (typecheck) e `pnpm run build` limpos após a remoção das duas dependências (`vite-plugin-manus-runtime`, `@builder.io/vite-plugin-jsx-loc`) e a atualização do lockfile.
+
 ## 2026-09-05 — Licenças e Mão de obra retornavam vazio (bug real de validação zod)
 
 Usuário reportou "Licenças" mostrando "0 de 0 itens" em produção, reproduzível (não era transiente). O handler de erro global (item anterior) não pegou nada — porque o erro **não era no backend**. Diagnóstico final: pedi o cookie de sessão real do usuário e chamei a API de produção diretamente (`curl` autenticado) — resposta 200, JSON perfeito, 23 itens.

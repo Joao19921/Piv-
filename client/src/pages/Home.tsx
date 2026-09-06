@@ -40,10 +40,6 @@ import { useSystemHealth } from "@/hooks/useSystemHealth";
 import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, MarketBenchmarkSalarySource, QueryStat, SourceStatus } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
 
-const heroAsset = "/manus-storage/pricing-engine-hero_b3241730.png";
-const laborAsset = "/manus-storage/pricing-engine-labor_15768d4a.png";
-const cloudAsset = "/manus-storage/pricing-engine-cloud_846255ee.png";
-
 type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources";
 type ServiceState = "live" | "warn" | "stale" | "offline";
 
@@ -176,8 +172,7 @@ function Dashboard({
           </div>
         </div>
         <div className="absolute inset-y-0 right-0 w-[56%] overflow-hidden sm:w-[51%]">
-          <div className="absolute inset-0 z-10 bg-gradient-to-r from-[#F7F2E8] via-[#F7F2E8]/65 to-transparent" />
-          <img src={heroAsset} alt="Fluxo abstrato de dados convergindo em um ponto de decisão" className="h-full w-full object-cover object-right opacity-90 mix-blend-multiply" />
+          <div className="paper-grid absolute inset-0 bg-gradient-to-br from-[#0D5C5C]/10 via-transparent to-[#F57F17]/10" />
         </div>
       </section>
 
@@ -203,7 +198,7 @@ function Dashboard({
 
       <section className="mt-7">
         <div className="mb-4"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Próximas decisões</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.03em] text-[#333333]">Atalhos para o próximo cálculo</h2></div>
-        <div className="grid gap-4 md:grid-cols-3"><QuickAction number="01" title="Precificar mão de obra" description="CLT, PJ e Fator K em uma base comparável." asset={laborAsset} icon={Users} onClick={() => onNavigate("labor")} /><QuickAction number="02" title="Simular infraestrutura" description="SKU, região e câmbio com rastreabilidade." asset={cloudAsset} icon={CloudCog} onClick={() => onNavigate("cloud")} /><QuickAction number="03" title="Explorar licenças" description="Catálogo SaaS por categoria e fornecedor." asset={null} icon={KeyRound} onClick={() => onNavigate("licenses")} /></div>
+        <div className="grid gap-4 md:grid-cols-3"><QuickAction number="01" title="Precificar mão de obra" description="CLT, PJ e Fator K em uma base comparável." icon={Users} onClick={() => onNavigate("labor")} /><QuickAction number="02" title="Simular infraestrutura" description="SKU, região e câmbio com rastreabilidade." icon={CloudCog} onClick={() => onNavigate("cloud")} /><QuickAction number="03" title="Explorar licenças" description="Catálogo SaaS por categoria e fornecedor." icon={KeyRound} onClick={() => onNavigate("licenses")} /></div>
       </section>
     </>
   );
@@ -214,8 +209,8 @@ function MetricCard({ label, value, change, icon: Icon, tone }: { label: string;
   return <Card className="metric-card fade-up rounded-2xl border-[#DDD7CC] p-5"><div className="flex items-start justify-between"><span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7B8B8B]">{label}</span><span className={`rounded-lg p-2 ${iconStyles[tone]}`}><Icon className="h-4 w-4" /></span></div><div className="mt-5 font-display text-[31px] font-semibold tracking-[-0.06em] text-[#333333]">{value}</div><div className="mt-1 flex items-center gap-1.5 text-[11px] text-[#728A8A]"><ArrowUpRight className="h-3 w-3 text-[#4F8A82]" /> {change}</div></Card>;
 }
 
-function QuickAction({ number, title, description, asset, icon: Icon, onClick }: { number: string; title: string; description: string; asset: string | null; icon: React.ElementType; onClick: () => void }) {
-  return <button onClick={onClick} className="pressable group relative min-h-[154px] overflow-hidden rounded-[0.7rem] border border-t-2 border-t-[#0D5C5C] border-[#DDD7CC] bg-[#FBF7F1] p-5 text-left shadow-[0_10px_30px_rgba(22,38,61,.04)] transition-shadow hover:shadow-paper"><div className="relative z-10 flex h-full flex-col justify-between"><div className="flex items-center justify-between"><span className="font-display text-xs font-semibold text-[#F57F17]">{number}</span><Icon className="h-4 w-4 text-[#658080] transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></div><div><h3 className="font-display text-base font-semibold text-[#333333]">{title}</h3><p className="mt-1 max-w-[220px] text-xs leading-5 text-[#798A8A]">{description}</p></div></div>{asset && <img src={asset} alt="" className="absolute -bottom-5 -right-5 h-32 w-44 object-cover opacity-35 mix-blend-multiply transition-transform duration-200 group-hover:scale-105" />}</button>;
+function QuickAction({ number, title, description, icon: Icon, onClick }: { number: string; title: string; description: string; icon: React.ElementType; onClick: () => void }) {
+  return <button onClick={onClick} className="pressable group relative min-h-[154px] overflow-hidden rounded-[0.7rem] border border-t-2 border-t-[#0D5C5C] border-[#DDD7CC] bg-[#FBF7F1] p-5 text-left shadow-[0_10px_30px_rgba(22,38,61,.04)] transition-shadow hover:shadow-paper"><div className="relative z-10 flex h-full flex-col justify-between"><div className="flex items-center justify-between"><span className="font-display text-xs font-semibold text-[#F57F17]">{number}</span><Icon className="h-4 w-4 text-[#658080] transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></div><div><h3 className="font-display text-base font-semibold text-[#333333]">{title}</h3><p className="mt-1 max-w-[220px] text-xs leading-5 text-[#798A8A]">{description}</p></div></div></button>;
 }
 
 function LaborPricing() {
