@@ -43,6 +43,7 @@ client/src/pages/Home.tsx
 client/src/pages/cloud/CloudArchitect.tsx  # Cloud Architecture Calculator (builder multi-servico)
 client/src/hooks/*
 client/src/lib/api.ts
+client/src/lib/csv.ts                     # Exportacao CSV (Licencas, Cloud Architect) — separador ";", compativel com Excel pt-BR
 client/src/components/ui/*
 ```
 
@@ -51,7 +52,11 @@ Responsabilidades:
 - renderizar os modulos de negocio;
 - consultar a API com TanStack Query;
 - expor estados de carregamento, erro, fallback e fonte;
-- manter estado de UI local.
+- manter estado de UI local;
+- navegar por rotas reais (wouter) — `SECTION_PATHS` em `App.tsx` mapeia cada modulo pra
+  uma URL propria (`/`, `/mao-de-obra`, `/infra-cloud`, `/licencas`, `/fontes`), em vez de
+  estado local: URL muda por modulo, botao Voltar do navegador e links compartilhaveis
+  funcionam.
 
 ### Presentation
 
@@ -197,7 +202,7 @@ Azure tambem continua com consulta ao vivo por requisicao a partir do proprio ap
 
 ## Observabilidade
 
-- **Servicos externos**: `/system-health` combina checagem ao vivo (BACEN, Azure, PNCP) com a ultima linha de `ingestion_runs` por servico (AWS, GCP) — status, quantidade de registros atualizados, duracao e erro da ultima execucao.
+- **Servicos externos**: `/system-health` combina checagem ao vivo (BACEN, Azure, PNCP) com a ultima linha de `ingestion_runs` por servico (AWS, GCP) — status, quantidade de registros atualizados, duracao e erro da ultima execucao. O `warning` de cada fonte nunca expoe detalhe tecnico interno (nome de variavel de ambiente, identificador de SKU/regiao) ao usuario final — mensagem generica ("usando dados de referencia internos"); o detalhe completo continua nos logs/Sentry. Tambem devolve `meta: { version, commit, environment }` (versao do `package.json`, `RENDER_GIT_COMMIT` truncado, rotulo de `APP_ENV`) — exibido no rodape do app.
 - **Consultas ao Postgres**: `server/src/infrastructure/db/client.ts` mede duracao e erro de cada consulta nomeada e acumula contadores em memoria (`observability/queryStats.ts`), expostos em `/system-health` (`database.queries`) e na tela "Fontes". Consultas acima de 500ms geram um log de aviso estruturado.
 - **Error tracking (Sentry)**: `observability/logger.ts` encaminha todo `logger.error(...)` para o Sentry quando `SENTRY_DSN` esta configurada (`observability/sentry.ts`) — no-op sem a variavel, entao nao ha dependencia dura do servico. Testado e confirmado em producao (ver `CHANGELOG.md`). Plano free (5.000 eventos/mes, 1 usuario).
 - **Uptime monitoring (UptimeRobot)**: monitor HTTP(s) externo (fora do repositorio) checando `GET /api/v1/healthz` a cada 5 minutos. Cuidado ao reconfigurar: a URL real de producao e `https://pivo-i8m3.onrender.com` (ver "URL De Producao" em `REQUISITOS-INFRA.md`), nao `pivo.onrender.com` (dominio de outra conta).

@@ -9,9 +9,9 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Area | Status | Observacao |
 | :--- | :--- | :--- |
 | Dashboard de fontes | Implementado | Mostra saude, latencia e degradacao das fontes. |
-| Mao de obra | Implementado | Perfis profissionais, Fator K, CLT/PJ e filtro por UF/cidade no benchmark. |
-| Infra cloud | Implementado | Cloud Architecture Calculator: monta arquiteturas com N servicos (Compute/Storage/Database/Networking/Containers/Serverless/CDN) por AWS/Azure/GCP, com diagrama visual, resumo de custo e CRUD completo (criar/editar/duplicar/excluir). Unica coisa que o produto persiste com nome. Compute (todos providers) e 4 servicos Azure (Storage/SQL/Load Balancer/Functions) tem preco ao vivo/ingestao real; os demais (GCP/AWS nao-compute) sao catalogo estimado com fonte explicita. |
-| Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais e calculo por assentos. |
+| Mao de obra | Implementado | Perfis profissionais, Fator K, CLT/PJ e filtro por UF/cidade no benchmark. Botao "Limpar dados" reseta o formulario e a busca de benchmark pra comecar do zero. |
+| Infra cloud | Implementado | Cloud Architecture Calculator: monta arquiteturas com N servicos (Compute/Storage/Database/Networking/Containers/Serverless/CDN) por AWS/Azure/GCP, com diagrama visual, resumo de custo, exportacao CSV e CRUD completo (criar/editar/duplicar/excluir). Estado vazio tem um "Ver exemplo pronto" (3 servicos AWS pre-configurados, nada salvo) pra avaliar o calculo sem montar do zero. Unica coisa que o produto persiste com nome. Compute (todos providers) e 4 servicos Azure (Storage/SQL/Load Balancer/Functions) tem preco ao vivo/ingestao real; os demais (GCP/AWS nao-compute) sao catalogo estimado com fonte explicita. |
+| Licencas | Implementado | Catalogo SaaS com filtros, fontes oficiais, calculo por assentos, conversao para BRL (cotacao PTAX explicita) e exportacao CSV. |
 | Cambio PTAX | Implementado | BACEN Olinda API ao vivo, sem chave. |
 | PNCP | Implementado (checagem de saude) | API de consulta publica ao vivo, sem chave; aparece em `/system-health`. Ainda nao busca preco de referencia por item. |
 | Resiliencia | Implementado | Circuit breaker, retry, cache em disco e fallback estatico. |
@@ -64,6 +64,7 @@ Veja tambem [.env.example](.env.example).
 | :--- | :--- | :--- |
 | `NODE_ENV` | Nao | Use `production` em deploy. |
 | `PORT` | Nao | Porta do Express; padrao 3000 em producao e 3001 em dev. |
+| `APP_ENV` | Nao | Rotulo de ambiente exibido no rodape do app (ex.: "Homologacao"); nao afeta comportamento. |
 | `TEST_ACCESS_USER` | Nao | Usuario da tela de login (sessao) do ambiente de teste. |
 | `TEST_ACCESS_PASSWORD` | Nao | Senha da tela de login (sessao) do ambiente de teste. |
 | `MARKET_BENCHMARK_CONNECTOR_URL` | Nao | Conector externo para benchmark salarial ao vivo. |
@@ -109,6 +110,10 @@ Os fluxos de uso e operacao estao documentados em [docs/FLUXOS.md](docs/FLUXOS.m
 - composicao de licencas por fornecedor e numero de assentos;
 - publicacao de ambiente de teste.
 
+Navegacao usa rotas reais (wouter) por modulo — `/`, `/mao-de-obra`, `/infra-cloud`,
+`/licencas`, `/fontes` — favoritar, compartilhar link e usar o botao Voltar do navegador
+funcionam normalmente.
+
 ## API
 
 Todas as rotas ficam sob `/api/v1`.
@@ -131,6 +136,9 @@ Todas as rotas ficam sob `/api/v1`.
 | `POST` | `/market-benchmark/search` | Benchmark salarial por cargo, UF e cidade. |
 | `GET` | `/market-benchmark/history` | Historico das buscas recentes. |
 | `GET` | `/licenses/catalog` | Catalogo de licencas SaaS. |
+
+`/system-health` tambem devolve `meta: { version, commit, environment }` (versao do
+`package.json`, commit curto e o rotulo de `APP_ENV`), exibido no rodape do app.
 
 ## Infraestrutura Gratuita Recomendada
 
