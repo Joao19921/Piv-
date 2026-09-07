@@ -44,8 +44,7 @@ Variaveis:
 | :--- | :--- |
 | `NODE_ENV` | `production` |
 | `PORT` | gerenciado pelo Render ou `3000` localmente |
-| `TEST_ACCESS_USER` | usuario de teste do time |
-| `TEST_ACCESS_PASSWORD` | senha forte compartilhada apenas internamente |
+| `SESSION_SECRET` | segredo forte pra assinar o cookie de sessao (RBAC); gere com `openssl rand -hex 32` |
 | `MARKET_BENCHMARK_CONNECTOR_URL` | vazio, ate existir conector real |
 | `DATABASE_URL` | connection string do **pooler** do Postgres (Supabase, projeto `pivo`) — ver aviso de IPv4/IPv6 em "Banco De Dados" abaixo. O app web nao precisa de credencial AWS/GCP: so le precos ja gravados no Postgres pela Lambda. |
 
@@ -78,9 +77,9 @@ Impacto no Pivo:
 2. Criar novo Blueprint.
 3. Conectar o repositorio GitHub.
 4. Confirmar que o Render detectou `render.yaml`.
-5. Configurar `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD`.
+5. Configurar `SESSION_SECRET` e `DATABASE_URL`.
 6. Disparar o primeiro deploy.
-7. Compartilhar URL, usuario e senha com o time.
+7. Rodar `pnpm run seed:admin` (ver README) e compartilhar a URL + o e-mail/senha do primeiro ADMIN com o time.
 
 Documento operacional: [deploy-render.md](deploy-render.md).
 
@@ -95,8 +94,8 @@ Se preferir criar manualmente:
 - Plan: Free.
 - Environment:
   - `NODE_ENV=production`
-  - `TEST_ACCESS_USER=...`
-  - `TEST_ACCESS_PASSWORD=...`
+  - `SESSION_SECRET=...`
+  - `DATABASE_URL=...`
 
 ## Banco De Dados (Supabase)
 

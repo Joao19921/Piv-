@@ -7,11 +7,10 @@ import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-import { isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME } from "./src/infrastructure/auth/session";
+import { isDatabaseConfigured } from "./src/infrastructure/db/client";
 import { logger } from "./src/infrastructure/observability/logger";
+import { attachUser } from "./src/presentation/authMiddleware";
 import { createApiRouter } from "./src/presentation/app";
-
-const PUBLIC_AUTH_PATHS = new Set(["/api/v1/healthz", "/api/v1/auth/login", "/api/v1/auth/session", "/api/v1/auth/logout"]);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,27 +19,11 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   const isProduction = process.env.NODE_ENV === "production";
-  const testAccessUser = process.env.TEST_ACCESS_USER;
-  const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
 
-  if (isProduction && testAccessUser && testAccessPassword) {
-    // Gate por sessao (cookie assinado), nao Basic Auth: o popup nativo do navegador nao
-    // reflete a identidade visual do produto. A SPA sempre carrega; e o React quem decide
-    // se mostra a tela de login ou o app, consultando GET /api/v1/auth/session.
-    app.use((req, res, next) => {
-      if (!req.path.startsWith("/api/v1/") || PUBLIC_AUTH_PATHS.has(req.path)) {
-        next();
-        return;
-      }
-
-      const token = parseCookie(req.headers.cookie, SESSION_COOKIE_NAME);
-      if (isSessionCookieValid(token, testAccessPassword)) {
-        next();
-        return;
-      }
-
-      res.status(401).json({ error: "unauthorized" });
-    });
+  // Sem banco nao ha usuarios possiveis (RBAC e todo persistido no Postgres) -- app.use
+  // condicional aqui evita atrasar toda requisicao com uma consulta que sempre falharia.
+  if (isDatabaseConfigured) {
+    app.use("/api/v1", attachUser);
   }
 
   app.use("/api/v1", createApiRouter());

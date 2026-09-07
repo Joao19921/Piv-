@@ -115,7 +115,7 @@ Fluxo:
 1. Repo fica no GitHub.
 2. Render cria Web Service a partir de `render.yaml`.
 3. Render builda o `Dockerfile`.
-4. Variaveis `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` protegem o acesso.
+4. Login por e-mail/senha (RBAC) protege o acesso — usuarios criados por um ADMIN em Administracao > Usuarios.
 5. Time acessa a URL publica do Render.
 
 Checklist de aceite:

@@ -10,9 +10,7 @@ services:
         value: production
       - key: APP_ENV
         value: Homologação
-      - key: TEST_ACCESS_USER
-        sync: false
-      - key: TEST_ACCESS_PASSWORD
+      - key: SESSION_SECRET
         sync: false
       - key: MARKET_BENCHMARK_CONNECTOR_URL
         sync: false

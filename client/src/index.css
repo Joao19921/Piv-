@@ -120,10 +120,22 @@
   .status-dot.warn { background: #F57F17; box-shadow: 0 0 0 4px rgba(245,127,23,.12); }
   .status-dot.stale { background: #D18A3A; box-shadow: 0 0 0 4px rgba(209,138,58,.12); }
   .status-dot.offline { background: #C0392B; box-shadow: 0 0 0 4px rgba(192,57,43,.12); }
+  .login-shell { background-image: linear-gradient(135deg, #081017, #10222c 52%, #0d5c5c); }
+  .dashboard-hero-media img { object-position: 50% 50%; }
 }
 
 @media (min-width: 640px) { .container { padding: 0 1.5rem; } }
 @media (min-width: 1024px) { .container { padding: 0 2rem; max-width: 1440px; } }
+@media (min-width: 1920px) { .container { max-width: 1680px; } }
+@media (min-width: 2560px) { .container { max-width: 1920px; } }
+@media (min-width: 3840px) { .container { max-width: 2160px; } }
+@media (min-width: 1024px) { .dashboard-hero { min-height: clamp(320px, 24vw, 520px); } }
+@media (max-width: 1023px) { .dashboard-hero-media img { aspect-ratio: 16 / 9; } }
+@media (max-width: 640px) {
+  .login-shell { align-items: flex-end; }
+  .dashboard-hero-media { min-height: 200px; }
+  .dashboard-hero-media img { object-position: 47% 50%; }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .fade-up { animation: fade-up .55s cubic-bezier(.23,1,.32,1) both; }

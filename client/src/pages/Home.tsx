@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { SECTION_PATHS, useAuth, type SectionId } from "@/App";
+import { hasPermission, SECTION_PATHS, useAuth, type AuthUser, type PermissionCode, type SectionId } from "@/App";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -17,18 +17,21 @@ import {
   Eraser,
   KeyRound,
   LayoutDashboard,
+  Lock,
   LogOut,
   Menu,
   RefreshCw,
   Search,
   ServerCog,
   ShieldCheck,
+  UserCog,
   Users,
   WalletCards,
   X,
   Zap,
 } from "lucide-react";
 import { PivoMark } from "@/components/PivoMark";
+import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -50,11 +53,27 @@ type ServiceState = "live" | "synced" | "warn" | "stale" | "offline";
 const INGESTION_SOURCE_NAMES = new Set(["AWS Pricing API", "GCP Cloud Billing Catalog"]);
 
 const navigation = [
-  { id: "dashboard" as SectionId, label: "Visão geral", short: "01", icon: LayoutDashboard },
-  { id: "labor" as SectionId, label: "Mão de obra", short: "02", icon: Users },
-  { id: "cloud" as SectionId, label: "Infra cloud", short: "03", icon: Cloud },
-  { id: "licenses" as SectionId, label: "Licenças", short: "04", icon: KeyRound },
+  { id: "dashboard" as SectionId, label: "Visão geral", short: "01", icon: LayoutDashboard, requires: null as PermissionCode | null, adminOnly: false },
+  { id: "labor" as SectionId, label: "Mão de obra", short: "02", icon: Users, requires: "LABOR" as PermissionCode | null, adminOnly: false },
+  { id: "cloud" as SectionId, label: "Infra cloud", short: "03", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
+  { id: "licenses" as SectionId, label: "Licenças", short: "04", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
+  { id: "admin-users" as SectionId, label: "Usuários", short: "05", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
 ];
+
+function visibleNavigationFor(user: AuthUser | null) {
+  return navigation.filter((item) => (!item.adminOnly || user?.role === "ADMIN") && (!item.requires || hasPermission(user, item.requires)));
+}
+
+/** ADMIN sempre acessa tudo; USER depende das permissões cadastradas. "sources" não está
+ * no menu (só acessível pelo widget "Sistema"), mas qualquer autenticado pode entrar. */
+function canAccessSection(user: AuthUser | null, section: SectionId): boolean {
+  if (!user) return false;
+  const item = navigation.find((n) => n.id === section);
+  if (!item) return true;
+  if (item.adminOnly) return user.role === "ADMIN";
+  if (!item.requires) return true;
+  return hasPermission(user, item.requires);
+}
 
 function mapApiStatus(status: SourceStatus, sourceName?: string): ServiceState {
   if (status === "OPERATIONAL") return sourceName && INGESTION_SOURCE_NAMES.has(sourceName) ? "synced" : "live";
@@ -168,18 +187,25 @@ function Dashboard({
   const ptaxRate = (ptaxSource?.data as Record<string, unknown> | null)?.rate;
   return (
     <>
-      <section className="grain paper-grid relative mb-7 min-h-[300px] overflow-hidden rounded-[0.75rem] border-t-2 border-t-[#0D5C5C] bg-[#F7F2E8] shadow-paper">
-        <div className="relative z-10 max-w-[54%] px-6 py-7 sm:px-10 sm:py-9 lg:max-w-[52%] lg:px-12 lg:py-12">
+      <section className="dashboard-hero relative mb-7 grid overflow-hidden rounded-[0.75rem] border-t-2 border-t-[#0D5C5C] bg-[#F7F2E8] shadow-paper lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+        <div className="grain paper-grid relative z-10 px-6 py-7 sm:px-10 sm:py-9 lg:px-12 lg:py-12">
           <div className="mb-5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C2660D]"><span className="h-1.5 w-1.5 rounded-full bg-[#F57F17]" /> Briefing de precificação</div>
-          <h1 className="font-display max-w-xl text-[30px] font-semibold leading-[1.05] tracking-[-0.055em] text-[#333333] sm:text-[42px]">Preço defensável começa com contexto.</h1>
+          <h1 className="font-display max-w-xl text-[30px] font-semibold leading-[1.05] tracking-[-0.055em] text-[#333333] sm:text-[42px] xl:text-[48px]">Preço defensável começa com contexto.</h1>
           <p className="mt-5 max-w-md text-sm leading-6 text-[#5F7474]">Quatro sinais operacionais já estão prontos para orientar a próxima estimativa. O estado de cada fonte acompanha o cálculo.</p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button onClick={() => onNavigate("labor")} className="pressable h-10 rounded-full bg-[#F57F17] px-5 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(232,91,69,.2)] hover:bg-[#D96D0C]">Novo cálculo <ArrowUpRight className="ml-2 h-4 w-4" /></Button>
           <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#D8D1C6] pt-3 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#7D8D8D]"><span className="text-[#C2660D]">01</span> mão de obra <span className="text-[#C2660D]">02</span> cloud <span className="text-[#C2660D]">03</span> PTAX <span className="text-[#C2660D]">04</span> PNCP <span className="text-[#333333]">→ decisão</span></div>
           </div>
         </div>
-        <div className="absolute inset-y-0 right-0 w-[56%] overflow-hidden sm:w-[51%]">
-          <div className="paper-grid absolute inset-0 bg-gradient-to-br from-[#0D5C5C]/10 via-transparent to-[#F57F17]/10" />
+        <div className="dashboard-hero-media relative min-h-[230px] overflow-hidden bg-[#0B151C] sm:min-h-[320px] lg:min-h-full">
+          <img
+            src="/brand/visao-geral.png"
+            alt="Visão geral consolidada do Pivô com custos, margem e monitor de fontes"
+            className="h-full w-full object-cover"
+            loading="eager"
+            decoding="async"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#F7F2E8] via-transparent to-transparent opacity-0 lg:opacity-40" aria-hidden="true" />
         </div>
       </section>
 
@@ -379,12 +405,24 @@ function SourcesView({
   </div>;
 }
 
+function NoAccess({ onNavigate }: { onNavigate: (section: SectionId) => void }) {
+  return (
+    <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-10 text-center shadow-paper">
+      <Lock className="mx-auto h-10 w-10 text-[#9EB4B4]" />
+      <h2 className="mt-4 font-display text-xl font-semibold text-[#333333]">Sem acesso a este módulo</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#658080]">Sua conta não tem permissão pra esta seção. Se você acredita que deveria ter acesso, fale com um administrador.</p>
+      <Button onClick={() => onNavigate("dashboard")} className="pressable mt-6 rounded-full bg-[#F57F17] px-5 text-xs font-semibold text-white hover:bg-[#D96D0C]">Voltar para a Visão geral</Button>
+    </Card>
+  );
+}
+
 export default function Home({ section }: { section: SectionId }) {
-  const { username, logout } = useAuth();
-  const userLabel = username ?? "Convidado";
+  const { user, logout } = useAuth();
+  const userLabel = user?.name ?? "Convidado";
   const userInitials = userLabel.slice(0, 2).toUpperCase();
   const [, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const visibleNavigation = useMemo(() => visibleNavigationFor(user), [user]);
   const activeLabel = useMemo(() => navigation.find((item) => item.id === section)?.label || "Fontes", [section]);
   const navigate = (target: SectionId) => { setLocation(SECTION_PATHS[target]); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const { data: healthData, isLoading: sourcesLoading, refetch: refetchHealth } = useSystemHealth();
@@ -402,6 +440,14 @@ export default function Home({ section }: { section: SectionId }) {
       ? `${activeSourceNames.join(" + ")} em uso`
       : "Nenhuma fonte ao vivo no momento";
   const versionLabel = healthData?.meta ? `v${healthData.meta.version} · ${healthData.meta.commit} · ${healthData.meta.environment}` : null;
-  const renderContent = () => { if (section === "labor") return <LaborPricing />; if (section === "cloud") return <CloudArchitect />; if (section === "licenses") return <LicensesCatalog />; if (section === "sources") return <SourcesView sources={sources} isLoading={sourcesLoading} onRefresh={refetchHealth} ingestion={healthData?.ingestion ?? []} database={healthData?.database} />; return <Dashboard onNavigate={navigate} sources={sources} sourcesLoading={sourcesLoading} />; };
-  return <div className="min-h-screen bg-[#E8E9E9] text-[#333333]"><div className="flex min-h-screen"><aside className="nav-rail sticky top-0 hidden h-screen w-[242px] shrink-0 flex-col lg:flex"><div className="flex items-center gap-3 px-6 py-7"><PivoMark size={36} /><div><p className="font-display text-lg font-semibold leading-none tracking-[-0.04em]">Pivô</p><p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#9EB9B9]">strategic pricing</p></div></div><div className="mx-6 mb-6 h-px bg-white/10" /><div className="px-4"><p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#819F9F]">Workspace</p><nav className="space-y-1">{navigation.map((item) => { const Icon = item.icon; const active = item.id === section; return <button key={item.id} onClick={() => navigate(item.id)} className={`group flex w-full items-center gap-3 rounded-xl border-l-2 px-3 py-3 text-left transition-colors ${active ? "border-[#F57F17] bg-white/10 text-white" : "border-transparent text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Icon className={`h-4 w-4 ${active ? "text-white" : "text-[#819F9F] group-hover:text-[#F57F17]"}`} /><span className="text-xs font-medium">{item.label}</span><span className={`ml-auto font-display text-[10px] ${active ? "text-white/70" : "text-[#648686]"}`}>{item.short}</span></button>; })}</nav></div><div className="mt-auto px-4 pb-5"><button onClick={() => navigate("sources")} className={`mb-4 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${section === "sources" ? "border-white/20 bg-white/10" : "border-white/10 hover:bg-white/5"}`}><div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-[#E9EAEB] text-[#4F7E78]"><ShieldCheck className="h-4 w-4" /><span className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-[#0D5C5C] ${noneOnline ? "bg-[#C0392B]" : allOnline ? "bg-[#78A49E]" : "bg-[#F57F17]"}`} /></div><div><p className="text-xs font-semibold text-white">{systemLabel}</p><p className="mt-0.5 text-[10px] text-[#8DA8A8]">{sourcesSummary}</p></div></button><div className="flex items-center justify-between border-t border-white/10 pt-4"><div className="flex items-center gap-2 min-w-0"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#C7E5E5] font-display text-[10px] font-semibold text-[#333333]">{userInitials}</div><span className="truncate text-[11px] font-medium text-[#D8E4E4]">{userLabel}</span></div><div className="flex items-center gap-1"><button onClick={logout} className="rounded p-1.5 text-[#819F9F] hover:bg-white/10 hover:text-white" aria-label="Sair"><LogOut className="h-4 w-4" /></button></div></div></div></aside><div className="min-w-0 flex-1"><header className="sticky top-0 z-30 border-b border-[#DED8CE] bg-[#E8E9E9]/90 backdrop-blur-xl"><div className="container flex h-[72px] items-center justify-between gap-4"><div className="flex items-center gap-3"><button className="rounded-lg border border-[#D6D3CF] bg-[#F7F2E8] p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu className="h-4 w-4" /></button><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#929C9C] sm:flex"><span>Workspace</span><ChevronRight className="h-3 w-3" /><span className="text-[#436D6D]">{activeLabel}</span></div><div className="sm:hidden"><p className="font-display text-sm font-semibold text-[#333333]">{activeLabel}</p><p className="text-[9px] uppercase tracking-[0.16em] text-[#929C9C]">Pivô · pricing intelligence</p></div></div></div></header><main className="container py-7 sm:py-9 lg:py-11">{renderContent()}</main><footer className="container flex flex-col gap-2 border-t border-[#DCD6CC] py-5 text-[10px] text-[#929C9C] sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2 flex-wrap"><span>Pivô · camada de decisão para preços de TI</span>{versionLabel && <span className="rounded-full border border-[#DCD6CC] px-2 py-0.5 font-mono">{versionLabel}</span>}</span><span className="flex items-center gap-2"><span className={`status-dot ${noneOnline ? "offline" : allOnline ? "live" : "warn"}`} /> {footerSourcesText}</span></footer></div></div>{mobileOpen && <div className="fixed inset-0 z-50 lg:hidden"><button className="absolute inset-0 bg-[#0D5C5C]/50 backdrop-blur-sm" onClick={() => setMobileOpen(false)} aria-label="Fechar menu" /><aside className="nav-rail relative flex h-full w-[282px] flex-col shadow-2xl"><div className="flex items-center justify-between px-6 py-7"><div className="flex items-center gap-3"><PivoMark size={36} /><div><p className="font-display text-lg font-semibold leading-none">Pivô</p><p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#9EB9B9]">strategic pricing</p></div></div><button onClick={() => setMobileOpen(false)} className="rounded p-2 text-[#AEC4C4] hover:bg-white/10" aria-label="Fechar"><X className="h-4 w-4" /></button></div><div className="mx-6 mb-6 h-px bg-white/10" /><div className="px-4"><p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#819F9F]">Workspace</p><nav className="space-y-1">{navigation.map((item) => { const Icon = item.icon; const active = item.id === section; return <button key={item.id} onClick={() => navigate(item.id)} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left ${active ? "border-l-2 border-[#F57F17] bg-white/10 text-white" : "border-l-2 border-transparent text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Icon className="h-4 w-4" /><span className="text-xs font-medium">{item.label}</span><span className="ml-auto font-display text-[10px] opacity-60">{item.short}</span></button>; })}<button onClick={() => navigate("sources")} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left ${section === "sources" ? "bg-[#F57F17] text-white" : "text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Database className="h-4 w-4" /><span className="text-xs font-medium">Fontes</span></button></nav></div></aside></div>}</div>;
+  const renderContent = () => {
+    if (!canAccessSection(user, section)) return <NoAccess onNavigate={navigate} />;
+    if (section === "labor") return <LaborPricing />;
+    if (section === "cloud") return <CloudArchitect />;
+    if (section === "licenses") return <LicensesCatalog />;
+    if (section === "admin-users") return <AdminUsersPage />;
+    if (section === "sources") return <SourcesView sources={sources} isLoading={sourcesLoading} onRefresh={refetchHealth} ingestion={healthData?.ingestion ?? []} database={healthData?.database} />;
+    return <Dashboard onNavigate={navigate} sources={sources} sourcesLoading={sourcesLoading} />;
+  };
+  return <div className="min-h-screen bg-[#E8E9E9] text-[#333333]"><div className="flex min-h-screen"><aside className="nav-rail sticky top-0 hidden h-screen w-[242px] shrink-0 flex-col lg:flex"><div className="flex items-center gap-3 px-6 py-7"><PivoMark size={36} /><div><p className="font-display text-lg font-semibold leading-none tracking-[-0.04em]">Pivô</p><p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#9EB9B9]">strategic pricing</p></div></div><div className="mx-6 mb-6 h-px bg-white/10" /><div className="px-4"><p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#819F9F]">Workspace</p><nav className="space-y-1">{visibleNavigation.map((item) => { const Icon = item.icon; const active = item.id === section; return <button key={item.id} onClick={() => navigate(item.id)} className={`group flex w-full items-center gap-3 rounded-xl border-l-2 px-3 py-3 text-left transition-colors ${active ? "border-[#F57F17] bg-white/10 text-white" : "border-transparent text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Icon className={`h-4 w-4 ${active ? "text-white" : "text-[#819F9F] group-hover:text-[#F57F17]"}`} /><span className="text-xs font-medium">{item.label}</span><span className={`ml-auto font-display text-[10px] ${active ? "text-white/70" : "text-[#648686]"}`}>{item.short}</span></button>; })}</nav></div><div className="mt-auto px-4 pb-5"><button onClick={() => navigate("sources")} className={`mb-4 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${section === "sources" ? "border-white/20 bg-white/10" : "border-white/10 hover:bg-white/5"}`}><div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-[#E9EAEB] text-[#4F7E78]"><ShieldCheck className="h-4 w-4" /><span className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-[#0D5C5C] ${noneOnline ? "bg-[#C0392B]" : allOnline ? "bg-[#78A49E]" : "bg-[#F57F17]"}`} /></div><div><p className="text-xs font-semibold text-white">{systemLabel}</p><p className="mt-0.5 text-[10px] text-[#8DA8A8]">{sourcesSummary}</p></div></button><div className="flex items-center justify-between border-t border-white/10 pt-4"><div className="flex items-center gap-2 min-w-0"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#C7E5E5] font-display text-[10px] font-semibold text-[#333333]">{userInitials}</div><span className="truncate text-[11px] font-medium text-[#D8E4E4]">{userLabel}</span></div><div className="flex items-center gap-1"><button onClick={logout} className="rounded p-1.5 text-[#819F9F] hover:bg-white/10 hover:text-white" aria-label="Sair"><LogOut className="h-4 w-4" /></button></div></div></div></aside><div className="min-w-0 flex-1"><header className="sticky top-0 z-30 border-b border-[#DED8CE] bg-[#E8E9E9]/90 backdrop-blur-xl"><div className="container flex h-[72px] items-center justify-between gap-4"><div className="flex items-center gap-3"><button className="rounded-lg border border-[#D6D3CF] bg-[#F7F2E8] p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Abrir menu"><Menu className="h-4 w-4" /></button><div className="hidden items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#929C9C] sm:flex"><span>Workspace</span><ChevronRight className="h-3 w-3" /><span className="text-[#436D6D]">{activeLabel}</span></div><div className="sm:hidden"><p className="font-display text-sm font-semibold text-[#333333]">{activeLabel}</p><p className="text-[9px] uppercase tracking-[0.16em] text-[#929C9C]">Pivô · pricing intelligence</p></div></div></div></header><main className="container py-7 sm:py-9 lg:py-11">{renderContent()}</main><footer className="container flex flex-col gap-2 border-t border-[#DCD6CC] py-5 text-[10px] text-[#929C9C] sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2 flex-wrap"><span>Pivô · camada de decisão para preços de TI</span>{versionLabel && <span className="rounded-full border border-[#DCD6CC] px-2 py-0.5 font-mono">{versionLabel}</span>}</span><span className="flex items-center gap-2"><span className={`status-dot ${noneOnline ? "offline" : allOnline ? "live" : "warn"}`} /> {footerSourcesText}</span></footer></div></div>{mobileOpen && <div className="fixed inset-0 z-50 lg:hidden"><button className="absolute inset-0 bg-[#0D5C5C]/50 backdrop-blur-sm" onClick={() => setMobileOpen(false)} aria-label="Fechar menu" /><aside className="nav-rail relative flex h-full w-[282px] flex-col shadow-2xl"><div className="flex items-center justify-between px-6 py-7"><div className="flex items-center gap-3"><PivoMark size={36} /><div><p className="font-display text-lg font-semibold leading-none">Pivô</p><p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-[#9EB9B9]">strategic pricing</p></div></div><button onClick={() => setMobileOpen(false)} className="rounded p-2 text-[#AEC4C4] hover:bg-white/10" aria-label="Fechar"><X className="h-4 w-4" /></button></div><div className="mx-6 mb-6 h-px bg-white/10" /><div className="px-4"><p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#819F9F]">Workspace</p><nav className="space-y-1">{visibleNavigation.map((item) => { const Icon = item.icon; const active = item.id === section; return <button key={item.id} onClick={() => navigate(item.id)} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left ${active ? "border-l-2 border-[#F57F17] bg-white/10 text-white" : "border-l-2 border-transparent text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Icon className="h-4 w-4" /><span className="text-xs font-medium">{item.label}</span><span className="ml-auto font-display text-[10px] opacity-60">{item.short}</span></button>; })}<button onClick={() => navigate("sources")} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left ${section === "sources" ? "bg-[#F57F17] text-white" : "text-[#AEC4C4] hover:bg-white/8 hover:text-white"}`}><Database className="h-4 w-4" /><span className="text-xs font-medium">Fontes</span></button></nav></div></aside></div>}</div>;
 }

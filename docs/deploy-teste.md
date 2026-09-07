@@ -18,20 +18,25 @@ NODE_ENV=production PORT=3000 node dist/index.js
 docker build -t pivo:test .
 docker run --rm -p 3000:3000 \
   -e NODE_ENV=production \
-  -e TEST_ACCESS_USER=pivo-teste \
-  -e TEST_ACCESS_PASSWORD='defina-uma-senha-forte' \
+  -e SESSION_SECRET='gere-um-segredo-forte' \
+  -e DATABASE_URL='postgresql://...' \
   pivo:test
 ```
 
 ## Acessos de Teste
 
-Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem configurados em producao, o app inteiro fica protegido por login com sessao (tela propria do produto, cookie assinado — nao o popup nativo de Basic Auth).
+Login e por e-mail/senha, com usuarios reais no Postgres (RBAC — ver [ARQUITETURA.md](ARQUITETURA.md#autorizacao-rbac)). Sem `DATABASE_URL` configurado nao ha usuarios possiveis, entao o app fica sem gate de login (mesmo comportamento de dev local sem Postgres).
+
+Pra criar o primeiro acesso (ADMIN), rode uma vez (ver README):
+
+```bash
+ADMIN_NAME="Administrador Pivo" ADMIN_EMAIL="admin@exemplo.com" ADMIN_INITIAL_PASSWORD="defina-uma-senha-forte" pnpm run seed:admin
+```
 
 Compartilhe com o time:
 
 - URL do ambiente publicado
-- usuario: valor de `TEST_ACCESS_USER`
-- senha: valor de `TEST_ACCESS_PASSWORD`
+- e-mail e senha inicial do usuario criado por um ADMIN em Administracao > Usuarios (o usuario e obrigado a trocar a senha no primeiro login)
 - observacao: no plano gratuito, o primeiro acesso pode demorar se o servidor estiver dormindo
 
 ## Variaveis Opcionais

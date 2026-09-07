@@ -31,8 +31,8 @@ Em producao existe um unico processo Express:
 
 - serve a API em `/api/v1/*`;
 - serve os arquivos estaticos do frontend gerados em `dist/public`;
-- aplica um gate de sessao (cookie assinado, tela de login propria do produto — nao o popup nativo de Basic Auth) quando `NODE_ENV=production` e `TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD` estao definidos;
-- mantem `/api/v1/healthz`, `/api/v1/auth/login`, `/api/v1/auth/session` e `/api/v1/auth/logout` fora desse gate.
+- carrega o usuario da sessao (`attachUser`) sempre que `DATABASE_URL` esta configurado — sem banco nao ha usuarios possiveis, entao o gate fica desligado (mesmo comportamento de dev sem Postgres que ja existia antes do RBAC);
+- dentro do router (`app.ts`), `/auth/session`, `/auth/login`, `/auth/logout` ficam acessiveis sem sessao (e o proprio ponto de entrada do login); todo o resto exige `requireAuth` (sessao valida + senha ja trocada), com `requirePermission`/`requireRole` adicionais por modulo (ver "Autorizacao (RBAC)" abaixo).
 
 ## Modulos De Codigo
 
@@ -119,6 +119,20 @@ Arquivos principais:
 - `repositories/`: `cloudPricingRepository`, `cloudArchitectureRepository` (arquiteturas + servicos, com `insertArchitecture`/`updateArchitecture` transacionais), `storagePricingRepository`, `fxRepository`, `marketBenchmarkRepository`, `ingestionRunsRepository` — leitura/escrita das tabelas descritas em "Banco De Dados" abaixo.
 - `observability/logger.ts` e `observability/queryStats.ts`: logging estruturado (JSON por linha, capturado pelo log viewer do Render) e contadores em memoria por consulta.
 
+## Autorizacao (RBAC)
+
+Login por e-mail/senha, com perfil (`ADMIN`/`USER`) separado de permissoes por modulo (`LABOR`/`INFRA`/`LICENSES`) — evita criar um perfil por combinacao (`USER_LABOR_INFRA` etc.). ADMIN nunca ganha linhas de permissao: acesso total e derivado do `role`, nao duplicado.
+
+- `infrastructure/auth/password.ts`: hash de senha com `crypto.scryptSync` (salt aleatorio + `timingSafeEqual` na comparacao) — extensao do mesmo modulo `crypto` ja usado pra assinar a sessao, sem dependencia nova (evita risco de binding nativo de bcrypt/argon2 quebrar no build Docker Alpine).
+- `infrastructure/auth/session.ts`: cookie HMAC assinado carrega `userId` + expiracao; `SESSION_SECRET` (env var) e o segredo de assinatura — nunca a senha de ninguem. Sem essa variavel, gera um segredo efemero no boot (funciona, so nao sobrevive a um restart/redeploy) e loga um aviso.
+- `domain/services/authorization.ts`: `hasPermission`/`isAdmin`, funcoes puras sem I/O — o que os testes unitarios exercitam direto.
+- `infrastructure/repositories/userRepository.ts`: CRUD de usuario + permissoes (`insertUser`/`updateUser` transacionais via `withTransaction`, substituem as linhas de `user_permissions` por completo a cada save).
+- `presentation/authMiddleware.ts`: `attachUser` (carrega `req.user` a partir do cookie; usuario `INACTIVE` e tratado como nao autenticado mesmo com cookie ainda valido — cobre desativacao no meio de uma sessao aberta), `requireAuth` (sessao valida **e** sem troca de senha pendente — 403 `password_change_required` senao), `requireSession` (so sessao valida, usado pela propria rota de troca de senha pra nao virar um cadeado sem chave), `requirePermission(code)`, `requireRole("ADMIN")`.
+- `presentation/authRoutes.ts` + `presentation/adminUsersRoutes.ts`: rotas de sessao (login/logout/troca de senha) e CRUD administrativo de usuarios (ver "API Publica" abaixo). Sem exclusao fisica na V1 — so ativar/desativar.
+- `scripts/seedAdmin.ts` (`pnpm run seed:admin`): cria o primeiro ADMIN a partir de env vars fornecidas na hora (nunca inventa senha) — ver README.
+
+**Reforço real, nao so esconder menu**: toda checagem vive no backend. O frontend (`Home.tsx`) filtra o menu lateral e bloqueia a renderizacao de uma secao sem permissao (`NoAccess`), mas isso e so UX — a API recusa (401/403) mesmo que alguem chame a rota direto.
+
 ## Padrao De Resiliencia
 
 Chamadas dependentes de fonte externa seguem quatro camadas:
@@ -186,6 +200,7 @@ Tabelas (`server/db/migrations/`):
 - `ingestion_runs` (`0001`): uma linha por execucao de coletor/ingestao (servico, status, registros atualizados, duracao, erro) — base do painel de observabilidade em `/system-health` e na tela "Fontes".
 - `storage_prices` (`0003`): historico de preco de armazenamento (EBS gp3), mesmo padrao insert-only de `cloud_prices`.
 - `cloud_architectures` + `architecture_services` (`0004`, recriada em `0005`): unica coisa que o usuario persiste com nome — uma arquitetura de infra cloud como composicao de N servicos (Cloud Architecture Calculator). `cloud_architectures` guarda nome, provider/regiao "primarios" (do primeiro servico), moeda e os totais agregados; `architecture_services` guarda 1 linha por servico (service_id, categoria, regiao, `configuration` jsonb, preco calculado no momento do save). Insert/update sao transacionais (`withTransaction`) — nunca fica uma arquitetura com servicos parciais. Editar/duplicar recalculam ou copiam o preco; nao ha versionamento historico (update sobrescreve).
+- `users` / `permissions` / `user_permissions` (`0006`): RBAC — usuario (nome, e-mail unico, `password_hash`, `role`, `status`, `must_change_password`), catalogo fixo de 3 permissoes (seed da propria migration) e o relacionamento N:N entre usuario e permissao. `audit_logs` (`0006`): schema pronto pra auditoria futura, ainda nao escrito por toda acao nesta V1.
 
 ## Ingestao Periodica (Lambda + EventBridge)
 
@@ -229,6 +244,8 @@ Todas as rotas ficam sob `/api/v1`:
 - `POST /market-benchmark/search`
 - `GET /market-benchmark/history`
 - `GET /licenses/catalog`
+- `GET /auth/session` / `POST /auth/login` / `POST /auth/logout` / `POST /auth/change-password`
+- `GET /admin/users` / `POST /admin/users` / `PUT /admin/users/:id` / `POST /admin/users/:id/activate` / `POST /admin/users/:id/deactivate` — todas atras de `requireRole("ADMIN")`
 
 ## Dados E Persistencia
 
@@ -238,7 +255,7 @@ O Postgres (Supabase, ver "Banco De Dados" acima) e a fonte de verdade para cata
 - nao deve ser usado como registro permanente;
 - pode ser perdido em provedores com filesystem efemero, como Render Free (por isso a migracao para Postgres).
 
-Decisao de produto (2026-09-05): nao havera modulo de "Propostas" — a unica coisa que o produto persiste com nome e uma arquitetura de infra cloud (`cloud_architectures`, ver acima). Pendente para uma proxima fase: usuarios/acessos individuais (hoje e sessao unica compartilhada).
+Decisao de produto (2026-09-05): nao havera modulo de "Propostas" — a unica coisa que o produto persiste com nome e uma arquitetura de infra cloud (`cloud_architectures`, ver acima). Usuarios/permissoes (RBAC, ver acima) tambem sao persistidos no Postgres desde 2026-09-07.
 
 ## Deploy
 
@@ -247,7 +264,7 @@ O artefato principal e o `Dockerfile`. O `render.yaml` descreve um Web Service g
 - runtime Docker;
 - health check em `/api/v1/healthz`;
 - `NODE_ENV=production`;
-- variaveis secretas para login de teste (sessao) e conector opcional.
+- variaveis secretas para `SESSION_SECRET`, `DATABASE_URL` e conector opcional de benchmark.
 
 Detalhes:
 
@@ -261,7 +278,8 @@ Detalhes:
 - Expandir o PNCP alem da checagem de saude: hoje `pncpCollector.ts` so prova que a API esta no ar (contagem de contratacoes recentes); buscar preco de referencia por item exigiria paginar `/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}` e casar a descricao do item com o catalogo do Pivo.
 - Rodar `scripts/deploy-lambda.ps1` (cria a IAM Role/policy, a Lambda e o EventBridge Rule) e configurar `GOOGLE_CLOUD_BILLING_API_KEY` para validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
 - Ampliar dimensoes de custo da calculadora cloud: storage (EBS/Persistent Disk), transferencia de dados, banco gerenciado (RDS/Cloud SQL) — hoje cobre so compute on-demand.
-- Persistir usuarios individuais no Postgres (hoje e sessao unica compartilhada). Sem modulo de propostas — decisao de produto.
+- Escrever `audit_logs` de fato (schema pronto desde a migration `0006`, so nao populado por toda acao administrativa ainda).
+- Sem modulo de propostas — decisao de produto.
 - Separar dominio em modulos menores quando o volume de regras crescer.
 - Criar MCP server previsto no PRD.
 - Publicar workflow CI/CD quando a credencial GitHub tiver escopo `workflow`.

@@ -390,3 +390,70 @@ export async function duplicateArchitectureRequest(id: string, name?: string): P
   if (!res.ok) await parseErrorOrThrow(res, "Falha ao duplicar a arquitetura.");
   return architectureDetailResponseSchema.parse(await res.json()).architecture;
 }
+
+// --- Administração de usuários (RBAC) ---------------------------------------------------
+
+const permissionCodeSchema = z.enum(["LABOR", "INFRA", "LICENSES"]);
+export type PermissionCode = z.infer<typeof permissionCodeSchema>;
+
+const userSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: z.enum(["ADMIN", "USER"]),
+  status: z.enum(["ACTIVE", "INACTIVE"]),
+  mustChangePassword: z.boolean(),
+  permissions: z.array(permissionCodeSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastLoginAt: z.string().nullable(),
+});
+export type ManagedUser = z.infer<typeof userSchema>;
+
+const usersResponseSchema = z.object({ users: z.array(userSchema) });
+
+const createUserResponseSchema = z.object({ email: z.string(), initialPassword: z.string(), userId: z.string() });
+export type CreateUserResponse = z.infer<typeof createUserResponseSchema>;
+
+export interface SaveUserParams {
+  name: string;
+  email: string;
+  role: "ADMIN" | "USER";
+  status: "ACTIVE" | "INACTIVE";
+  permissions: PermissionCode[];
+}
+
+export async function fetchUsers(): Promise<ManagedUser[]> {
+  const res = await fetch(`${API_BASE}/admin/users`);
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao carregar usuários.");
+  return usersResponseSchema.parse(await res.json()).users;
+}
+
+export async function createUser(params: SaveUserParams & { password: string; confirmPassword: string }): Promise<CreateUserResponse> {
+  const res = await fetch(`${API_BASE}/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao criar usuário.");
+  return createUserResponseSchema.parse(await res.json());
+}
+
+export async function updateUserRequest(id: string, params: SaveUserParams): Promise<void> {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao atualizar usuário.");
+}
+
+export async function activateUserRequest(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}/activate`, { method: "POST" });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao ativar usuário.");
+}
+
+export async function deactivateUserRequest(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao desativar usuário.");
+}

@@ -8,7 +8,6 @@ import { searchCloudServiceDefinitions, type CloudProvider } from "../domain/ser
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
 import { calculateServicePrice } from "../domain/services/pricingEngine";
-import { createSessionCookieValue, isSessionCookieValid, parseCookie, SESSION_COOKIE_NAME, SESSION_TTL_MS, SESSION_TTL_REMEMBER_MS } from "../infrastructure/auth/session";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
@@ -30,6 +29,9 @@ import { getLatestIngestionRuns, type IngestionRun } from "../infrastructure/rep
 import { logger } from "../infrastructure/observability/logger";
 import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
+import { createAdminUsersRouter } from "./adminUsersRoutes";
+import { createAuthRouter } from "./authRoutes";
+import { requireAuth, requirePermission } from "./authMiddleware";
 
 /** Versão do package.json, lida uma vez no boot; usada só para exibir "v{versão}" no rodapé do app. */
 const appVersion = (() => {
@@ -133,49 +135,12 @@ export function createApiRouter(): Router {
     res.json({ status: "ok" });
   });
 
-  // Login do ambiente de teste (substitui o popup nativo de Basic Auth por uma tela do produto).
-  // Credencial única compartilhada (TEST_ACCESS_USER/TEST_ACCESS_PASSWORD) — sem sistema de usuarios.
-  router.get("/auth/session", (req, res) => {
-    const testAccessUser = process.env.TEST_ACCESS_USER;
-    const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
-    const authRequired = process.env.NODE_ENV === "production" && Boolean(testAccessUser && testAccessPassword);
-    if (!authRequired) {
-      res.json({ authenticated: true, required: false, username: null });
-      return;
-    }
-    const token = parseCookie(req.headers.cookie, SESSION_COOKIE_NAME);
-    const authenticated = isSessionCookieValid(token, testAccessPassword!);
-    res.json({ authenticated, required: true, username: authenticated ? testAccessUser : null });
-  });
+  // Login por e-mail/senha (RBAC): rotas de sessão, sempre acessíveis sem estar autenticado.
+  router.use(createAuthRouter());
 
-  router.post("/auth/login", (req, res) => {
-    const testAccessUser = process.env.TEST_ACCESS_USER;
-    const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
-    if (!testAccessUser || !testAccessPassword) {
-      res.status(503).json({ error: "Autenticação não configurada neste ambiente." });
-      return;
-    }
-
-    const { username, password, remember } = (req.body ?? {}) as Record<string, unknown>;
-    if (username !== testAccessUser || password !== testAccessPassword) {
-      res.status(401).json({ error: "Usuário ou senha invalidos." });
-      return;
-    }
-
-    const ttlMs = remember === true ? SESSION_TTL_REMEMBER_MS : SESSION_TTL_MS;
-    res.cookie(SESSION_COOKIE_NAME, createSessionCookieValue(testAccessPassword, ttlMs), {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: ttlMs,
-    });
-    res.json({ ok: true });
-  });
-
-  router.post("/auth/logout", (_req, res) => {
-    res.clearCookie(SESSION_COOKIE_NAME);
-    res.json({ ok: true });
-  });
+  // Dali pra baixo, toda rota exige sessão válida (usuário ativo) — Visão Geral é a base
+  // liberada pra qualquer autenticado; módulos abaixo somam a permissão específica.
+  router.use(requireAuth);
 
   router.get("/system-health", async (_req, res) => {
     const [ptax, azure, pncp, ingestionRuns] = await Promise.all([
@@ -228,6 +193,8 @@ export function createApiRouter(): Router {
   router.get("/fx/ptax", async (_req, res) => {
     res.json(await getPtax());
   });
+
+  router.use("/cloud", requirePermission("INFRA"));
 
   // Catálogo pesquisável de serviços (Compute, Storage, Database, Networking, Containers,
   // Serverless, CDN) por AWS/Azure/GCP. Compute tem as opções de SKU preenchidas ao vivo
@@ -436,6 +403,9 @@ export function createApiRouter(): Router {
     res.status(201).json({ architecture: toArchitectureDetailView(detail!.architecture, detail!.services) });
   });
 
+  router.use("/labor", requirePermission("LABOR"));
+  router.use("/market-benchmark", requirePermission("LABOR"));
+
   router.get("/labor/profiles", (_req, res) => {
     res.json({
       profiles: laborProfiles,
@@ -480,6 +450,8 @@ export function createApiRouter(): Router {
     res.json({ entries: await getMarketBenchmarkHistory() });
   });
 
+  router.use("/licenses", requirePermission("LICENSES"));
+
   router.get("/licenses/catalog", (_req, res) => {
     res.json({
       items: licenseCatalog,
@@ -493,6 +465,9 @@ export function createApiRouter(): Router {
       },
     });
   });
+
+  // Área administrativa (CRUD de usuários) — só ADMIN (checado dentro do próprio router).
+  router.use(createAdminUsersRouter());
 
   return router;
 }

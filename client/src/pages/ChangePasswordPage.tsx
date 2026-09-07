@@ -1,47 +1,42 @@
 import { useState } from "react";
+import type { AuthUser } from "@/App";
 import { PivoMark } from "@/components/PivoMark";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-/** Oferece ao navegador salvar a credencial (Credential Management API). Só Chrome/Edge
- * suportam PasswordCredential; em outros navegadores essa chamada é um no-op seguro —
- * o autocomplete="username"/"current-password" nos campos já cobre o resto. */
-async function offerToSaveCredential(email: string, password: string): Promise<void> {
-  try {
-    const PasswordCredentialCtor = (window as unknown as { PasswordCredential?: new (data: unknown) => Credential }).PasswordCredential;
-    if (!PasswordCredentialCtor || !navigator.credentials?.store) return;
-    const credential = new PasswordCredentialCtor({ id: email, password, name: email });
-    await navigator.credentials.store(credential);
-  } catch {
-    // Navegador recusou ou não suporta; sem problema, o login já foi concluído.
-  }
-}
-
-export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(true);
+/** Tela de troca obrigatória de senha (primeiro acesso). Bloqueia os módulos até a senha
+ * ser trocada — o backend também recusa (403 password_change_required), isso é só a UI. */
+export default function ChangePasswordPage({ user, onSuccess, onLogout }: { user: AuthUser; onSuccess: () => void; onLogout: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (newPassword.length < 8) {
+      setError("A nova senha precisa ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("A confirmação não é igual à nova senha.");
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/v1/auth/login", {
+      const res = await fetch("/api/v1/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, remember }),
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "E-mail ou senha inválidos.");
+        setError(data?.error ?? "Não foi possível trocar a senha.");
         return;
       }
-      await offerToSaveCredential(email, password);
       onSuccess();
     } catch {
       setError("Não foi possível conectar. Tente novamente.");
@@ -66,45 +61,51 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
           className="rounded-[0.75rem] border border-t-2 border-t-[#8DD9D9] border-white/12 bg-[#121D26]/78 p-6 shadow-[0_18px_50px_rgba(0,0,0,.25)] sm:p-7"
         >
           <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#C2660D]">
-            <span className="h-px w-6 bg-[#F57F17]" /> Acesso restrito
+            <span className="h-px w-6 bg-[#F57F17]" /> Primeiro acesso
           </div>
-          <h1 className="mb-6 font-display text-xl font-semibold tracking-[-0.02em] text-white">Entrar no ambiente de testes</h1>
+          <h1 className="mb-2 font-display text-xl font-semibold tracking-[-0.02em] text-white">Defina sua nova senha</h1>
+          <p className="mb-6 text-xs leading-5 text-[#B7D3D3]">Olá, {user.name.split(" ")[0]}. Por segurança, troque a senha inicial antes de continuar.</p>
 
           <div className="mb-4">
-            <Label htmlFor="email" className="text-xs font-semibold text-[#BFE3E3]">
-              E-mail
+            <Label htmlFor="current-password" className="text-xs font-semibold text-[#BFE3E3]">
+              Senha atual
             </Label>
             <Input
-              id="email"
-              name="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="current-password"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
               className="mt-2 h-11 border-white/12 bg-white/8 text-sm text-white placeholder:text-white/40 focus-visible:ring-[#8DD9D9]/35"
               autoFocus
-              autoComplete="username"
-            />
-          </div>
-          <div className="mb-4">
-            <Label htmlFor="password" className="text-xs font-semibold text-[#BFE3E3]">
-              Senha
-            </Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-2 h-11 border-white/12 bg-white/8 text-sm text-white placeholder:text-white/40 focus-visible:ring-[#8DD9D9]/35"
               autoComplete="current-password"
             />
           </div>
-
-          <div className="mb-5 flex items-center gap-2">
-            <Checkbox id="remember" checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
-            <Label htmlFor="remember" className="text-xs font-medium leading-5 text-[#B7D3D3]">
-              Continuar conectado por 30 dias neste dispositivo
+          <div className="mb-4">
+            <Label htmlFor="new-password" className="text-xs font-semibold text-[#BFE3E3]">
+              Nova senha
             </Label>
+            <Input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="mt-2 h-11 border-white/12 bg-white/8 text-sm text-white placeholder:text-white/40 focus-visible:ring-[#8DD9D9]/35"
+              autoComplete="new-password"
+            />
+            <p className="mt-1.5 text-[11px] text-[#879A9A]">Pelo menos 8 caracteres.</p>
+          </div>
+          <div className="mb-5">
+            <Label htmlFor="confirm-password" className="text-xs font-semibold text-[#BFE3E3]">
+              Confirmar nova senha
+            </Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="mt-2 h-11 border-white/12 bg-white/8 text-sm text-white placeholder:text-white/40 focus-visible:ring-[#8DD9D9]/35"
+              autoComplete="new-password"
+            />
           </div>
 
           {error && (
@@ -113,14 +114,16 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
 
           <Button
             type="submit"
-            disabled={isSubmitting || !email || !password}
+            disabled={isSubmitting || !currentPassword || !newPassword || !confirmPassword}
             className="pressable h-11 w-full rounded-full bg-[#F57F17] text-sm font-semibold text-white hover:bg-[#D96D0C]"
           >
-            {isSubmitting ? "Entrando..." : "Entrar"}
+            {isSubmitting ? "Salvando..." : "Salvar nova senha"}
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-[11px] leading-5 text-[#8EC8C8]">Da fonte dispersa à decisão defensável.</p>
+        <button onClick={onLogout} className="mt-6 w-full text-center text-[11px] leading-5 text-[#8EC8C8] hover:text-white">
+          Sair e entrar com outra conta
+        </button>
       </div>
     </div>
   );

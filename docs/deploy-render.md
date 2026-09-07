@@ -13,9 +13,10 @@ O Pivo atual roda melhor como um servidor Node/Express unico, servindo API e fro
 3. Conecte o repositorio `Joao19921/Piv-`.
 4. Confirme que o Render detectou o arquivo [`../render.yaml`](../render.yaml).
 5. Preencha os env vars secretos:
-   - `TEST_ACCESS_USER`
-   - `TEST_ACCESS_PASSWORD`
+   - `SESSION_SECRET` (recomendado; se ausente, o app gera um segredo efemero a cada boot).
+   - `DATABASE_URL` (Postgres/Supabase; necessario para usuarios/RBAC e persistencias).
    - `MARKET_BENCHMARK_CONNECTOR_URL` somente se existir conector externo.
+   - `SENTRY_DSN` somente se o projeto Sentry estiver configurado.
 6. Confirme a criacao do servico.
 7. Aguarde o primeiro build e deploy.
 
@@ -32,14 +33,26 @@ O `render.yaml` define:
 
 ## Acesso Do Time
 
-Quando `TEST_ACCESS_USER` e `TEST_ACCESS_PASSWORD` estiverem definidos, o app inteiro fica protegido por login com sessao (tela propria do produto), exceto `/api/v1/healthz` e as proprias rotas de `/api/v1/auth/*`.
+O app usa login por e-mail/senha com usuarios em Postgres. Para criar o primeiro ADMIN no ambiente conectado ao banco, rode uma vez:
+
+```bash
+ADMIN_NAME="Administrador Pivo" \
+ADMIN_EMAIL="admin@exemplo.com" \
+ADMIN_INITIAL_PASSWORD="defina-uma-senha-forte" \
+pnpm run seed:admin
+```
+
+Nao deixe `ADMIN_NAME`, `ADMIN_EMAIL` e `ADMIN_INITIAL_PASSWORD` configuradas permanentemente no Render. Elas sao variaveis de seed manual, nao configuracao do app web.
+
+O app inteiro fica protegido por login com sessao (tela propria do produto), exceto `/api/v1/healthz` e as rotas de `/api/v1/auth/*`.
 
 Compartilhe com o time:
 
 - URL publica do Render;
-- usuario de teste;
-- senha de teste;
+- e-mail do usuario criado;
+- senha inicial;
 - aviso de que o primeiro acesso pode demorar se o servico estiver dormindo.
+- aviso de que a senha inicial precisa ser trocada no primeiro login.
 
 ## Deploy Continuo
 

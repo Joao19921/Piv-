@@ -17,10 +17,11 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Resiliencia | Implementado | Circuit breaker, retry, cache em disco e fallback estatico. |
 | Banco persistente | Implementado | Postgres (Supabase) para catalogo de cloud, precos, PTAX e historico de benchmark. Cache em arquivo continua so como fallback de nivel 3. |
 | Observabilidade externa | Implementado | Sentry (error tracking) + UptimeRobot (uptime) + keep-alive do Supabase via cron externo — ver [REQUISITOS-INFRA.md](docs/REQUISITOS-INFRA.md#observabilidade-gratuita-sentry--uptimerobot). |
-| Ambiente de teste | Implementado | Docker + Render Free + login com sessao. URL real: `https://pivo-i8m3.onrender.com`. |
+| Ambiente de teste | Implementado | Docker + Render Free + login com sessao, RBAC e tela propria do produto. URL real: `https://pivo-i8m3.onrender.com`. |
+| Identidade visual no produto | Implementado | Tela inicial e hero da visao geral usam os assets em `client/public/brand/`, derivados das referencias em `docs/assets/identidade-visual/`. Layout validado para mobile, desktop, 4K e 8K sem overflow horizontal. |
 | CAGED ao vivo | Pendente | MTE so disponibiliza microdados via FTP (sem API); hoje aparece como snapshot/fallback. |
 | MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
-| Multiusuario | Pendente | Login atual e sessao unica compartilhada (`TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD`), sem entidades de `User` nem por-usuario. Decisao de produto: nao havera modulo de "Propostas". |
+| Multiusuario | Implementado | Login por e-mail/senha com usuarios em Postgres, troca obrigatoria de senha inicial, perfis ADMIN/USER e permissoes por modulo. Decisao de produto: nao havera modulo de "Propostas". |
 
 ## Stack
 
@@ -65,17 +66,32 @@ Veja tambem [.env.example](.env.example).
 | `NODE_ENV` | Nao | Use `production` em deploy. |
 | `PORT` | Nao | Porta do Express; padrao 3000 em producao e 3001 em dev. |
 | `APP_ENV` | Nao | Rotulo de ambiente exibido no rodape do app (ex.: "Homologacao"); nao afeta comportamento. |
-| `TEST_ACCESS_USER` | Nao | Usuario da tela de login (sessao) do ambiente de teste. |
-| `TEST_ACCESS_PASSWORD` | Nao | Senha da tela de login (sessao) do ambiente de teste. |
+| `SESSION_SECRET` | Recomendado | Segredo usado para assinar o cookie de sessao. Gere um valor forte e mantenha entre deploys. |
+| `DATABASE_URL` | Recomendado | Postgres/Supabase para usuarios, permissoes, precos e historicos. Sem ele, parte do app usa snapshots/fallbacks, mas login multiusuario depende do banco. |
+| `ADMIN_NAME` | Apenas seed | Nome do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
+| `ADMIN_EMAIL` | Apenas seed | E-mail do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
+| `ADMIN_INITIAL_PASSWORD` | Apenas seed | Senha inicial do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
 | `MARKET_BENCHMARK_CONNECTOR_URL` | Nao | Conector externo para benchmark salarial ao vivo. |
+| `SENTRY_DSN` | Nao | DSN opcional para error tracking no Sentry. |
+| `GOOGLE_CLOUD_BILLING_API_KEY` | Nao | Usada apenas para ingestao manual/local de catalogo GCP, nao pelo app web no Render. |
 
 BACEN PTAX e Azure Retail Prices API nao exigem chave.
+
+Para criar o primeiro administrador em um ambiente com `DATABASE_URL` configurado:
+
+```bash
+ADMIN_NAME="Administrador Pivo" \
+ADMIN_EMAIL="admin@exemplo.com" \
+ADMIN_INITIAL_PASSWORD="defina-uma-senha-forte" \
+pnpm run seed:admin
+```
 
 ## Estrutura
 
 ```text
 Pivo/
 |-- client/
+|   |-- public/brand/           # Imagens usadas na tela inicial e visao geral
 |   `-- src/
 |       |-- pages/Home.tsx        # Interface principal e modulos
 |       |-- hooks/                # Hooks de dados com TanStack Query
@@ -111,8 +127,17 @@ Os fluxos de uso e operacao estao documentados em [docs/FLUXOS.md](docs/FLUXOS.m
 - publicacao de ambiente de teste.
 
 Navegacao usa rotas reais (wouter) por modulo — `/`, `/mao-de-obra`, `/infra-cloud`,
-`/licencas`, `/fontes` — favoritar, compartilhar link e usar o botao Voltar do navegador
+`/licencas`, `/fontes`, `/administracao/usuarios` — favoritar, compartilhar link e usar o botao Voltar do navegador
 funcionam normalmente.
+
+## Identidade Visual No Front
+
+Os arquivos de referencia ficam em `docs/assets/identidade-visual/`. Os arquivos que o Vite serve em runtime ficam em `client/public/brand/`:
+
+- `tela-login.png`: direcao visual da tela inicial; usada como fundo com overlay escuro para manter contraste do formulario.
+- `visao-geral.png`: direcao visual do dashboard; usada como midia do lado direito do hero da visao geral.
+
+Esses assets devem orientar composicao, clima, iconografia e profundidade. A interface continua sendo HTML/CSS/React funcional; nao deve virar uma captura estatica da imagem.
 
 ## API
 
@@ -136,6 +161,15 @@ Todas as rotas ficam sob `/api/v1`.
 | `POST` | `/market-benchmark/search` | Benchmark salarial por cargo, UF e cidade. |
 | `GET` | `/market-benchmark/history` | Historico das buscas recentes. |
 | `GET` | `/licenses/catalog` | Catalogo de licencas SaaS. |
+| `GET` | `/auth/session` | Estado da sessao autenticada. |
+| `POST` | `/auth/login` | Login por e-mail/senha. |
+| `POST` | `/auth/logout` | Encerra a sessao. |
+| `POST` | `/auth/change-password` | Troca senha inicial/atual. |
+| `GET` | `/admin/users` | Lista usuarios (ADMIN). |
+| `POST` | `/admin/users` | Cria usuario (ADMIN). |
+| `PUT` | `/admin/users/:id` | Atualiza usuario/permissoes (ADMIN). |
+| `POST` | `/admin/users/:id/activate` | Ativa usuario (ADMIN). |
+| `POST` | `/admin/users/:id/deactivate` | Desativa usuario (ADMIN). |
 
 `/system-health` tambem devolve `meta: { version, commit, environment }` (versao do
 `package.json`, commit curto e o rotulo de `APP_ENV`), exibido no rodape do app.
@@ -166,8 +200,8 @@ Detalhes e alternativas estao em [docs/REQUISITOS-INFRA.md](docs/REQUISITOS-INFR
 docker build -t pivo:test .
 docker run --rm -p 3000:3000 \
   -e NODE_ENV=production \
-  -e TEST_ACCESS_USER=pivo-teste \
-  -e TEST_ACCESS_PASSWORD='defina-uma-senha-forte' \
+  -e SESSION_SECRET='gere-um-segredo-forte' \
+  -e DATABASE_URL='postgresql://...' \
   pivo:test
 ```
 

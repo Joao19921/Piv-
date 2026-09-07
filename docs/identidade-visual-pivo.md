@@ -155,6 +155,15 @@ Os painéis devem utilizar superfícies marfim, linhas azul-marinho discretas e 
 - Linhas finas com pequenos pontos de interseção.
 - Títulos diretos, com vocabulário de decisão e operação.
 
+### Assets de produto
+
+As imagens em `docs/assets/identidade-visual/` funcionam como direção visual de produto:
+
+- `tela-login.png`: referência de atmosfera para a tela inicial/login.
+- `visão-geral.png`: referência de visualização consolidada para o hero da visão geral.
+
+No front, os arquivos servidos ficam em `client/public/brand/`. Eles devem apoiar composição, profundidade, contraste e enquadramento, sem substituir a interface funcional por uma imagem estática. Textos, campos, botões, status e navegação continuam sendo componentes React acessíveis e responsivos.
+
 ### Microcopy de referência
 
 > “Fonte em cache local. Revise antes do envio.”
