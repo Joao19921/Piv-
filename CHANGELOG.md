@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-07 — Dark mode em toda a aplicação
+
+Pedido do produto: opção de tema escuro alternável, com um botão Sol/Lua no shell do app.
+
+**Achado antes de codificar**: o `ThemeProvider`/`ThemeContext` (alterna a classe `.dark` em `<html>`, persiste em `localStorage` quando `switchable`) e um conjunto de variáveis OKLCH em `index.css` já existiam no projeto, mas nunca foram ativados nem consumidos — a UI real usa classes Tailwind com valor arbitrário e cor hardcoded (`bg-[#FBF7F1]`, `text-[#333333]`, etc.) quase em toda parte, não os tokens semânticos. Reescrever cada tela pra consumir tokens seria uma refatoração grande demais pro pedido; optado por uma camada de override que mira exatamente os seletores hardcoded já compilados pelo Tailwind.
+
+**Implementação**: `ThemeProvider` ligado como `switchable` (`App.tsx`); botão Sol/Lua adicionado no sidebar desktop e no menu mobile (`Home.tsx`), usando `useTheme()`. Bloco `:root.dark { ... }` gerado por um script que extrai do CSS de build todas as classes `bg-`/`text-`/`border-`/`from-` com cor hex hardcoded e calcula o equivalente escuro por inversão de luminância em HSL (preserva matiz/saturação — texto escuro vira claro, fundo/borda claro vira escuro), com lista de exclusão pra cor de marca (laranja/âmbar, teal) e pras telas que são sempre escuras por design (login, troca de senha, tela de carregamento). Achado durante a verificação visual: classes com sufixo de opacidade (`bg-[#HEX]/90`) compilam num seletor Tailwind separado com o alfa já embutido no hex de 8 dígitos — não herdam o override da cor base; corrigido caso a caso (ex.: cabeçalho fixo de `Home.tsx`).
+
+Verificado com Playwright (usuário descartável, criado e apagado na mesma sessão): alternância visual em Visão geral, Mão de obra, Licenças, Infra cloud e Administração › Usuários, e persistência da preferência após recarregar a página.
+
 ## 2026-09-07 — RBAC multiusuário: login por e-mail/senha, perfis e permissões por módulo
 
 Pedido do produto: a aplicação tinha uma única credencial compartilhada (`TEST_ACCESS_USER`/`TEST_ACCESS_PASSWORD`, senha em texto puro numa env var, sem tabela de usuário nenhuma) e precisava evoluir pra múltiplos usuários com controle individual de acesso a Mão de obra/Infra cloud/Licenças, sem criar um perfil por combinação de módulo.

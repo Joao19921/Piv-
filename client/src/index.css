@@ -92,6 +92,84 @@
   --chart-5: oklch(0.66 0.04 180);
 }
 
+/*
+ * Overrides de dark mode para as cores hardcoded (hex arbitrario do Tailwind) usadas
+ * diretamente nas paginas (Home.tsx, CloudArchitect.tsx, AdminUsersPage.tsx etc.), que nao
+ * passam pelos tokens semanticos acima (--background/--foreground/...). Geradas por inversao
+ * de luminancia em HSL preservando matiz/saturacao -- textos escuros (pensados p/ fundo claro)
+ * clareiam, fundos/bordas claros escurecem; cores ja "certas" para dark (marca laranja, teal
+ * de marca, telas de login/troca de senha, que sao escuras por design) ficam de fora.
+ */
+:root.dark {
+  .bg-\[\#78A49E\] { background-color: #161D1C !important; }
+  .bg-\[\#C7E5E5\] { background-color: #132020 !important; }
+  .bg-\[\#C9C6C2\] { background-color: #1B1A18 !important; }
+  .bg-\[\#E7E8E9\] { background-color: #191A1A !important; }
+  .bg-\[\#E7EEF3\] { background-color: #141A1F !important; }
+  .bg-\[\#E8E9E9\] { background-color: #191A1A !important; }
+  .bg-\[\#E8E9E9\]\/90 { background-color: #191A1Ae6 !important; }
+  .bg-\[\#E9EAEB\] { background-color: #191A1A !important; }
+  .bg-\[\#EBECEC\] { background-color: #191A1A !important; }
+  .bg-\[\#EBECED\] { background-color: #191A1A !important; }
+  .bg-\[\#F3EADB\] { background-color: #221C11 !important; }
+  .bg-\[\#F5EADD\] { background-color: #221A11 !important; }
+  .bg-\[\#F7F2E8\] { background-color: #221C11 !important; }
+  .bg-\[\#FAEEE0\] { background-color: #221A11 !important; }
+  .bg-\[\#FAEFE2\] { background-color: #221A11 !important; }
+  .bg-\[\#FBEFE1\] { background-color: #221A11 !important; }
+  .bg-\[\#FBF7F1\] { background-color: #221B11 !important; }
+  .border-\[\#BDD3D0\] { border-color: #161D1C !important; }
+  .border-\[\#BFD4E6\] { border-color: #121A21 !important; }
+  .border-\[\#C9C6C2\] { border-color: #1B1A18 !important; }
+  .border-\[\#D4D1CC\] { border-color: #1B1A18 !important; }
+  .border-\[\#D6D3CF\] { border-color: #1B1A18 !important; }
+  .border-\[\#D7CFC0\] { border-color: #1D1B16 !important; }
+  .border-\[\#D8D1C6\] { border-color: #1D1A16 !important; }
+  .border-\[\#DCD6CC\] { border-color: #1D1A16 !important; }
+  .border-\[\#DDD7CC\] { border-color: #1D1B16 !important; }
+  .border-\[\#DED8CE\] { border-color: #1D1A16 !important; }
+  .border-\[\#E3CA9E\] { border-color: #221C11 !important; }
+  .border-\[\#E5E0D6\] { border-color: #1D1B16 !important; }
+  .border-\[\#E7E1D6\] { border-color: #1E1B15 !important; }
+  .border-\[\#E8CBA9\] { border-color: #221A11 !important; }
+  .border-\[\#EECFAB\] { border-color: #221A11 !important; }
+  .border-\[\#F0C48A\] { border-color: #221B11 !important; }
+  .from-\[\#F7F2E8\] { --tw-gradient-from: #221C11 !important; }
+  .text-\[\#2A675F\] { color: #A7C8C4 !important; }
+  .text-\[\#333333\] { color: #D0C8C8 !important; }
+  .text-\[\#345555\] { color: #B1C4C4 !important; }
+  .text-\[\#366D6D\] { color: #AAC5C5 !important; }
+  .text-\[\#3A6EA5\] { color: #A5B7CA !important; }
+  .text-\[\#3F746D\] { color: #ACC3C0 !important; }
+  .text-\[\#436D6D\] { color: #AEC1C1 !important; }
+  .text-\[\#4B6767\] { color: #B1BEBE !important; }
+  .text-\[\#4F7E78\] { color: #AFC1BE !important; }
+  .text-\[\#4F8A82\] { color: #ADC2BF !important; }
+  .text-\[\#536D6D\] { color: #B2BDBD !important; }
+  .text-\[\#5D7979\] { color: #B2BDBD !important; }
+  .text-\[\#5F7474\] { color: #B2BDBD !important; }
+  .text-\[\#648686\] { color: #B2BDBD !important; }
+  .text-\[\#658080\] { color: #B2BDBD !important; }
+  .text-\[\#667C7C\] { color: #B2BDBD !important; }
+  .text-\[\#687E7E\] { color: #B2BDBD !important; }
+  .text-\[\#728A8A\] { color: #B2BDBD !important; }
+  .text-\[\#778B8B\] { color: #B2BDBD !important; }
+  .text-\[\#788D8D\] { color: #B2BDBD !important; }
+  .text-\[\#798A8A\] { color: #B2BDBD !important; }
+  .text-\[\#7B8B8B\] { color: #B2BDBD !important; }
+  .text-\[\#7B8F8F\] { color: #B2BDBD !important; }
+  .text-\[\#7C8B8B\] { color: #B2BDBD !important; }
+  .text-\[\#7D8D8D\] { color: #B2BDBD !important; }
+  .text-\[\#956126\] { color: #CFB9A0 !important; }
+  .text-\[\#9E703C\] { color: #C9B9A6 !important; }
+  .text-\[\#B0712A\] { color: #D0B99F !important; }
+  .text-\[\#B77831\] { color: #CEB9A1 !important; }
+
+  .metric-card { background: oklch(0.24 0.02 90) !important; box-shadow: 0 14px 35px oklch(0 0 0 / .25) !important; }
+  ::-webkit-scrollbar-track { background: #14181A; }
+  ::-webkit-scrollbar-thumb { background: #3A4142; border-color: #14181A; }
+}
+
 @layer base {
   * { @apply border-border outline-ring/50; }
   html { background: var(--background); }

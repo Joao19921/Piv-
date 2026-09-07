@@ -113,7 +113,7 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="light">
+        <ThemeProvider defaultTheme="light" switchable>
           <TooltipProvider>
             <Toaster position="bottom-right" />
             <AuthGate>
