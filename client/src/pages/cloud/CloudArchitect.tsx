@@ -7,6 +7,7 @@ import {
   Copy,
   Cpu,
   Database,
+  Download,
   Globe,
   HardDrive,
   Loader2,
@@ -33,7 +34,21 @@ import {
 } from "@/hooks/useCloudArchitectures";
 import { useCloudServices } from "@/hooks/useCloudServices";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { downloadCsv } from "@/lib/csv";
 import { priceCloudService, type ArchitectureSummary, type CloudProvider, type CloudService, type ServiceCategory, type ServicePricing } from "@/lib/api";
+
+/**
+ * Exemplo pronto pro estado vazio (ambiente de testes): web app 3 camadas com serviços
+ * estáticos do catálogo (sem SKU dinâmico), pra sempre calcular na hora, sem depender de API externa.
+ */
+const EXAMPLE_ARCHITECTURE: { name: string; services: { serviceId: string; region: string; config: Record<string, unknown> }[] } = {
+  name: "Exemplo — Web app 3 camadas",
+  services: [
+    { serviceId: "aws-elb", region: "us-east-1", config: { hours: 730, dataProcessedGb: 500 } },
+    { serviceId: "aws-rds", region: "us-east-1", config: { engine: "postgres", instanceClass: "db.t3.medium", storageGb: 100, multiAz: false, hours: 730 } },
+    { serviceId: "aws-s3", region: "us-east-1", config: { storageClass: "standard", storageGb: 100, requestsThousands: 100 } },
+  ],
+};
 
 const formatBRL = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
@@ -61,10 +76,10 @@ const CATEGORY_ICON: Record<ServiceCategory, React.ElementType> = {
   CDN: Globe,
 };
 
-/** Ordem de camadas para o diagrama: edge -> compute -> dados. Nao inventa conexoes ponto-a-ponto. */
+/** Ordem de camadas para o diagrama: edge -> compute -> dados. Não inventa conexões ponto-a-ponto. */
 const DIAGRAM_LAYERS: { label: string; categories: ServiceCategory[] }[] = [
   { label: "Edge / Rede", categories: ["CDN", "Networking"] },
-  { label: "Aplicacao", categories: ["Compute", "Containers", "Serverless"] },
+  { label: "Aplicação", categories: ["Compute", "Containers", "Serverless"] },
   { label: "Dados", categories: ["Database", "Storage"] },
 ];
 
@@ -82,25 +97,32 @@ interface DraftService {
 export default function CloudArchitect() {
   const [view, setView] = useState<"list" | "builder">("list");
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
+  const [seedExample, setSeedExample] = useState(false);
 
   if (view === "builder") {
-    return <ArchitectureBuilder architectureId={editingId} onClose={() => setView("list")} />;
+    return <ArchitectureBuilder architectureId={editingId} seedExample={seedExample} onClose={() => { setView("list"); setSeedExample(false); }} />;
   }
-  return <ArchitectureList onCreate={() => { setEditingId(undefined); setView("builder"); }} onOpen={(id) => { setEditingId(id); setView("builder"); }} />;
+  return (
+    <ArchitectureList
+      onCreate={() => { setEditingId(undefined); setSeedExample(false); setView("builder"); }}
+      onCreateExample={() => { setEditingId(undefined); setSeedExample(true); setView("builder"); }}
+      onOpen={(id) => { setEditingId(id); setSeedExample(false); setView("builder"); }}
+    />
+  );
 }
 
-function ArchitectureList({ onCreate, onOpen }: { onCreate: () => void; onOpen: (id: string) => void }) {
+function ArchitectureList({ onCreate, onCreateExample, onOpen }: { onCreate: () => void; onCreateExample: () => void; onOpen: (id: string) => void }) {
   const { data, isLoading } = useCloudArchitectures();
   const deleteArchitecture = useDeleteArchitecture();
   const duplicateArchitecture = useDuplicateArchitecture();
   const architectures = data?.architectures ?? [];
 
   const handleDelete = (arch: ArchitectureSummary) => {
-    if (!window.confirm(`Excluir a arquitetura "${arch.name}"? Essa acao nao pode ser desfeita.`)) return;
+    if (!window.confirm(`Excluir a arquitetura "${arch.name}"? Essa ação não pode ser desfeita.`)) return;
     toast.promise(deleteArchitecture.mutateAsync(arch.id), {
       loading: "Excluindo...",
-      success: "Arquitetura excluida.",
-      error: (err) => (err instanceof Error ? err.message : "Nao foi possivel excluir agora."),
+      success: "Arquitetura excluída.",
+      error: (err) => (err instanceof Error ? err.message : "Não foi possível excluir agora."),
     });
   };
 
@@ -108,7 +130,7 @@ function ArchitectureList({ onCreate, onOpen }: { onCreate: () => void; onOpen: 
     toast.promise(duplicateArchitecture.mutateAsync({ id: arch.id }), {
       loading: "Duplicando...",
       success: "Arquitetura duplicada.",
-      error: (err) => (err instanceof Error ? err.message : "Nao foi possivel duplicar agora."),
+      error: (err) => (err instanceof Error ? err.message : "Não foi possível duplicar agora."),
     });
   };
 
@@ -120,7 +142,7 @@ function ArchitectureList({ onCreate, onOpen }: { onCreate: () => void; onOpen: 
             <span className="h-px w-6 bg-[#F57F17]" /> Cloud Architecture Calculator
           </div>
           <h1 className="font-display text-3xl font-semibold tracking-[-0.04em] text-[#333333] sm:text-[40px]">Arquiteturas</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#658080]">Monte, calcule e salve arquiteturas de infraestrutura cloud com multiplos servicos.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#658080]">Monte, calcule e salve arquiteturas de infraestrutura cloud com múltiplos serviços.</p>
         </div>
         <Button onClick={onCreate} className="pressable h-10 rounded-full bg-[#F57F17] px-5 text-xs font-semibold text-white hover:bg-[#D96D0C]">
           <Plus className="mr-2 h-4 w-4" /> Nova arquitetura
@@ -135,10 +157,16 @@ function ArchitectureList({ onCreate, onOpen }: { onCreate: () => void; onOpen: 
         <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-10 text-center shadow-paper">
           <Cloud className="mx-auto h-10 w-10 text-[#9EB4B4]" />
           <h2 className="mt-4 font-display text-xl font-semibold text-[#333333]">Nenhuma arquitetura criada</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#658080]">Monte sua primeira arquitetura de cloud selecionando servicos, configurando recursos e estimando seus custos.</p>
-          <Button onClick={onCreate} className="pressable mt-6 rounded-full bg-[#F57F17] px-5 text-xs font-semibold text-white hover:bg-[#D96D0C]">
-            <Plus className="mr-2 h-4 w-4" /> Criar arquitetura
-          </Button>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#658080]">Monte sua primeira arquitetura de cloud selecionando serviços, configurando recursos e estimando seus custos.</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Button onClick={onCreate} className="pressable rounded-full bg-[#F57F17] px-5 text-xs font-semibold text-white hover:bg-[#D96D0C]">
+              <Plus className="mr-2 h-4 w-4" /> Criar arquitetura
+            </Button>
+            <Button onClick={onCreateExample} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-white px-5 text-xs text-[#333333] hover:bg-[#E9EAEA]">
+              Ver exemplo pronto
+            </Button>
+          </div>
+          <p className="mx-auto mt-3 max-w-md text-[11px] text-[#899A9A]">O exemplo carrega 3 serviços AWS já configurados no calculador — nada é salvo até você clicar em "Salvar".</p>
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -149,9 +177,9 @@ function ArchitectureList({ onCreate, onOpen }: { onCreate: () => void; onOpen: 
                   <p className="truncate font-display text-base font-semibold text-[#333333]">{arch.name}</p>
                   <p className="mt-1 text-[11px] uppercase tracking-[0.1em] text-[#899A9A]">{arch.provider} · {arch.region}</p>
                 </div>
-                <span className="shrink-0 rounded-full bg-[#E8E9E9] px-2.5 py-1 text-[10px] font-semibold text-[#5D7979]">{arch.serviceCount} servico{arch.serviceCount === 1 ? "" : "s"}</span>
+                <span className="shrink-0 rounded-full bg-[#E8E9E9] px-2.5 py-1 text-[10px] font-semibold text-[#5D7979]">{arch.serviceCount} serviço{arch.serviceCount === 1 ? "" : "s"}</span>
               </div>
-              <div className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-[#333333]">{formatBRL(arch.monthlyBrl)}<span className="ml-1 text-xs font-normal text-[#899A9A]">/mes</span></div>
+              <div className="mt-5 font-display text-2xl font-semibold tracking-[-0.04em] text-[#333333]">{formatBRL(arch.monthlyBrl)}<span className="ml-1 text-xs font-normal text-[#899A9A]">/mês</span></div>
               <p className="mt-1 text-[11px] text-[#899A9A]">Atualizada {formatRelativeTime(arch.updatedAt)}</p>
               <div className="mt-5 flex items-center gap-2 border-t border-[#E7E1D6] pt-4">
                 <Button onClick={() => onOpen(arch.id)} variant="outline" className="h-8 flex-1 rounded-full border-[#C9C6C2] bg-white text-xs text-[#333333] hover:bg-[#E9EAEA]"><Pencil className="mr-1.5 h-3.5 w-3.5" /> Abrir</Button>
@@ -170,8 +198,9 @@ function makeLocalId(): string {
   return `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function ArchitectureBuilder({ architectureId, onClose }: { architectureId: string | undefined; onClose: () => void }) {
+function ArchitectureBuilder({ architectureId, seedExample, onClose }: { architectureId: string | undefined; seedExample: boolean; onClose: () => void }) {
   const { data: existing, isLoading: existingLoading } = useCloudArchitecture(architectureId);
+  const { data: fullCatalog } = useCloudServices({});
   const createArchitecture = useCreateArchitecture();
   const updateArchitecture = useUpdateArchitecture();
 
@@ -182,28 +211,56 @@ function ArchitectureBuilder({ architectureId, onClose }: { architectureId: stri
   const [configuring, setConfiguring] = useState<CloudService | null>(null);
 
   useEffect(() => {
-    if (!architectureId) {
+    if (architectureId) {
+      if (existing && !hydrated) {
+        setName(existing.name);
+        setCurrency(existing.currency);
+        setServices(
+          existing.services.map((s) => ({
+            localId: makeLocalId(),
+            serviceId: s.serviceId,
+            provider: s.provider,
+            category: s.category as ServiceCategory,
+            name: s.name,
+            region: s.region,
+            config: s.configuration,
+            pricing: { monthlyUsd: s.monthlyUsd, monthlyBrl: s.monthlyBrl, fxRate: 0, source: "catalog", estimated: true, lastUpdated: existing.updatedAt, sourceUrl: "" },
+          })),
+        );
+        setHydrated(true);
+      }
+      return;
+    }
+
+    if (!seedExample) {
       setHydrated(true);
       return;
     }
-    if (existing && !hydrated) {
-      setName(existing.name);
-      setCurrency(existing.currency);
-      setServices(
-        existing.services.map((s) => ({
-          localId: makeLocalId(),
-          serviceId: s.serviceId,
-          provider: s.provider,
-          category: s.category as ServiceCategory,
-          name: s.name,
-          region: s.region,
-          config: s.configuration,
-          pricing: { monthlyUsd: s.monthlyUsd, monthlyBrl: s.monthlyBrl, fxRate: 0, source: "catalog", estimated: true, lastUpdated: existing.updatedAt, sourceUrl: "" },
-        })),
+
+    if (!fullCatalog || hydrated) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        EXAMPLE_ARCHITECTURE.services.map(async (item): Promise<DraftService | null> => {
+          const def = fullCatalog.services.find((s) => s.id === item.serviceId);
+          if (!def) return null;
+          try {
+            const pricing = await priceCloudService(item.serviceId, { region: item.region, config: item.config });
+            return { localId: makeLocalId(), serviceId: def.id, provider: def.provider, category: def.category, name: def.name, region: item.region, config: item.config, pricing };
+          } catch {
+            return null;
+          }
+        }),
       );
+      if (cancelled) return;
+      setServices(results.filter((r): r is DraftService => r !== null));
+      setName(EXAMPLE_ARCHITECTURE.name);
       setHydrated(true);
-    }
-  }, [architectureId, existing, hydrated]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [architectureId, existing, hydrated, seedExample, fullCatalog]);
 
   const totalUsd = services.reduce((sum, s) => sum + (s.pricing?.monthlyUsd ?? 0), 0);
   const totalBrl = services.reduce((sum, s) => sum + (s.pricing?.monthlyBrl ?? 0), 0);
@@ -237,7 +294,7 @@ function ArchitectureBuilder({ architectureId, onClose }: { architectureId: stri
       return;
     }
     if (services.length === 0) {
-      toast.error("Adicione pelo menos 1 servico antes de salvar.");
+      toast.error("Adicione pelo menos 1 serviço antes de salvar.");
       return;
     }
     const payload = {
@@ -252,8 +309,17 @@ function ArchitectureBuilder({ architectureId, onClose }: { architectureId: stri
         onClose();
         return "Arquitetura salva.";
       },
-      error: (err) => (err instanceof Error ? err.message : "Nao foi possivel salvar agora."),
+      error: (err) => (err instanceof Error ? err.message : "Não foi possível salvar agora."),
     });
+  };
+
+  const handleExportCsv = () => {
+    const rows: (string | number)[][] = [
+      ["Serviço", "Provider", "Categoria", "Região", "Custo mensal (USD)", "Custo mensal (BRL)"],
+      ...services.map((s) => [s.name, s.provider, s.category, s.region, (s.pricing?.monthlyUsd ?? 0).toFixed(2), (s.pricing?.monthlyBrl ?? 0).toFixed(2)]),
+      ["", "", "", "Total", totalUsd.toFixed(2), totalBrl.toFixed(2)],
+    ];
+    downloadCsv(`pivo-arquitetura-${(name || "sem-nome").toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`, rows);
   };
 
   if (architectureId && (existingLoading || !hydrated)) {
@@ -279,9 +345,9 @@ function ArchitectureBuilder({ architectureId, onClose }: { architectureId: stri
         <div className="space-y-5">
           <ArchitectureDiagram services={services} />
           <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
-            <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Servicos na arquitetura ({services.length})</p>
+            <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Serviços na arquitetura ({services.length})</p>
             {services.length === 0 ? (
-              <p className="text-xs text-[#879A9A]">Nenhum servico adicionado ainda. Escolha um servico no catalogo a esquerda.</p>
+              <p className="text-xs text-[#879A9A]">Nenhum serviço adicionado ainda. Escolha um serviço no catálogo a esquerda.</p>
             ) : (
               <div className="space-y-2">
                 {services.map((s) => {
@@ -309,19 +375,22 @@ function ArchitectureBuilder({ architectureId, onClose }: { architectureId: stri
 
         <Card className="h-fit rounded-2xl border-[#DDD7CC] bg-[#0D5C5C] p-5 text-[#F7F2E8] shadow-paper">
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Estimativa</p>
-          <h2 className="mt-1 font-display text-xl font-semibold">{services.length} servico{services.length === 1 ? "" : "s"}</h2>
+          <h2 className="mt-1 font-display text-xl font-semibold">{services.length} serviço{services.length === 1 ? "" : "s"}</h2>
           <div className="mt-6 space-y-2 border-t border-white/10 pt-4 text-xs">
             {Array.from(byCategory.entries()).map(([category, value]) => (
               <div key={category} className="flex justify-between"><span className="text-[#AEC4C4]">{category}</span><strong className="font-medium text-white">{currency === "BRL" ? formatBRL(value) : formatUSD(value)}</strong></div>
             ))}
-            {services.length === 0 && <p className="text-[#AEC4C4]">Sem servicos ainda.</p>}
+            {services.length === 0 && <p className="text-[#AEC4C4]">Sem serviços ainda.</p>}
           </div>
           <div className="mt-6 border-t border-white/10 pt-4">
             <div className="flex items-baseline justify-between"><span className="text-xs text-[#AEC4C4]">Mensal</span><span className="font-display text-3xl font-semibold">{totalDisplay}</span></div>
             <div className="mt-2 flex items-baseline justify-between"><span className="text-xs text-[#AEC4C4]">Anual</span><span className="font-display text-lg font-semibold text-[#F57F17]">{annualDisplay}</span></div>
           </div>
           <Button onClick={handleSave} disabled={createArchitecture.isPending || updateArchitecture.isPending} className="pressable mt-6 h-11 w-full rounded-full bg-[#F57F17] text-sm font-semibold text-white hover:bg-[#D96D0C]">
-            {architectureId ? "Salvar alteracoes" : "Salvar arquitetura"}
+            {architectureId ? "Salvar alterações" : "Salvar arquitetura"}
+          </Button>
+          <Button onClick={handleExportCsv} disabled={services.length === 0} variant="outline" className="pressable mt-3 h-10 w-full rounded-full border-white/20 bg-transparent text-xs text-white hover:bg-white/10">
+            <Download className="mr-2 h-4 w-4" /> Baixar CSV
           </Button>
         </Card>
       </div>
@@ -340,10 +409,10 @@ function ServiceCatalogPane({ onSelect }: { onSelect: (service: CloudService) =>
 
   return (
     <Card className="h-fit rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
-      <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Catalogo de servicos</p>
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Catálogo de serviços</p>
       <div className="relative mb-3">
         <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-[#8A9797]" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar servico (ex: database, storage)" className="h-9 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar serviço (ex: database, storage)" className="h-9 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" />
       </div>
       <div className="mb-4 flex flex-wrap gap-1.5">
         {([undefined, "AWS", "Azure", "GCP"] as const).map((p) => (
@@ -353,7 +422,7 @@ function ServiceCatalogPane({ onSelect }: { onSelect: (service: CloudService) =>
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}</div>
       ) : services.length === 0 ? (
-        <p className="text-xs text-[#879A9A]">Nenhum servico encontrado.</p>
+        <p className="text-xs text-[#879A9A]">Nenhum serviço encontrado.</p>
       ) : (
         <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
           {services.map((service) => {
@@ -424,7 +493,7 @@ function ServiceConfigDrawer({
         </div>
 
         <div className="mb-4">
-          <Label className="text-xs font-semibold text-[#345555]">Regiao</Label>
+          <Label className="text-xs font-semibold text-[#345555]">Região</Label>
           <select value={region} onChange={(e) => setRegion(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20">
             {service.regions.map((r) => <option key={r.key} value={r.key}>{r.key} - {r.label}</option>)}
           </select>
@@ -465,14 +534,14 @@ function ServiceConfigDrawer({
 
         <div className="mt-6 rounded-xl border border-[#E5E0D6] bg-white/55 p-4">
           {isPricing ? (
-            <div className="flex items-center gap-2 text-xs text-[#899A9A]"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando preco...</div>
+            <div className="flex items-center gap-2 text-xs text-[#899A9A]"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando preço...</div>
           ) : pricing ? (
             <>
               <div className="flex items-baseline justify-between"><span className="text-xs text-[#778B8B]">Custo mensal</span><span className="font-display text-2xl font-semibold text-[#333333]">{formatBRL(pricing.monthlyBrl)}</span></div>
-              <p className="mt-1 text-[11px] text-[#899A9A]">{pricing.estimated ? "Preco estimado" : "Preco ao vivo"} · fonte: {pricing.source === "live_api" ? "API ao vivo" : pricing.source === "scheduled_ingestion" ? "ingestao periodica" : "catalogo configurado"}{pricing.note ? ` · ${pricing.note}` : ""}</p>
+              <p className="mt-1 text-[11px] text-[#899A9A]">{pricing.estimated ? "Preço estimado" : "Preço ao vivo"} · fonte: {pricing.source === "live_api" ? "API ao vivo" : pricing.source === "scheduled_ingestion" ? "ingestão periódica" : "catálogo configurado"}{pricing.note ? ` · ${pricing.note}` : ""}</p>
             </>
           ) : (
-            <p className="text-xs text-[#B0712A]">Nao foi possivel calcular o preco com essa configuracao.</p>
+            <p className="text-xs text-[#B0712A]">Não foi possível calcular o preço com essa configuração.</p>
           )}
         </div>
 
@@ -493,9 +562,9 @@ function ArchitectureDiagram({ services }: { services: DraftService[] }) {
 
   return (
     <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
-      <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Visualizacao da arquitetura</p>
+      <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Visualização da arquitetura</p>
       {layers.length === 0 ? (
-        <p className="text-xs text-[#879A9A]">Adicione servicos para visualizar a arquitetura.</p>
+        <p className="text-xs text-[#879A9A]">Adicione serviços para visualizar a arquitetura.</p>
       ) : (
         <div className="space-y-3">
           {layers.map((layer, index) => (

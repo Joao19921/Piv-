@@ -44,7 +44,7 @@ async function fetchPncpStatus(): Promise<PncpStatusSample> {
 
   const json = (await res.json()) as { totalRegistros?: number };
   if (typeof json.totalRegistros !== "number") {
-    throw new Error("PNCP nao retornou 'totalRegistros' no formato esperado");
+    throw new Error("PNCP não retornou 'totalRegistros' no formato esperado");
   }
 
   return { totalRegistros: json.totalRegistros, windowStart: start.toISOString(), windowEnd: end.toISOString() };

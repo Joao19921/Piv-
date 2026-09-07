@@ -116,6 +116,7 @@
   .hairline { border-color: oklch(0.28 0.07 180 / .16); }
   .status-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
   .status-dot.live { background: #4DB6AC; box-shadow: 0 0 0 4px rgba(77,182,172,.12); }
+  .status-dot.synced { background: #4A85C4; box-shadow: 0 0 0 4px rgba(74,133,196,.12); }
   .status-dot.warn { background: #F57F17; box-shadow: 0 0 0 4px rgba(245,127,23,.12); }
   .status-dot.stale { background: #D18A3A; box-shadow: 0 0 0 4px rgba(209,138,58,.12); }
   .status-dot.offline { background: #C0392B; box-shadow: 0 0 0 4px rgba(192,57,43,.12); }

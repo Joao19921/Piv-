@@ -48,7 +48,7 @@ export function getPendingSources(): StaticSourceInfo[] {
       status: "FALLBACK_STALE",
       source: "STATIC_SNAPSHOT",
       timestamp: now,
-      warning: "Ingestão do CAGED ainda não implementada (só há microdados via FTP, sem API); usando snapshot histórico de CBOs de tecnologia.",
+      warning: "Usando dados de referência internos (histórico de CBOs de tecnologia).",
     },
   ];
 }

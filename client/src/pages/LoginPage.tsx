@@ -5,9 +5,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-/** Oferece ao navegador salvar a credencial (Credential Management API). So Chrome/Edge
- * suportam PasswordCredential; em outros navegadores essa chamada e um no-op seguro —
- * o autocomplete="username"/"current-password" nos campos ja cobre o resto. */
+/** Oferece ao navegador salvar a credencial (Credential Management API). Só Chrome/Edge
+ * suportam PasswordCredential; em outros navegadores essa chamada é um no-op seguro —
+ * o autocomplete="username"/"current-password" nos campos já cobre o resto. */
 async function offerToSaveCredential(username: string, password: string): Promise<void> {
   try {
     const PasswordCredentialCtor = (window as unknown as { PasswordCredential?: new (data: unknown) => Credential }).PasswordCredential;
@@ -15,7 +15,7 @@ async function offerToSaveCredential(username: string, password: string): Promis
     const credential = new PasswordCredentialCtor({ id: username, password, name: username });
     await navigator.credentials.store(credential);
   } catch {
-    // Navegador recusou ou nao suporta; sem problema, o login ja foi concluido.
+    // Navegador recusou ou não suporta; sem problema, o login já foi concluído.
   }
 }
 
@@ -38,13 +38,13 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Usuario ou senha invalidos.");
+        setError(data?.error ?? "Usuário ou senha inválidos.");
         return;
       }
       await offerToSaveCredential(username, password);
       onSuccess();
     } catch {
-      setError("Nao foi possivel conectar. Tente novamente.");
+      setError("Não foi possível conectar. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -70,7 +70,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
 
           <div className="mb-4">
             <Label htmlFor="username" className="text-xs font-semibold text-[#345555]">
-              Usuario
+              Usuário
             </Label>
             <Input
               id="username"

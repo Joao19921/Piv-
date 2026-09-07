@@ -1,4 +1,7 @@
 import express, { type Router } from "express";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getCloudCatalog } from "../domain/services/cloudCatalog";
 import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/services/catalogs";
 import { searchCloudServiceDefinitions, type CloudProvider } from "../domain/services/cloudServiceCatalog";
@@ -27,6 +30,17 @@ import { getLatestIngestionRuns, type IngestionRun } from "../infrastructure/rep
 import { logger } from "../infrastructure/observability/logger";
 import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
+
+/** Versão do package.json, lida uma vez no boot; usada só para exibir "v{versão}" no rodapé do app. */
+const appVersion = (() => {
+  try {
+    const dirname = path.dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(dirname, "..", "package.json"), "utf-8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
   return {
@@ -83,7 +97,7 @@ function toArchitectureDetailView(architecture: ArchitectureRow, services: Archi
   };
 }
 
-/** Deriva um ApiSourceResult a partir da ultima execucao registrada em ingestion_runs (fontes sem checagem ao vivo por requisicao). */
+/** Deriva um ApiSourceResult a partir da última execucao registrada em ingestion_runs (fontes sem checagem ao vivo por requisicao). */
 function fromIngestionRun(name: string, run: IngestionRun | undefined) {
   if (!run) {
     return {
@@ -91,7 +105,7 @@ function fromIngestionRun(name: string, run: IngestionRun | undefined) {
       status: "FALLBACK_STALE" as const,
       source: "STATIC_SNAPSHOT",
       timestamp: new Date().toISOString(),
-      warning: "Ingestao periodica ainda nao rodou para esta fonte; usando snapshot estatico do catalogo.",
+      warning: "Ingestão periódica ainda não rodou para esta fonte; usando snapshot estático do catálogo.",
       data: null,
     };
   }
@@ -100,7 +114,12 @@ function fromIngestionRun(name: string, run: IngestionRun | undefined) {
     status: run.status,
     source: "SCHEDULED_INGESTION",
     timestamp: run.finishedAt,
-    warning: run.errorMessage ?? `Ultima ingestao: ${run.recordsUpserted} preco(s) atualizados em ${run.durationMs}ms.`,
+    // Não repassa run.errorMessage cru pro usuário final: esse campo guarda detalhe técnico
+    // (ex.: nome de variável de ambiente faltando) que serve pro backend/observabilidade, não
+    // pra tela. O detalhe completo continua em ingestion_runs (Postgres) e nos logs/Sentry.
+    warning: run.status === "OPERATIONAL"
+      ? `Última ingestão: ${run.recordsUpserted} preço(s) atualizados em ${run.durationMs}ms.`
+      : "Ingestão automática indisponível no momento; usando dados de referência internos.",
     data: null,
   };
 }
@@ -109,13 +128,13 @@ export function createApiRouter(): Router {
   const router = express.Router();
   router.use(express.json());
 
-  // Health check leve para orquestradores (Render, etc.): nao toca fontes externas nem exige login.
+  // Health check leve para orquestradores (Render, etc.): não toca fontes externas nem exige login.
   router.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
   });
 
   // Login do ambiente de teste (substitui o popup nativo de Basic Auth por uma tela do produto).
-  // Credencial unica compartilhada (TEST_ACCESS_USER/TEST_ACCESS_PASSWORD) — sem sistema de usuarios.
+  // Credencial única compartilhada (TEST_ACCESS_USER/TEST_ACCESS_PASSWORD) — sem sistema de usuarios.
   router.get("/auth/session", (req, res) => {
     const testAccessUser = process.env.TEST_ACCESS_USER;
     const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
@@ -133,13 +152,13 @@ export function createApiRouter(): Router {
     const testAccessUser = process.env.TEST_ACCESS_USER;
     const testAccessPassword = process.env.TEST_ACCESS_PASSWORD;
     if (!testAccessUser || !testAccessPassword) {
-      res.status(503).json({ error: "Autenticacao nao configurada neste ambiente." });
+      res.status(503).json({ error: "Autenticação não configurada neste ambiente." });
       return;
     }
 
     const { username, password, remember } = (req.body ?? {}) as Record<string, unknown>;
     if (username !== testAccessUser || password !== testAccessPassword) {
-      res.status(401).json({ error: "Usuario ou senha invalidos." });
+      res.status(401).json({ error: "Usuário ou senha invalidos." });
       return;
     }
 
@@ -174,7 +193,7 @@ export function createApiRouter(): Router {
     const sources = [
       toSourceView("BACEN - PTAX", ptax),
       toSourceView("Azure Retail API", azure),
-      toSourceView("PNCP - Consulta Publica", pncp),
+      toSourceView("PNCP - Consulta Pública", pncp),
       fromIngestionRun("AWS Pricing API", ingestionRuns.AWS_PRICING_INGESTION),
       fromIngestionRun("GCP Cloud Billing Catalog", ingestionRuns.GCP_PRICING_INGESTION),
       {
@@ -183,8 +202,8 @@ export function createApiRouter(): Router {
         source: process.env.MARKET_BENCHMARK_CONNECTOR_URL ? "LIVE_CONNECTOR_READY" : "STATIC_SNAPSHOT",
         timestamp: new Date().toISOString(),
         warning: process.env.MARKET_BENCHMARK_CONNECTOR_URL
-          ? "Conector externo configurado; consultas usam cache/fallback quando a fonte falha."
-          : "Conector externo de benchmark nao configurado; usando catalogo interno de perfis (salario CLT e/ou PJ) como snapshot local.",
+          ? "Conector externo configurado; usando dados de referência internos quando a fonte externa falha."
+          : "Usando dados de referência internos (catálogo de perfis CLT e/ou PJ).",
         data: null,
       },
       ...getPendingSources(),
@@ -197,6 +216,12 @@ export function createApiRouter(): Router {
         configured: isDatabaseConfigured,
         queries: getQueryStats(),
       },
+      meta: {
+        version: appVersion,
+        // RENDER_GIT_COMMIT é injetada automaticamente pelo Render em runtime; local/outros hosts caem em "dev".
+        commit: (process.env.RENDER_GIT_COMMIT ?? "dev").slice(0, 7),
+        environment: process.env.APP_ENV ?? "Homologação",
+      },
     });
   });
 
@@ -204,9 +229,9 @@ export function createApiRouter(): Router {
     res.json(await getPtax());
   });
 
-  // Catalogo pesquisavel de servicos (Compute, Storage, Database, Networking, Containers,
-  // Serverless, CDN) por AWS/Azure/GCP. Compute tem as opcoes de SKU preenchidas ao vivo
-  // (mesmo catalogo/preco do /system-health); os demais sao catalogo estatico com fonte explicita.
+  // Catálogo pesquisável de serviços (Compute, Storage, Database, Networking, Containers,
+  // Serverless, CDN) por AWS/Azure/GCP. Compute tem as opções de SKU preenchidas ao vivo
+  // (mesmo catálogo/preço do /system-health); os demais são catálogo estático com fonte explícita.
   router.get("/cloud/services", async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
     const provider = typeof req.query.provider === "string" ? (req.query.provider as CloudProvider) : undefined;
@@ -239,7 +264,7 @@ export function createApiRouter(): Router {
     const { serviceId } = req.params;
     const { region, config } = (req.body ?? {}) as Record<string, unknown>;
     if (typeof region !== "string" || !region.trim()) {
-      res.status(400).json({ error: "region e obrigatorio." });
+      res.status(400).json({ error: "region é obrigatório." });
       return;
     }
     if (config !== undefined && (typeof config !== "object" || config === null || Array.isArray(config))) {
@@ -251,33 +276,33 @@ export function createApiRouter(): Router {
       const pricing = await calculateServicePrice(serviceId, region, (config as Record<string, unknown>) ?? {});
       res.json({ pricing });
     } catch (err) {
-      res.status(404).json({ error: err instanceof Error ? err.message : "Servico nao encontrado." });
+      res.status(404).json({ error: err instanceof Error ? err.message : "Serviço não encontrado." });
     }
   });
 
-  /** Valida e recalcula os servicos de uma arquitetura (usado por create e update). */
+  /** Valida e recalcula os serviços de uma arquitetura (usado por create e update). */
   async function buildArchitectureInput(body: Record<string, unknown>): Promise<{ error: string } | { input: ArchitectureInput }> {
     const { name, currency, services } = body;
 
-    if (typeof name !== "string" || !name.trim()) return { error: "name e obrigatorio." };
+    if (typeof name !== "string" || !name.trim()) return { error: "name é obrigatório." };
     if (currency !== "BRL" && currency !== "USD") return { error: "currency deve ser BRL ou USD." };
-    if (!Array.isArray(services) || services.length === 0) return { error: "services deve ser uma lista com pelo menos 1 servico." };
+    if (!Array.isArray(services) || services.length === 0) return { error: "services deve ser uma lista com pelo menos 1 serviço." };
 
     const resolvedServices: ArchitectureServiceInput[] = [];
     for (const raw of services as Record<string, unknown>[]) {
       const { serviceId, region, config } = raw ?? {};
-      if (typeof serviceId !== "string" || !serviceId.trim()) return { error: "Cada servico precisa de 'serviceId'." };
-      if (typeof region !== "string" || !region.trim()) return { error: "Cada servico precisa de 'region'." };
+      if (typeof serviceId !== "string" || !serviceId.trim()) return { error: "Cada serviço precisa de 'serviceId'." };
+      if (typeof region !== "string" || !region.trim()) return { error: "Cada serviço precisa de 'region'." };
 
       let pricing;
       try {
         pricing = await calculateServicePrice(serviceId, region, (config as Record<string, unknown>) ?? {});
       } catch (err) {
-        return { error: err instanceof Error ? err.message : `Servico '${serviceId}' invalido.` };
+        return { error: err instanceof Error ? err.message : `Serviço '${serviceId}' inválido.` };
       }
 
       const definition = searchCloudServiceDefinitions({}).find((d) => d.id === serviceId);
-      if (!definition) return { error: `Servico '${serviceId}' nao encontrado no catalogo.` };
+      if (!definition) return { error: `Serviço '${serviceId}' não encontrado no catálogo.` };
 
       resolvedServices.push({
         serviceId,
@@ -302,12 +327,12 @@ export function createApiRouter(): Router {
     };
   }
 
-  // Unica coisa que o produto persiste: uma arquitetura de infra cloud (composicao de N
-  // servicos) salva com nome pelo usuario. Preco de cada servico e recalculado no momento do
-  // save/edicao (nao reaproveita um valor que o cliente possa ter enviado desatualizado).
+  // Única coisa que o produto persiste: uma arquitetura de infra cloud (composição de N
+  // serviços) salva com nome pelo usuário. Preço de cada serviço é recalculado no momento do
+  // save/edição (não reaproveita um valor que o cliente possa ter enviado desatualizado).
   router.post("/cloud/architectures", async (req, res) => {
     if (!isDatabaseConfigured) {
-      res.status(503).json({ error: "Banco nao configurado; nao e possivel salvar arquiteturas agora." });
+      res.status(503).json({ error: "Banco não configurado; não é possível salvar arquiteturas agora." });
       return;
     }
     const result = await buildArchitectureInput((req.body ?? {}) as Record<string, unknown>);
@@ -331,12 +356,12 @@ export function createApiRouter(): Router {
 
   router.get("/cloud/architectures/:id", async (req, res) => {
     if (!isDatabaseConfigured) {
-      res.status(404).json({ error: "Banco nao configurado." });
+      res.status(404).json({ error: "Banco não configurado." });
       return;
     }
     const detail = await getArchitecture(req.params.id);
     if (!detail) {
-      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      res.status(404).json({ error: "Arquitetura não encontrada." });
       return;
     }
     res.json({ architecture: toArchitectureDetailView(detail.architecture, detail.services) });
@@ -344,12 +369,12 @@ export function createApiRouter(): Router {
 
   router.put("/cloud/architectures/:id", async (req, res) => {
     if (!isDatabaseConfigured) {
-      res.status(503).json({ error: "Banco nao configurado; nao e possivel editar arquiteturas agora." });
+      res.status(503).json({ error: "Banco não configurado; não é possível editar arquiteturas agora." });
       return;
     }
     const existing = await getArchitecture(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      res.status(404).json({ error: "Arquitetura não encontrada." });
       return;
     }
     const result = await buildArchitectureInput((req.body ?? {}) as Record<string, unknown>);
@@ -364,32 +389,32 @@ export function createApiRouter(): Router {
 
   router.delete("/cloud/architectures/:id", async (req, res) => {
     if (!isDatabaseConfigured) {
-      res.status(503).json({ error: "Banco nao configurado." });
+      res.status(503).json({ error: "Banco não configurado." });
       return;
     }
     const existing = await getArchitecture(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      res.status(404).json({ error: "Arquitetura não encontrada." });
       return;
     }
     await deleteArchitecture(req.params.id);
     res.status(204).send();
   });
 
-  // Duplica com o snapshot ja salvo (nao recalcula preco): "duplicar" preserva exatamente o
-  // que foi salvo, sem depender de precos ao vivo ainda estarem disponiveis no momento da copia.
+  // Duplica com o snapshot já salvo (não recalcula preço): "duplicar" preserva exatamente o
+  // que foi salvo, sem depender de preços ao vivo ainda estarem disponíveis no momento da cópia.
   router.post("/cloud/architectures/:id/duplicate", async (req, res) => {
     if (!isDatabaseConfigured) {
-      res.status(503).json({ error: "Banco nao configurado." });
+      res.status(503).json({ error: "Banco não configurado." });
       return;
     }
     const existing = await getArchitecture(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: "Arquitetura nao encontrada." });
+      res.status(404).json({ error: "Arquitetura não encontrada." });
       return;
     }
     const { name } = (req.body ?? {}) as Record<string, unknown>;
-    const newName = typeof name === "string" && name.trim() ? name.trim().slice(0, 120) : `${existing.architecture.name} (copia)`;
+    const newName = typeof name === "string" && name.trim() ? name.trim().slice(0, 120) : `${existing.architecture.name} (cópia)`;
 
     const id = await insertArchitecture({
       name: newName,
@@ -419,7 +444,7 @@ export function createApiRouter(): Router {
         status: "FALLBACK_STALE",
         source: "STATIC_SNAPSHOT",
         timestamp: laborProfiles[0]?.updatedAt ?? new Date().toISOString(),
-        warning: "Ingestao real do CAGED ainda pendente; perfis usam snapshot parametrizado de CBOs de tecnologia.",
+        warning: "Ingestão real do CAGED ainda pendente; perfis usam snapshot parametrizado de CBOs de tecnologia.",
         data: null,
       },
     });
@@ -428,7 +453,7 @@ export function createApiRouter(): Router {
   router.post("/labor/estimate", (req, res) => {
     const { monthlySalary, factorK, marginPct, profileId } = (req.body ?? {}) as Record<string, unknown>;
     if (typeof monthlySalary !== "number" || typeof factorK !== "number" || typeof marginPct !== "number") {
-      res.status(400).json({ error: "monthlySalary, factorK e marginPct sao obrigatorios e devem ser numericos." });
+      res.status(400).json({ error: "monthlySalary, factorK e marginPct são obrigatórios e devem ser numéricos." });
       return;
     }
 
@@ -439,7 +464,7 @@ export function createApiRouter(): Router {
   router.post("/market-benchmark/search", async (req, res) => {
     const { role, state, city, notes } = (req.body ?? {}) as Record<string, unknown>;
     if (typeof role !== "string" || !role.trim()) {
-      res.status(400).json({ error: "role e obrigatorio." });
+      res.status(400).json({ error: "role é obrigatório." });
       return;
     }
 
@@ -459,11 +484,11 @@ export function createApiRouter(): Router {
     res.json({
       items: licenseCatalog,
       source: {
-        name: "Catalogo de licencas",
+        name: "Catálogo de licenças",
         status: "FALLBACK_STALE",
         source: "STATIC_TABLE",
         timestamp: licenseCatalog[0]?.updatedAt ?? new Date().toISOString(),
-        warning: "Catalogo baseado em paginas oficiais de precos; conectores comerciais por fornecedor ainda nao foram configurados.",
+        warning: "Catálogo baseado em páginas oficiais de preços; conectores comerciais por fornecedor ainda não foram configurados.",
         data: null,
       },
     });

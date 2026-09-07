@@ -29,7 +29,7 @@ function extractOnDemandUsd(rawProduct: string): number {
   const priceDimensions = onDemand[termKey].priceDimensions;
   const dimKey = Object.keys(priceDimensions)[0];
   const usd = Number(priceDimensions[dimKey]?.pricePerUnit?.USD);
-  if (!Number.isFinite(usd)) throw new Error("Preco OnDemand AWS invalido");
+  if (!Number.isFinite(usd)) throw new Error("Preço OnDemand AWS inválido");
   return usd;
 }
 

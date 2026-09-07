@@ -33,14 +33,14 @@ function resolveIngestedUnitPrice(provider: "AWS" | "GCP", knownPrice: CloudPric
     return {
       pricePerHourUsd: knownPrice.pricePerHourUsd,
       status: knownPrice.sourceStatus,
-      warning: knownPrice.sourceStatus === "OPERATIONAL" ? undefined : "Preco vem da ultima ingestao periodica bem-sucedida; pode nao refletir o valor mais recente.",
+      warning: knownPrice.sourceStatus === "OPERATIONAL" ? undefined : "Preço vem da última ingestão periódica bem-sucedida; pode não refletir o valor mais recente.",
     };
   }
   const table = provider === "AWS" ? AWS_REGION_AVG_USD_PER_HOUR : GCP_REGION_AVG_USD_PER_HOUR;
   return {
     pricePerHourUsd: table[region] ?? table[DEFAULT_REGION_KEY],
     status: "OFFLINE",
-    warning: "Ingestao periodica ainda nao rodou para este SKU/regiao; usando media generica de custo por regiao.",
+    warning: "Ingestão periódica ainda não rodou para este SKU/região; usando média genérica de custo por região.",
   };
 }
 
@@ -123,7 +123,7 @@ async function calculateAzureLiveServicePrice(serviceId: string, region: string,
       estimated: result.status !== "OPERATIONAL",
       lastUpdated: nowIso,
       sourceUrl: "https://azure.microsoft.com/pricing/details/storage/blobs/",
-      note: "Armazenamento por GB e preco ao vivo (Azure Retail Prices API); requisicoes usam taxa de referencia do catalogo.",
+      note: "Armazenamento por GB é preço ao vivo (Azure Retail Prices API); requisições usam taxa de referência do catálogo.",
       warning: result.warning,
     };
   }
@@ -142,7 +142,7 @@ async function calculateAzureLiveServicePrice(serviceId: string, region: string,
       estimated: result.status !== "OPERATIONAL",
       lastUpdated: nowIso,
       sourceUrl: "https://azure.microsoft.com/pricing/details/azure-sql-database/single/",
-      note: "Compute (vCore/hora) e preco ao vivo (Azure Retail Prices API); storage usa taxa de referencia do catalogo.",
+      note: "Compute (vCore/hora) é preço ao vivo (Azure Retail Prices API); storage usa taxa de referência do catálogo.",
       warning: result.warning,
     };
   }
@@ -188,7 +188,7 @@ async function calculateAzureLiveServicePrice(serviceId: string, region: string,
 
 export async function calculateServicePrice(serviceId: string, region: string, config: Record<string, unknown>): Promise<ServicePricing> {
   const definition = getCloudServiceDefinition(serviceId);
-  if (!definition) throw new Error(`Servico '${serviceId}' nao encontrado no catalogo.`);
+  if (!definition) throw new Error(`Serviço '${serviceId}' não encontrado no catálogo.`);
 
   if (definition.category === "Compute") {
     return calculateComputePrice(definition.provider, region, config);

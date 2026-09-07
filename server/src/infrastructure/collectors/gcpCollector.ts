@@ -54,7 +54,7 @@ function findRatePerUnit(skus: GcpSku[], series: string, region: string, kind: "
       sku.description.includes(series) &&
       sku.description.includes(`Instance ${kind} running`),
   );
-  if (!match) throw new Error(`SKU GCP nao encontrado (serie=${series}, regiao=${region}, tipo=${kind})`);
+  if (!match) throw new Error(`SKU GCP não encontrado (série=${series}, região=${region}, tipo=${kind})`);
   return unitPriceUsd(match);
 }
 
@@ -65,9 +65,11 @@ function findRatePerUnit(skus: GcpSku[], series: string, region: string, kind: "
  */
 async function fetchGcpUnitPrice(regionKey: string, machineType: string, vcpu: number, memoryGiB: number): Promise<GcpUnitPrice> {
   const apiKey = process.env.GOOGLE_CLOUD_BILLING_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_CLOUD_BILLING_API_KEY nao configurada");
+  // Mensagem sem o nome da env var: esse throw pode chegar cru ao usuário final via
+  // /cloud/services/:serviceId/price quando ele tenta precificar compute GCP sem a credencial.
+  if (!apiKey) throw new Error("GCP Cloud Billing Catalog indisponível (credencial não configurada).");
   const series = MACHINE_SERIES_BY_TYPE[machineType];
-  if (!series) throw new Error(`Familia de maquina GCP desconhecida para '${machineType}'`);
+  if (!series) throw new Error(`Família de máquina GCP desconhecida para '${machineType}'`);
 
   const allSkus: GcpSku[] = [];
   let pageToken: string | undefined;

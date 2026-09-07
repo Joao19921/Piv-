@@ -21,10 +21,10 @@ function apiSourceResultSchema<T extends z.ZodTypeAny>(dataSchema: T) {
     source: z.string(),
     timestamp: z.string(),
     warning: z.string().optional(),
-    // .default(null): algumas rotas (snapshot estatico sem payload de dado real, ex. labor/profiles,
-    // licenses/catalog) nunca incluem a chave "data" no JSON. nullable() sozinho so aceita null
-    // explicito, nao chave ausente (undefined) — ja causou parse() falhar em producao com esses
-    // dois endpoints. default(null) trata ausente e null da mesma forma, sem afetar quem ja envia null.
+    // .default(null): algumas rotas (snapshot estático sem payload de dado real, ex. labor/profiles,
+    // licenses/catalog) nunca incluem a chave "data" no JSON. nullable() sozinho só aceita null
+    // explícito, não chave ausente (undefined) — já causou parse() falhar em produção com esses
+    // dois endpoints. default(null) trata ausente e null da mesma forma, sem afetar quem já envia null.
     data: dataSchema.nullable().default(null),
   });
 }
@@ -55,6 +55,7 @@ const systemHealthResponseSchema = z.object({
   sources: z.array(apiSourceResultSchema(z.unknown())),
   ingestion: z.array(ingestionRunSchema),
   database: z.object({ configured: z.boolean(), queries: z.array(queryStatSchema) }),
+  meta: z.object({ version: z.string(), commit: z.string(), environment: z.string() }).optional(),
 });
 export type SystemHealthResponse = z.infer<typeof systemHealthResponseSchema>;
 
@@ -123,7 +124,7 @@ export async function fetchCloudServices(params: { q?: string; provider?: CloudP
   if (params.category) qs.set("category", params.category);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const res = await fetch(`${API_BASE}/cloud/services${suffix}`);
-  if (!res.ok) throw new Error("Falha ao carregar catalogo de servicos.");
+  if (!res.ok) throw new Error("Falha ao carregar catálogo de serviços.");
   return cloudServicesResponseSchema.parse(await res.json());
 }
 
@@ -151,14 +152,14 @@ export async function priceCloudService(serviceId: string, params: { region: str
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  if (!res.ok) await parseErrorOrThrow(res, "Falha ao calcular o preco do servico.");
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao calcular o preço do serviço.");
   return z.object({ pricing: servicePricingSchema }).parse(await res.json()).pricing;
 }
 
 const laborProfileSchema = z.object({
   id: z.string(),
   title: z.string(),
-  seniority: z.enum(["Junior", "Pleno", "Senior", "Especialista"]),
+  seniority: z.enum(["Júnior", "Pleno", "Sênior", "Especialista"]),
   cbo: z.string(),
   employmentModel: z.enum(["CLT", "PJ"]),
   monthlyCompensation: z.number(),
@@ -252,7 +253,7 @@ export async function searchMarketBenchmark(params: { role: string; state: strin
 
 export async function fetchMarketBenchmarkHistory(): Promise<MarketBenchmarkHistoryResponse> {
   const res = await fetch(`${API_BASE}/market-benchmark/history`);
-  if (!res.ok) throw new Error("Falha ao carregar historico de benchmark.");
+  if (!res.ok) throw new Error("Falha ao carregar histórico de benchmark.");
   return marketBenchmarkHistoryResponseSchema.parse(await res.json());
 }
 
@@ -264,7 +265,7 @@ const licenseCatalogItemSchema = z.object({
   billingMetric: z.string(),
   unitPriceUsd: z.number(),
   minimumSeats: z.number(),
-  category: z.enum(["DevOps", "Produtividade", "Observabilidade", "Seguranca", "Dados", "Colaboracao", "ITSM"]),
+  category: z.enum(["DevOps", "Produtividade", "Observabilidade", "Segurança", "Dados", "Colaboração", "ITSM"]),
   billingCycle: z.enum(["monthly", "annual-paid-monthly"]).optional(),
   sourceUrl: z.string().optional(),
   source: z.string(),
@@ -282,7 +283,7 @@ export type LicenseCatalogResponse = z.infer<typeof licenseCatalogResponseSchema
 
 export async function fetchLicenseCatalog(): Promise<LicenseCatalogResponse> {
   const res = await fetch(`${API_BASE}/licenses/catalog`);
-  if (!res.ok) throw new Error("Falha ao carregar catalogo de licencas.");
+  if (!res.ok) throw new Error("Falha ao carregar catálogo de licenças.");
   return licenseCatalogResponseSchema.parse(await res.json());
 }
 

@@ -125,7 +125,7 @@ function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResul
     seniority: profile.seniority,
     monthlyCompensation: profile.monthlyCompensation,
     factorK: profile.factorK,
-    observation: `Valor bruto do catalogo interno (${profile.benchmarkSource}), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
+    observation: `Valor bruto do catálogo interno (${profile.benchmarkSource}), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
   }));
 
   const suggestedMonthlyCompensation = sources.length
@@ -134,7 +134,7 @@ function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResul
 
   const summarySources = sources.length
     ? sources.map((source) => `${source.employmentModel} ${formatBRL(source.monthlyCompensation)}`).join(" e ")
-    : "nenhum perfil do catalogo correspondente";
+    : "nenhum perfil do catálogo correspondente";
 
   return {
     roleSearched: input.role.trim(),
@@ -144,7 +144,7 @@ function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResul
     sources,
     suggestedMonthlyCompensation,
     sourceMode: "STATIC_SNAPSHOT",
-    summary: `Referencia para ${input.role.trim()} em ${city}/${state}: ${summarySources}. Valores brutos do catalogo interno de perfis (salario CLT e/ou PJ), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
+    summary: `Referência para ${input.role.trim()} em ${city}/${state}: ${summarySources}. Valores brutos do catálogo interno de perfis (salário CLT e/ou PJ), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -207,7 +207,7 @@ export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promis
       status: "OFFLINE",
       source: "NONE",
       timestamp: new Date().toISOString(),
-      warning: "Cargo/perfil e obrigatorio para buscar benchmark.",
+      warning: "Cargo/perfil é obrigatório para buscar benchmark.",
       data: null,
     };
   }

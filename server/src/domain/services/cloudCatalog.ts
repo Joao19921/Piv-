@@ -136,7 +136,7 @@ export async function getCloudCatalog(): Promise<CloudCatalog> {
         return catalog;
       }
     } catch (err) {
-      logger.error("Falha ao ler catalogo cloud do Postgres; usando snapshot estatico", { error: err instanceof Error ? err.message : String(err) });
+      logger.error("Falha ao ler catálogo cloud do Postgres; usando snapshot estático", { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -171,7 +171,7 @@ export async function getLatestKnownStoragePrice(provider: CloudProvider, region
     if (!row) return undefined;
     return { pricePerGbMonthUsd: Number(row.price_per_gb_month_usd), sourceStatus: row.source_status };
   } catch (err) {
-    logger.error("Falha ao ler preco de storage do Postgres", { error: err instanceof Error ? err.message : String(err) });
+    logger.error("Falha ao ler preço de storage do Postgres", { error: err instanceof Error ? err.message : String(err) });
     return undefined;
   }
 }

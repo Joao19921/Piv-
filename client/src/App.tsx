@@ -19,10 +19,25 @@ const queryClient = new QueryClient({
   },
 });
 
+export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources";
+
+/** Caminhos reais por secao — cada modulo tem URL propria (favoritar, compartilhar, voltar funcionam). */
+export const SECTION_PATHS: Record<SectionId, string> = {
+  dashboard: "/",
+  labor: "/mao-de-obra",
+  cloud: "/infra-cloud",
+  licenses: "/licencas",
+  sources: "/fontes",
+};
+
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/" component={() => <Home section="dashboard" />} />
+      <Route path="/mao-de-obra" component={() => <Home section="labor" />} />
+      <Route path="/infra-cloud" component={() => <Home section="cloud" />} />
+      <Route path="/licencas" component={() => <Home section="licenses" />} />
+      <Route path="/fontes" component={() => <Home section="sources" />} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -50,8 +65,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         setUsername(data.username);
         setStatus(!data.required || data.authenticated ? "authenticated" : "required");
       })
-      // Se a rota falhar por algum motivo, nao trava o acesso: essa checagem e so uma
-      // conveniencia visual sobre um gate que ja e reforçado no backend.
+      // Se a rota falhar por algum motivo, não trava o acesso: essa checagem é só uma
+      // conveniência visual sobre um gate que já é reforçado no backend.
       .catch(() => setStatus("authenticated"));
   };
 
