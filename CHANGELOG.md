@@ -2,6 +2,14 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-07 — Nomes das fontes de dados visíveis no Workspace
+
+Pedido do usuário: mostrar quais fontes de dados a aplicação usa diretamente no menu lateral (Workspace), não só um contador — para reforçar a credibilidade dos dados (mostrar que os números vêm de integrações reais como BACEN, PNCP, AWS, Azure, GCP, e não de valores inventados).
+
+O widget "Sistema" no rodapé do menu lateral (que já linkava para a tela "Fontes e integridade") mostrava só `"Sistema parcial" / "3 de 7 fontes online"`. Adicionado abaixo desse resumo um conjunto de selos compactos, um por fonte real (`PTAX`, `Azure`, `PNCP`, `AWS`, `GCP`, `Benchmark`, `CAGED`), cada um com o mesmo indicador de status (pontinho colorido) usado no resto do produto — verde/online, âmbar/fallback. O `title` de cada selo mostra o nome completo da fonte, o detalhe (cotação/preço) e a hora da última leitura, sem precisar abrir a tela de detalhe. Nenhuma fonte nova foi adicionada — é a mesma lista já exposta em `/system-health`, agora visível no lugar onde o usuário passa mais tempo.
+
+Verificado com Playwright (usuário descartável): os 7 selos aparecem no widget do Workspace com a cor certa por status, sem quebrar o layout do menu lateral.
+
 ## 2026-09-07 — Dark mode em toda a aplicação
 
 Pedido do produto: opção de tema escuro alternável, com um botão Sol/Lua no shell do app.
