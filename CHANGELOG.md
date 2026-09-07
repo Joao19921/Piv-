@@ -2,6 +2,14 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-06 — Botão "Limpar dados" em Mão de obra
+
+Pedido do usuário: um botão pra apagar tudo na tela de Mão de obra e liberar os campos pra uma nova busca, sem precisar recarregar a página.
+
+Adicionado no cabeçalho da seção (`LaborPricing`, `Home.tsx`): zera perfil, remuneração, Fator K, margem e os campos de busca de benchmark (cargo, cidade, observações — Estado e o toggle CLT/PJ voltam ao padrão SP/PJ por serem seletores de valor único, não texto livre). Chama `benchmarkSearch.reset()` (mutation do react-query) pra descartar o resultado da última busca manual — sem isso, um novo estado `benchmarkDismissed` também precisou ser adicionado, porque o painel de benchmark tinha um segundo fallback (`historyData.entries[0]`, a última consulta salva no Postgres) que reapareceria sozinho mesmo com os campos em branco. `benchmarkDismissed` é religado assim que o usuário dispara uma nova busca.
+
+Verificado com Playwright: todos os campos de texto ficam vazios após o clique (checado via `inputValue()`, não só visualmente — o placeholder de "Cidade" parece preenchido mas o campo está vazio), o painel de resultado some, e o toast de confirmação aparece.
+
 ## 2026-09-06 — Revisão de UX: navegação real, badges honestos, conversão BRL, exportação e limpeza de acentuação
 
 Lista de 10 problemas reportada pelo usuário após testar a aplicação em produção. Do mais grave ao mais cosmético:
