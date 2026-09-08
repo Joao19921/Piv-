@@ -1,5 +1,5 @@
 /* Observatório Operacional: cockpit neo-editorial para transformar fontes dispersas em decisões de preço defensáveis. */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { hasPermission, SECTION_PATHS, useAuth, type AuthUser, type PermissionCode, type SectionId } from "@/App";
@@ -47,6 +47,7 @@ import { useLicenseCatalog } from "@/hooks/useLicenseCatalog";
 import { useMarketBenchmarkHistory, useMarketBenchmarkSearch } from "@/hooks/useMarketBenchmark";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { downloadCsv } from "@/lib/csv";
+import { parseLocaleNumber } from "@/lib/number";
 import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, MarketBenchmarkSalarySource, QueryStat, SourceStatus } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
 
@@ -279,9 +280,10 @@ function LaborPricing() {
   const [benchmarkCity, setBenchmarkCity] = useState("São Paulo");
   const [benchmarkNotes, setBenchmarkNotes] = useState("");
   const [benchmarkDismissed, setBenchmarkDismissed] = useState(false);
-  const salary = Number(monthlySalary) || 0;
-  const factor = Number(factorK) || 0;
-  const { data: estimate, isFetching } = useLaborEstimate({ monthlySalary: salary, factorK: factor, marginPct: Number(margin) || 0 });
+  const [appliedSource, setAppliedSource] = useState<MarketBenchmarkSalarySource | null>(null);
+  const salary = parseLocaleNumber(monthlySalary);
+  const factor = parseLocaleNumber(factorK);
+  const { data: estimate, isFetching } = useLaborEstimate({ monthlySalary: salary, factorK: factor, marginPct: parseLocaleNumber(margin) });
   const monthlyCost = estimate?.monthlyCost ?? 0;
   const hourlyCost = estimate?.hourlyCost ?? 0;
   const suggestedRate = estimate?.suggestedRate ?? 0;
@@ -297,6 +299,7 @@ function LaborPricing() {
     setEmploymentModel(profile.employmentModel);
     setMonthlySalary(String(profile.monthlyCompensation));
     setFactorK(String(profile.factorK));
+    setAppliedSource(null);
   };
 
   const handleBenchmarkSearch = () => {
@@ -323,18 +326,34 @@ function LaborPricing() {
     setBenchmarkState("SP");
     setBenchmarkCity("");
     setBenchmarkNotes("");
+    setAppliedSource(null);
     benchmarkSearch.reset();
     setBenchmarkDismissed(true);
     toast.success("Dados limpos. Comece uma nova busca quando quiser.");
   };
 
-  const applyBenchmarkSource = (source: MarketBenchmarkSalarySource) => {
-    setProfileTitle(benchmark?.roleSearched ?? source.profileTitle);
+  const fillFromBenchmarkSource = (source: MarketBenchmarkSalarySource, role: string) => {
+    setProfileTitle(role || source.profileTitle);
     setEmploymentModel(source.employmentModel);
     setMonthlySalary(String(source.monthlyCompensation));
     setFactorK(String(source.factorK));
+    setAppliedSource(source);
+  };
+
+  const applyBenchmarkSource = (source: MarketBenchmarkSalarySource) => {
+    fillFromBenchmarkSource(source, benchmark?.roleSearched ?? source.profileTitle);
     toast.success(`Perfil ${source.employmentModel} aplicado ao cálculo (${benchmark?.roleSearched ?? source.profileTitle}).`);
   };
+
+  // Preenche o calculo automaticamente com a primeira fonte encontrada assim que uma busca de
+  // benchmark tem sucesso -- antes exigia clicar em "Aplicar" manualmente numa fonte da tabela.
+  useEffect(() => {
+    const result = benchmarkSearch.data?.data;
+    if (result?.sources?.length) {
+      fillFromBenchmarkSource(result.sources[0], result.roleSearched);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [benchmarkSearch.data]);
 
   return <div>
     <SectionHeading eyebrow="Módulo 02 · Laboratório" title="Mão de obra" description="Escolha um perfil profissional, revise remuneração, Fator K e margem para chegar na taxa-hora sugerida." action={<Button onClick={handleClear} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-transparent px-5 text-xs text-[#333333] hover:bg-white"><Eraser className="mr-2 h-4 w-4" /> Limpar dados</Button>} />
@@ -343,7 +362,7 @@ function LaborPricing() {
       <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Entrada de premissas</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Perfil e composição da taxa</h2></div><div className="rounded-lg bg-[#E8E9E9] p-2 text-[#5D7979]"><BriefcaseBusiness className="h-4 w-4" /></div></div>
         <div className="mb-6"><Label htmlFor="profile-title" className="text-xs font-semibold text-[#345555]">Perfil profissional</Label><div className="mt-2 flex gap-2"><Input id="profile-title" value={profileTitle} onChange={(e) => setProfileTitle(e.target.value)} className="h-11 flex-1 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: Consultor SAP FI/CO senior" /><div className="flex overflow-hidden rounded-md border border-[#D4D1CC]">{(["CLT", "PJ"] as const).map((model) => <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-11 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>{model}</button>)}</div></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Nome livre - preenchido pela busca de benchmark abaixo ou digitado manualmente</p></div>
         <div className="mb-6 grid gap-3 sm:grid-cols-3">{profiles.slice(0, 3).map((profile) => <button key={profile.id} onClick={() => applyQuickProfile(profile)} className={`rounded-xl border p-3 text-left transition-colors ${profileTitle === profile.title && employmentModel === profile.employmentModel ? "border-[#F57F17] bg-white" : "border-[#E5E0D6] bg-white/55 hover:border-[#F0C48A]"}`}><p className="text-[11px] font-semibold text-[#333333]">{profile.title}</p><p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{profile.seniority} - {profile.employmentModel}</p><p className="mt-3 font-display text-sm font-semibold text-[#C2660D]">{formatBRL(profile.monthlyCompensation)}</p></button>)}</div>
-        <div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="salary" className="text-xs font-semibold text-[#345555]">Remuneração mensal</Label><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-xs text-[#8A9797]">R$</span><Input id="salary" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" inputMode="numeric" /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Valor livre, editável a qualquer momento</p></div><div><Label htmlFor="factor" className="text-xs font-semibold text-[#345555]">Fator K</Label><div className="relative mt-2"><Input id="factor" value={factorK} onChange={(e) => setFactorK(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="decimal" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">x</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Encargos, benefícios, indiretos e risco contratual</p></div><div><Label htmlFor="margin" className="text-xs font-semibold text-[#345555]">Margem alvo</Label><div className="relative mt-2"><Input id="margin" value={margin} onChange={(e) => setMargin(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="numeric" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Aplicada sobre o custo total</p></div><div><Label className="text-xs font-semibold text-[#345555]">Fonte do benchmark</Label><div className="mt-2 flex h-10 w-full items-center justify-between rounded-md border border-[#D4D1CC] bg-white px-3 text-left text-sm text-[#333333]"><span>CAGED / MTE - snapshot</span><ServiceBadge state={sourceState} /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">{catalogData?.source.warning ?? "Consultando catálogo de perfis"}</p></div></div>
+        <div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="salary" className="text-xs font-semibold text-[#345555]">Remuneração mensal</Label><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-xs text-[#8A9797]">R$</span><Input id="salary" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" inputMode="numeric" /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Valor livre, editável a qualquer momento</p></div><div><Label htmlFor="factor" className="text-xs font-semibold text-[#345555]">Fator K</Label><div className="relative mt-2"><Input id="factor" value={factorK} onChange={(e) => setFactorK(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="decimal" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">x</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Encargos, benefícios, indiretos e risco contratual</p></div><div><Label htmlFor="margin" className="text-xs font-semibold text-[#345555]">Margem alvo</Label><div className="relative mt-2"><Input id="margin" value={margin} onChange={(e) => setMargin(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="numeric" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Aplicada sobre o custo total</p></div><div><Label className="text-xs font-semibold text-[#345555]">Fonte do benchmark</Label><div className="mt-2 flex h-10 w-full items-center justify-between rounded-md border border-[#D4D1CC] bg-white px-3 text-left text-sm text-[#333333]"><span className="truncate">{appliedSource ? `${appliedSource.employmentModel} · ${appliedSource.profileTitle}` : "CAGED / MTE - snapshot"}</span><ServiceBadge state={appliedSource ? benchmarkServiceState : sourceState} /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">{appliedSource ? appliedSource.observation : (catalogData?.source.warning ?? "Consultando catálogo de perfis")}</p></div></div>
       </Card>
       <Card className="overflow-hidden rounded-2xl border-[#0D5C5C] bg-[#0D5C5C] p-5 text-[#F7F2E8] shadow-paper sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Saída do modelo</p><h2 className="mt-1 font-display text-xl font-semibold">Taxa-hora sugerida</h2></div><div className="rounded-lg bg-[#F57F17] p-2 text-white"><Calculator className="h-4 w-4" /></div></div>{isFetching && !estimate ? <Skeleton className="mt-10 h-12 w-44 bg-white/10" /> : <div className="mt-10 font-display text-5xl font-semibold tracking-[-0.06em] text-white">{formatBRL(suggestedRate)}</div>}<p className="mt-2 text-xs leading-5 text-[#AFC7C7]">por hora faturável · {profileTitle || "perfil"} / {employmentModel}</p><div className="mt-9 space-y-3 border-t border-white/10 pt-5 text-xs"><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo mensal carregado</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(monthlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo-hora base</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(hourlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Horas faturáveis</span><strong className="font-medium text-[#F7F2E8]">{estimate?.billableHours ?? 168} h/mês</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Margem aplicada</span><strong className="font-medium text-[#F57F17]">{margin}%</strong></div></div><div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-5 text-[#B8CECE]"><span className="font-semibold text-white">Nota de integridade:</span> perfis vindos do endpoint /labor/profiles. A fonte CAGED real ainda está marcada como fallback até a ingestão ser ligada.</div></Card>
     </div>

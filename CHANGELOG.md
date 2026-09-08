@@ -2,6 +2,18 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-08 — Mão de obra: auto-preenchimento do benchmark, fonte dinâmica e bug de cálculo com número em formato BR
+
+Pedidos do usuário: (1) depois de buscar um benchmark, o formulário de baixo (Perfil e composição da taxa) deveria se preencher sozinho, sem precisar clicar em "Aplicar"; (2) a taxa-hora sugerida às vezes "não batia" — pediu para testar todos os cálculos e valores; (3) a busca de benchmark deveria mostrar CLT/PJ junto com a fonte da informação.
+
+**Bug de cálculo encontrado e corrigido**: os campos "Remuneração mensal" e "Fator K" são texto livre, e o app fazia `Number(valor)` direto no que o usuário digitasse. `Number("15.500")` (quinze mil e quinhentos, formato BR com ponto de milhar) resulta em **15.5** — 1000x menor — e `Number("1,42")` (vírgula decimal, também formato BR) resulta em `NaN`. Qualquer usuário brasileiro digitando números do jeito natural tinha o custo mensal, custo-hora e taxa sugerida silenciosamente errados, sem nenhum aviso na tela — isso explica o "não estão batendo". Corrigido com `client/src/lib/number.ts` (`parseLocaleNumber`), que interpreta tanto `"15.500"`/`"15.500,50"` (BR) quanto `"15500"`/`"1.42"` (formato simples já usado internamente) antes de calcular. Adicionado `server/tests/laborPricing.test.ts` (8 casos) testando a fórmula (`computeLaborRate`) e a rota `/labor/estimate` de ponta a ponta — confirma que a fórmula em si sempre esteve certa (`monthlyCost = salário × Fator K`, `hourlyCost = monthlyCost / 168`, `suggestedRate = hourlyCost / (1 - margem)`); o problema era só a interpretação do número digitado antes de chegar nela.
+
+**Auto-preenchimento**: `LaborPricing` agora aplica automaticamente a primeira fonte retornada por uma busca de benchmark bem-sucedida (perfil, CLT/PJ, remuneração e Fator K), sem exigir o clique manual em "Aplicar" — que continua disponível pra escolher outra fonte quando a busca retorna mais de uma.
+
+**Fonte dinâmica com CLT/PJ**: o card "Fonte do benchmark" mostrava um texto fixo (`"CAGED / MTE - snapshot"`) sempre, não importa qual perfil estivesse realmente aplicado. Agora mostra o regime (CLT/PJ) e o título do perfil aplicado, com a observação real da fonte (ex.: catálogo interno CAGED/MTE, ou a Portaria SGD/MGI correspondente) — só volta ao texto genérico quando nada foi aplicado ainda.
+
+Verificado com Playwright (usuário descartável): busca de benchmark preenche o formulário sozinho; digitar "15.500" + "1,42" no formato BR gera exatamente os mesmos R$22.010 / R$131 / R$168 que os valores equivalentes em formato simples — antes desse fix, o formato BR quebrava o cálculo silenciosamente.
+
 ## 2026-09-08 — Sessão expirada não deixava mais o app preso em loop de erro 401
 
 Pedido do usuário: testou de novo depois da correção do benchmark e essa hora achou a tela toda travada com uma sequência de `GET /api/v1/system-health 401` no console, sem nenhuma mensagem visível — o app ficava repetindo a chamada sem nunca voltar pra tela de login.
