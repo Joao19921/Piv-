@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-08 — Benchmark sem correspondência não aplica mais perfil genérico sem avisar
+
+Pedido do usuário: buscou "Consultor SAP FI/CO senior" e recebeu 2 fontes, as duas rotuladas "CLT" ("CLT e CLT, não entendi"), e o auto-preenchimento (feature da entrada anterior) levou pro cálculo um "Analista de Sistemas" sem nenhuma relação com o cargo buscado ("Fonte CLT - Analista de Sistemas, não entendi") — pediu também mais fontes.
+
+**Causa raiz**: o catálogo interno de perfis não tem nenhuma categoria pra consultoria funcional de ERP/SAP (FI/CO, MM, SD, HCM etc.) — é um catálogo de cargos de TI genéricos (dev, cloud, dados, suporte, arquitetura). Cargos sem categoria caem num fallback de exatamente 2 perfis fixos, que por coincidência eram os dois CLT. O código tratava esse fallback como se fosse um resultado normal — daí o auto-preenchimento aplicar "Analista de Sistemas" como se fosse a resposta pra "Consultor SAP", sem avisar que não é uma correspondência real. **Não inventei dado de SAP/ERP** (o catálogo não tem fonte real pra isso); se o time tiver uma referência real (pesquisa salarial, histórico interno), dá pra cadastrar como categoria nova.
+
+**Correção**: `MarketBenchmarkResult` ganhou `hasDirectMatch: boolean` — `false` quando nenhuma categoria do catálogo bateu com o cargo. Nesse caso: (1) o resumo e cada observação de fonte dizem explicitamente "não encontramos um perfil específico... referência genérica, não um benchmark direto"; (2) um aviso âmbar aparece acima da tabela de resultados; (3) o auto-preenchimento é **desativado** — nada é aplicado no formulário sem o usuário clicar "Aplicar" de propósito; (4) ao aplicar manualmente, o toast e o card "Fonte do benchmark" deixam claro que é uma "referência genérica", com o selo em amarelo (antes ficava com a mesma cor de uma correspondência real). Também ampliado o fallback de 2 pra 5 perfis, misturando CLT/PJ e senioridades (antes eram só 2 CLT) — atende o "precisamos das outras fontes" e acaba com o "CLT e CLT".
+
+Verificado com Playwright: busca sem correspondência mostra o aviso, 5 fontes variadas (CLT e PJ), e o formulário de baixo **não muda sozinho**; aplicar manualmente rotula "referência genérica" com selo amarelo; busca com correspondência real (ex.: "Desenvolvedor Backend") continua auto-preenchendo normalmente, sem aviso.
+
 ## 2026-09-08 — Mão de obra: auto-preenchimento do benchmark, fonte dinâmica e bug de cálculo com número em formato BR
 
 Pedidos do usuário: (1) depois de buscar um benchmark, o formulário de baixo (Perfil e composição da taxa) deveria se preencher sozinho, sem precisar clicar em "Aplicar"; (2) a taxa-hora sugerida às vezes "não batia" — pediu para testar todos os cálculos e valores; (3) a busca de benchmark deveria mostrar CLT/PJ junto com a fonte da informação.

@@ -32,6 +32,11 @@ export interface MarketBenchmarkResult {
   sourceMode: "LIVE_CONNECTOR" | "STATIC_SNAPSHOT";
   summary: string;
   generatedAt: string;
+  /** false quando nenhuma categoria do catálogo casou com o cargo buscado e as fontes abaixo
+   * são só uma referência genérica de TI (FALLBACK_PROFILE_IDS), não um benchmark do cargo em
+   * si. Opcional pra manter compatibilidade com entradas de histórico salvas antes desse campo
+   * existir (fica undefined nesse caso, sem quebrar o parse do cliente). */
+  hasDirectMatch?: boolean;
 }
 
 export interface MarketBenchmarkHistoryEntry extends MarketBenchmarkResult {
@@ -83,7 +88,10 @@ const roleCategories: Array<{ pattern: RegExp; profileIds: string[] }> = [
   { pattern: /analista|sistemas|business analyst|requisitos/i, profileIds: ["analista-pleno-clt"] },
 ];
 
-const FALLBACK_PROFILE_IDS = ["analista-pleno-clt", "sgd-asupcomp-02"];
+// Sem uma categoria de cargo que case (ex.: consultoria funcional de ERP/SAP, que o catálogo
+// ainda não cobre), mostramos essas 5 referências gerais de TI como ponto de partida -- mix de
+// CLT/PJ e de senioridade, pra não repetir "CLT e CLT" e dar mais de 2 pontos de comparação.
+const FALLBACK_PROFILE_IDS = ["dev-pleno-clt", "dev-senior-pj", "analista-pleno-clt", "arquiteto-senior-pj", "dados-especialista-pj"];
 
 function normalize(text: string): string {
   return text
@@ -104,20 +112,22 @@ function formatBRL(value: number): string {
   }).format(value);
 }
 
-function matchProfilesForRole(role: string): LaborProfile[] {
+function matchProfilesForRole(role: string): { profiles: LaborProfile[]; directMatch: boolean } {
   const normalized = normalize(role);
   const category = roleCategories.find((entry) => entry.pattern.test(normalized));
   const ids = category?.profileIds ?? FALLBACK_PROFILE_IDS;
-  return ids
+  const profiles = ids
     .map((id) => laborProfiles.find((profile) => profile.id === id))
     .filter((profile): profile is LaborProfile => Boolean(profile));
+  return { profiles, directMatch: Boolean(category) };
 }
 
 function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResult {
   const city = input.city?.trim() || "Brasil";
   const state = input.state?.trim().toUpperCase() || "BR";
-  const matchedProfiles = matchProfilesForRole(input.role);
+  const { profiles: matchedProfiles, directMatch } = matchProfilesForRole(input.role);
 
+  const genericObservation = "Sem correspondência direta no catálogo para este cargo — valor de referência genérica de TI, não específico dele.";
   const sources: MarketBenchmarkSalarySource[] = matchedProfiles.map((profile) => ({
     employmentModel: profile.employmentModel,
     profileId: profile.id,
@@ -125,7 +135,9 @@ function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResul
     seniority: profile.seniority,
     monthlyCompensation: profile.monthlyCompensation,
     factorK: profile.factorK,
-    observation: `Valor bruto do catálogo interno (${profile.benchmarkSource}), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
+    observation: directMatch
+      ? `Valor bruto do catálogo interno (${profile.benchmarkSource}), sem margem, imposto ou ajuste regional aplicado nesta V1.`
+      : `${genericObservation} Fonte: catálogo interno (${profile.benchmarkSource}).`,
   }));
 
   const suggestedMonthlyCompensation = sources.length
@@ -136,6 +148,10 @@ function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResul
     ? sources.map((source) => `${source.employmentModel} ${formatBRL(source.monthlyCompensation)}`).join(" e ")
     : "nenhum perfil do catálogo correspondente";
 
+  const summary = directMatch
+    ? `Referência para ${input.role.trim()} em ${city}/${state}: ${summarySources}. Valores brutos do catálogo interno de perfis (salário CLT e/ou PJ), sem margem, imposto ou ajuste regional aplicado nesta V1.`
+    : `Não encontramos um perfil específico para "${input.role.trim()}" no catálogo interno. Mostrando ${sources.length} referência(s) genérica(s) de TI (${summarySources}) só pra orientação — não é um benchmark direto pra esse cargo.`;
+
   return {
     roleSearched: input.role.trim(),
     state,
@@ -144,8 +160,9 @@ function buildStaticBenchmark(input: MarketBenchmarkInput): MarketBenchmarkResul
     sources,
     suggestedMonthlyCompensation,
     sourceMode: "STATIC_SNAPSHOT",
-    summary: `Referência para ${input.role.trim()} em ${city}/${state}: ${summarySources}. Valores brutos do catálogo interno de perfis (salário CLT e/ou PJ), sem margem, imposto ou ajuste regional aplicado nesta V1.`,
+    summary,
     generatedAt: new Date().toISOString(),
+    hasDirectMatch: directMatch,
   };
 }
 

@@ -30,7 +30,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await query("test_cleanup.delete_benchmark_searches", `delete from market_benchmark_searches where role_searched = $1`, ["Teste automatizado de benchmark"]);
+  // O historico e salvo em fire-and-forget (nao bloqueia a resposta da busca -- ver
+  // marketBenchmark.ts) -- sem essa pausa, a limpeza corre risco de apagar a linha pai
+  // (market_benchmark_searches) antes do INSERT filho (market_benchmark_sources) em segundo
+  // plano terminar, violando a FK. So acontece nesse teardown agressivo do teste; em produção
+  // nada apaga uma busca recem-feita nesse intervalo.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await query("test_cleanup.delete_benchmark_searches", `delete from market_benchmark_searches where role_searched = any($1)`, [
+    ["Teste automatizado de benchmark", "Consultor SAP FI/CO senior automatizado", "Desenvolvedor Backend automatizado"],
+  ]);
   // Prefixo proprio (nao o dominio inteiro): outro arquivo de teste roda em paralelo (mesmo
   // worker pool do vitest) e tambem usa @test.pivo.internal -- um DELETE por dominio inteiro
   // apagaria as fixtures do outro arquivo no meio da execucao dele.
@@ -69,5 +77,35 @@ describe("POST /market-benchmark/search", () => {
     expect(res.body.data.city).toBe("São Paulo");
     expect(Array.isArray(res.body.data.sources)).toBe(true);
     expect(res.body.data.sources.length).toBeGreaterThan(0);
+  });
+
+  // Regressao: um cargo sem categoria correspondente (ex.: consultoria funcional de ERP/SAP,
+  // que o catalogo nao cobre) tem que vir marcado como hasDirectMatch:false e com mais de uma
+  // fonte generica variada -- sem isso o cliente aplicava automaticamente um perfil generico
+  // (ex.: "Analista de Sistemas") como se fosse o cargo buscado, e sempre devolvia so 2 fontes,
+  // as duas por acaso CLT, confundindo o usuario ("CLT e CLT, nao entendi").
+  it("marca hasDirectMatch:false e devolve varias fontes genericas (CLT e PJ) quando o cargo nao tem categoria no catalogo", async () => {
+    const res = await request(app)
+      .post("/api/v1/market-benchmark/search")
+      .set("Cookie", laborCookie)
+      .send({ role: "Consultor SAP FI/CO senior automatizado", state: "SP", city: "São Paulo" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.hasDirectMatch).toBe(false);
+    expect(res.body.data.sources.length).toBeGreaterThanOrEqual(4);
+    const models = new Set(res.body.data.sources.map((s: { employmentModel: string }) => s.employmentModel));
+    expect(models.has("CLT")).toBe(true);
+    expect(models.has("PJ")).toBe(true);
+    expect(res.body.data.summary).toContain("Não encontramos um perfil específico");
+  });
+
+  it("marca hasDirectMatch:true quando o cargo bate com uma categoria real do catalogo", async () => {
+    const res = await request(app)
+      .post("/api/v1/market-benchmark/search")
+      .set("Cookie", laborCookie)
+      .send({ role: "Desenvolvedor Backend automatizado", state: "SP", city: "São Paulo" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.hasDirectMatch).toBe(true);
   });
 });

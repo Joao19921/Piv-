@@ -229,6 +229,7 @@ const marketBenchmarkResultSchema = z.object({
   sourceMode: z.enum(["LIVE_CONNECTOR", "STATIC_SNAPSHOT"]),
   summary: z.string(),
   generatedAt: z.string(),
+  hasDirectMatch: z.boolean().optional(),
 });
 export type MarketBenchmarkResult = z.infer<typeof marketBenchmarkResultSchema>;
 
