@@ -438,12 +438,16 @@ export function createApiRouter(): Router {
       return;
     }
 
-    res.json(await searchMarketBenchmark({
+    // toSourceView adiciona "name": sem isso, o parse() do schema no cliente falha sempre (campo
+    // obrigatorio ausente) e a busca aparece como erro genérico mesmo quando o resultado (com
+    // fallback estático) foi computado e salvo no histórico com sucesso.
+    const result = await searchMarketBenchmark({
       role,
       state: typeof state === "string" ? state : undefined,
       city: typeof city === "string" ? city : undefined,
       notes: typeof notes === "string" ? notes : undefined,
-    }));
+    });
+    res.json(toSourceView("Benchmark salarial", result));
   });
 
   router.get("/market-benchmark/history", async (_req, res) => {

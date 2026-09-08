@@ -247,7 +247,7 @@ export async function searchMarketBenchmark(params: { role: string; state: strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error("Falha ao buscar benchmark de mercado.");
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao buscar benchmark de mercado.");
   return marketBenchmarkResponseSchema.parse(await res.json());
 }
 

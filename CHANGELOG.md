@@ -2,6 +2,18 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-07 — Correção: busca de benchmark de mercado sempre "falhava" (e revisão de mensagens de erro)
+
+Pedido do usuário: a busca de benchmark em Mão de obra dava erro toda vez ("Não foi possível buscar benchmark agora."), com uma mensagem genérica demais pra entender o motivo — pediu revisão dos tratamentos de erro/alertas do app.
+
+**Causa raiz encontrada**: a rota `POST /market-benchmark/search` devolvia o resultado direto de `searchMarketBenchmark()` (formato `{status, source, timestamp, data, warning}`), sem passar por `toSourceView()` — o helper que toda outra rota de fonte usa pra acrescentar o campo `name`. O schema zod do cliente (`apiSourceResultSchema`) exige `name` como obrigatório, então **toda** busca falhava na validação do lado do cliente com um erro de schema, mesmo com o backend calculando e salvando o resultado com sucesso no histórico (confirmado via consulta direta no Postgres: os resultados da busca do usuário estavam lá, com o fallback estático correto). Corrigido envolvendo a resposta em `toSourceView("Benchmark salarial", result)`, igual às demais fontes. Adicionado teste de regressão (`server/tests/marketBenchmark.test.ts`) que falha se o campo `name` sumir de novo.
+
+**Revisão de mensagens de erro**: os toasts de "Buscar benchmark" e "Atualizar fontes" (`Home.tsx`) usavam uma string de erro fixa, descartando o motivo real — trocados pelo mesmo padrão já usado em `CloudArchitect.tsx`/`AdminUsersPage.tsx` (`error: (err) => err.message`), que repassa a mensagem específica do backend quando existe (ex.: "role é obrigatório."). De quebra, achado que `onRefresh()` (refetch do react-query) nunca rejeita a Promise mesmo quando a consulta falha — o toast de "Atualizar fontes" sempre mostrava sucesso; agora verifica `isError` explicitamente antes de decidir qual toast mostrar.
+
+**Robustez**: gravar o histórico de busca no Postgres virou fire-and-forget (não bloqueia mais a resposta) — history é acessório (só alimenta a lista da tela), não deve arriscar que uma escrita lenta no banco derrube uma resposta que já foi computada com sucesso.
+
+Efeito colateral no mesmo fluxo: a busca do usuário aparece corretamente agora com a tabela "Fonte" por linha (catálogo interno, CAGED/MTE, etc.) — o pedido de "sempre mostrar a base de dados usada na busca" já é atendido pela tela existente, que só nunca chegava a renderizar por causa do bug acima.
+
 ## 2026-09-07 — Nomes das fontes de dados visíveis no Workspace
 
 Pedido do usuário: mostrar quais fontes de dados a aplicação usa diretamente no menu lateral (Workspace), não só um contador — para reforçar a credibilidade dos dados (mostrar que os números vêm de integrações reais como BACEN, PNCP, AWS, Azure, GCP, e não de valores inventados).

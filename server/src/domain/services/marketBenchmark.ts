@@ -229,8 +229,13 @@ export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promis
     },
   });
 
+  // Fire-and-forget: gravar o histórico é acessório (só alimenta a lista "Histórico" da tela),
+  // não deve fazer o analista esperar nem arriscar que uma escrita lenta no Postgres derrube a
+  // resposta da busca (e, com ela, o resultado que já foi computado com sucesso).
   if (result.data) {
-    await saveHistoryEntry(result.data);
+    saveHistoryEntry(result.data).catch((err) => {
+      logger.error("Falha ao salvar historico de benchmark", { error: err instanceof Error ? err.message : String(err) });
+    });
   }
 
   return result;

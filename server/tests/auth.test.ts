@@ -50,7 +50,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await query("test_cleanup.delete_users", `delete from users where email like $1`, [`%${EMAIL_DOMAIN}`]);
+  // Prefixo proprio (nao o dominio inteiro): evita apagar fixtures de outro arquivo de teste
+  // que roda em paralelo e tambem usa @test.pivo.internal (ex.: marketBenchmark.test.ts).
+  await query("test_cleanup.delete_users", `delete from users where email like $1`, [`rbac-%${EMAIL_DOMAIN}`]);
   await closePool();
 });
 

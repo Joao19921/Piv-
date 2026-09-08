@@ -309,7 +309,7 @@ function LaborPricing() {
     toast.promise(benchmarkSearch.mutateAsync({ role: benchmarkRole, state: benchmarkState, city: benchmarkCity, notes: benchmarkNotes }), {
       loading: "Buscando benchmark de mercado...",
       success: "Benchmark atualizado.",
-      error: "Não foi possível buscar benchmark agora.",
+      error: (err) => (err instanceof Error ? err.message : "Não foi possível buscar benchmark agora."),
     });
   };
 
@@ -409,11 +409,21 @@ function SourcesView({
   database?: { configured: boolean; queries: QueryStat[] };
 }) {
   const handleRefresh = () => {
-    toast.promise(onRefresh(), {
-      loading: "Consultando fontes…",
-      success: "Estado das fontes atualizado.",
-      error: "Não foi possível atualizar agora.",
-    });
+    // refetch() do react-query resolve mesmo quando a consulta falha (isError: true) em vez de
+    // rejeitar a promise — sem esse check, o toast de sucesso aparecia mesmo com a atualização
+    // tendo falhado de verdade.
+    toast.promise(
+      onRefresh().then((result) => {
+        const outcome = result as { isError?: boolean; error?: unknown } | undefined;
+        if (outcome?.isError) throw outcome.error instanceof Error ? outcome.error : new Error("Falha ao atualizar o estado das fontes.");
+        return result;
+      }),
+      {
+        loading: "Consultando fontes…",
+        success: "Estado das fontes atualizado.",
+        error: (err) => (err instanceof Error ? err.message : "Não foi possível atualizar agora."),
+      },
+    );
   };
   return <div><SectionHeading eyebrow="Observabilidade · Resiliência" title="Fontes e integridade" description="Cada card reflete o retorno real do backend: circuit breaker, retry exponencial, cache local e fallback estático, sem esconder a procedência do dado." action={<Button onClick={handleRefresh} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-transparent px-5 text-xs text-[#333333] hover:bg-white"><RefreshCw className="mr-2 h-4 w-4" /> Atualizar fontes</Button>} /><div className="grid gap-4 sm:grid-cols-2">{isLoading
     ? Array.from({ length: 4 }).map((_, i) => <Card key={i} className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper"><Skeleton className="h-8 w-8 rounded-lg" /><Skeleton className="mt-6 h-5 w-32" /><Skeleton className="mt-2 h-3 w-40" /></Card>)
