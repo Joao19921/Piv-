@@ -6,9 +6,11 @@ import LoginPage from "@/pages/LoginPage";
 import NotFound from "@/pages/NotFound";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SESSION_EXPIRED_EVENT } from "./lib/sessionGuard";
 import Home from "./pages/Home";
 
 const queryClient = new QueryClient({
@@ -101,6 +103,23 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     checkSession();
+  }, []);
+
+  useEffect(() => {
+    // Qualquer 401 fora do /auth/login (ver sessionGuard.ts) significa que a sessão foi
+    // invalidada no meio do uso (deploy sem SESSION_SECRET persistente, expiração, usuário
+    // desativado) — sem isso, as telas ficavam repetindo a chamada e mostrando erro genérico
+    // em loop, sem nunca voltar pro login.
+    const handleSessionExpired = () => {
+      setUser((current) => {
+        if (!current) return current;
+        toast.error("Sua sessão expirou. Faça login novamente.");
+        return null;
+      });
+      setStatus((current) => (current === "authenticated" ? "required" : current));
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
   }, []);
 
   if (status === "loading") return <div className="min-h-screen bg-[#F0EBE1]" />;

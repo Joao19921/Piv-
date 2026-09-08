@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-08 — Sessão expirada não deixava mais o app preso em loop de erro 401
+
+Pedido do usuário: testou de novo depois da correção do benchmark e essa hora achou a tela toda travada com uma sequência de `GET /api/v1/system-health 401` no console, sem nenhuma mensagem visível — o app ficava repetindo a chamada sem nunca voltar pra tela de login.
+
+**Causa raiz**: `AuthGate` (`App.tsx`) só verifica a sessão (`checkSession()`) uma vez, no mount. Se a sessão cair *depois* disso — cookie assinado com um `SESSION_SECRET` que mudou (efêmero, gerado a cada boot quando a env var não está configurada — isso aconteceu bem provavelmente aqui, já que fiz dois deploys seguidos pouco antes do relato), expiração, ou usuário desativado — o app nunca descobre: nenhuma tela chama `checkSession()` de novo, e o polling de `/system-health` (a cada 30s) só ia acumulando 401 no console pra sempre, sem dar nenhuma pista pro usuário do que fazer.
+
+**Correção**: novo `client/src/lib/sessionGuard.ts` intercepta toda resposta 401 vinda da API (exceto `/auth/login`, onde 401 é só "senha errada" e já tem tratamento próprio) e dispara um evento global; `AuthGate` escuta esse evento e volta pra tela de login com um toast explícito ("Sua sessão expirou. Faça login novamente."), em vez de deixar a tela girando sem explicação. Verificado com Playwright simulando o cenário real: login → navegação (sem reload) até uma tela protegida → usuário desativado no banco no meio da sessão → clique que dispara a chamada protegida → app volta pro login com o toast, confirmado por screenshot.
+
+**Pendência que exige ação fora do código**: se `SESSION_SECRET` não estiver configurada como variável de ambiente persistente no Render (só declarada em `render.yaml` com `sync: false`, o que exige ser preenchida manualmente no painel do Render), todo deploy gera um segredo novo e desloga todo mundo sem aviso — o log do servidor grava `"SESSION_SECRET nao configurada; usando segredo efemero..."` quando isso acontece. Não tenho acesso ao painel do Render pra confirmar/corrigir isso; só o usuário pode checar e, se for o caso, definir um valor fixo lá.
+
 ## 2026-09-07 — Correção: busca de benchmark de mercado sempre "falhava" (e revisão de mensagens de erro)
 
 Pedido do usuário: a busca de benchmark em Mão de obra dava erro toda vez ("Não foi possível buscar benchmark agora."), com uma mensagem genérica demais pra entender o motivo — pediu revisão dos tratamentos de erro/alertas do app.
