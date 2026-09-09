@@ -22,9 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
+      # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
+      # com ERR_PNPM_BAD_PM_VERSION -- era o motivo de este pipeline nunca ter passado.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -69,9 +70,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
+      # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
+      # com ERR_PNPM_BAD_PM_VERSION -- era o motivo de este pipeline nunca ter passado.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -97,11 +99,13 @@ jobs:
       - name: Varredura de segredos (gitleaks)
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
-            detect --source=/repo --no-git --redact --verbose --exit-code 1
+            detect --source=/repo --no-git --redact --verbose --exit-code 1 \
+              --config=/repo/.gitleaks.toml
 
+      # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
+      # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
+      # com ERR_PNPM_BAD_PM_VERSION -- era o motivo de este pipeline nunca ter passado.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:

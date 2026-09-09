@@ -1,0 +1,29 @@
+# Configuracao do gitleaks (job `security` em .github/workflows/ci.yml).
+#
+# Mantem TODAS as regras padrao ligadas e apenas isenta valores especificos que sao
+# comprovadamente falsos positivos.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Senhas de fixture dos testes automatizados. Sao literais inventados que existem so para o
+teste afirmar o resultado da rota (ex.: `expect(res.body.initialPassword).toBe(...)`), nunca
+foram credencial de nenhum ambiente, e a regra generic-api-key as pega por entropia.
+
+Isento por VALOR, nao por caminho, de proposito: uma isencao de `server/tests/**` inteiro
+criaria um ponto cego -- uma chave de AWS ou token do GitHub de verdade colado num arquivo de
+teste deixaria de ser detectado. Do jeito abaixo, so estas strings exatas passam; qualquer
+outro segredo, em qualquer arquivo, continua quebrando o build.
+
+Ao adicionar uma linha aqui, confirme que o valor e realmente inventado e diga de onde ele vem.
+"""
+regexes = [
+  # server/tests/auth.test.ts -- criacao de usuario pela rota de admin
+  '''SenhaInicial123''',
+  # server/tests/auth.test.ts -- segunda tentativa com o mesmo e-mail (espera 409)
+  '''OutraSenha123''',
+  # server/tests/auth.test.ts -- troca obrigatoria de senha no primeiro acesso
+  '''NovaSenha1234''',
+]
