@@ -170,3 +170,61 @@ describe("senioridade lida como faixa da distribuicao", () => {
     expect(r.observed).toMatchObject({ p25: 4500, mediana: 8000, p75: 12000 });
   });
 });
+
+describe("referência oficial do SISP ao lado do mercado", () => {
+  function sisp(overrides: Partial<SalaryObservationRow> = {}): SalaryObservationRow {
+    return observacao({
+      source: "SISP",
+      source_url: "https://www.gov.br/governodigital/pt-br/contratacoes-de-tic/legislacao/...",
+      cbo: null,
+      role_slug: "sgd-asupcomp-02",
+      uf: null,
+      competencia: "2026-06-17",
+      // Fonte publicada: valor de referencia, sem amostra nem dispersao (migration 0010).
+      n_amostra: null,
+      p25: null,
+      mediana: "5076",
+      p75: null,
+      ...overrides,
+    });
+  }
+
+  // O ponto central: a referencia NAO substitui o valor de mercado, aparece ao lado dele. Numa
+  // contratacao publica, a divergencia entre o que o mercado paga e o que a Portaria estabelece
+  // costuma ser o proprio argumento.
+  it("expoe as duas fontes sem uma sobrescrever a outra", () => {
+    const r = aplicarObservacao(perfil({ seniority: "Pleno" }), observacao(), sisp());
+
+    expect(r.monthlyCompensation).toBe(8000); // mercado (CAGED) segue sendo o valor aplicado
+    expect(r.observed?.source).toBe("CAGED");
+    expect(r.referenciaOficial?.source).toBe("SISP");
+    expect(r.referenciaOficial?.mediana).toBe(5076);
+  });
+
+  // Sem isto, 35 perfis que a CBO 2002 nao cobre ficariam sem nenhuma fonte citavel, mesmo
+  // existindo Portaria oficial para eles.
+  it("aparece mesmo quando nao ha dado de mercado para o perfil", () => {
+    const r = aplicarObservacao(perfil({ cbo: null }), undefined, sisp());
+
+    expect(r.observed).toBeUndefined();
+    expect(r.sourceStatus).toBe("FALLBACK_STALE");
+    expect(r.referenciaOficial?.mediana).toBe(5076);
+    expect(r.referenciaOficial?.sourceUrl).toContain("gov.br");
+  });
+
+  // Tabela publicada divulga um valor por cargo+senioridade, nao uma distribuicao. Recortar
+  // percentil ali seria inventar dispersao que a fonte nao tem.
+  it("nao inventa dispersao nem percentil para fonte publicada", () => {
+    const r = aplicarObservacao(perfil({ seniority: "Sênior" }), undefined, sisp());
+
+    expect(r.referenciaOficial?.p25).toBeNull();
+    expect(r.referenciaOficial?.p75).toBeNull();
+    expect(r.referenciaOficial?.percentilAplicado).toBeNull();
+    expect(r.referenciaOficial?.nAmostra).toBeNull();
+  });
+
+  it("fica ausente quando o perfil nao tem Portaria correspondente", () => {
+    const r = aplicarObservacao(perfil(), observacao(), undefined);
+    expect(r.referenciaOficial).toBeUndefined();
+  });
+});

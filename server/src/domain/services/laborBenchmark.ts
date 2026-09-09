@@ -23,29 +23,39 @@
  */
 import { isDatabaseConfigured } from "../../infrastructure/db/client";
 import { logger } from "../../infrastructure/observability/logger";
-import { findCurrentByCbo, type SalaryObservationRow } from "../../infrastructure/repositories/salaryObservationsRepository";
+import { findCurrentByCbo, findCurrentByRoleSlug, type SalaryObservationRow } from "../../infrastructure/repositories/salaryObservationsRepository";
 import { laborProfiles, type LaborProfile } from "./catalogs";
 
-/** Recorte observado que sustentou o numero exibido. */
+/** Um recorte observado. Serve tanto amostra (CAGED) quanto tabela publicada (SISP). */
 export interface ObservedSalary {
-  source: "CAGED";
+  source: "CAGED" | "SISP";
   sourceUrl: string;
   /** Mes de referencia dos microdados (YYYY-MM-DD). */
   competencia: string;
   /** null = agregado nacional. */
   uf: string | null;
-  nAmostra: number;
-  /** Qual ponto da distribuicao sustentou o valor exibido, dado a senioridade do perfil. */
-  percentilAplicado: "p25" | "mediana" | "p75";
-  p25: number;
+  /** null em fonte publicada, que divulga o valor sem expor a amostra. */
+  nAmostra: number | null;
+  /** Qual ponto da distribuicao sustentou o valor, dado a senioridade. `null` quando a fonte
+   * publica um valor unico, sem dispersao para recortar. */
+  percentilAplicado: "p25" | "mediana" | "p75" | null;
+  /** null quando a fonte nao publica dispersao. */
+  p25: number | null;
   mediana: number;
-  p75: number;
+  p75: number | null;
 }
 
 export interface EnrichedLaborProfile extends Omit<LaborProfile, "sourceStatus"> {
   sourceStatus: "OPERATIONAL" | "FALLBACK_STALE";
-  /** Presente apenas quando ha observacao real cobrindo este perfil. */
+  /** Fonte que sustentou `monthlyCompensation`. Ausente quando so ha a estimativa do catalogo. */
   observed?: ObservedSalary;
+  /**
+   * Referencia oficial do SISP para o mesmo perfil, quando existir. Vem SEPARADA de `observed`
+   * de proposito: nao substitui o valor de mercado, aparece ao lado dele. Numa contratacao
+   * publica, ver as duas -- o que o mercado paga e o que a Portaria estabelece -- vale mais do
+   * que qualquer uma isolada, e a divergencia entre elas costuma ser o proprio argumento.
+   */
+  referenciaOficial?: ObservedSalary;
 }
 
 /** "2124-05" -> "212405", que e como o CAGED grava. */
@@ -65,6 +75,23 @@ function toNumber(value: string | null): number | null {
  */
 function melhorObservacao(rows: SalaryObservationRow[], cbo: string): SalaryObservationRow | undefined {
   return rows.find((r) => r.cbo === cbo);
+}
+
+/** Converte a linha do banco na visao de fonte, aceitando tabela publicada (sem dispersao). */
+function toObserved(row: SalaryObservationRow, percentilAplicado: ObservedSalary["percentilAplicado"]): ObservedSalary | null {
+  const mediana = toNumber(row.mediana);
+  if (mediana === null) return null;
+  return {
+    source: row.source === "SISP" ? "SISP" : "CAGED",
+    sourceUrl: row.source_url,
+    competencia: row.competencia,
+    uf: row.uf,
+    nAmostra: row.n_amostra,
+    percentilAplicado,
+    p25: toNumber(row.p25),
+    mediana,
+    p75: toNumber(row.p75),
+  };
 }
 
 /**
@@ -93,13 +120,19 @@ const PERCENTIL_POR_SENIORIDADE: Record<LaborProfile["seniority"], "p25" | "medi
 const NOME_DO_PERCENTIL = { p25: "P25", mediana: "mediana", p75: "P75" } as const;
 
 /** Exportada para teste: e aqui que se decide se o perfil exibe dado observado ou estimativa. */
-export function aplicarObservacao(profile: LaborProfile, row: SalaryObservationRow | undefined): EnrichedLaborProfile {
+export function aplicarObservacao(
+  profile: LaborProfile,
+  row: SalaryObservationRow | undefined,
+  referencia?: SalaryObservationRow,
+): EnrichedLaborProfile {
   const mediana = row ? toNumber(row.mediana) : null;
   const p25 = row ? toNumber(row.p25) : null;
   const p75 = row ? toNumber(row.p75) : null;
 
+  const referenciaOficial = referencia ? (toObserved(referencia, null) ?? undefined) : undefined;
+
   if (!row || mediana === null || p25 === null || p75 === null) {
-    return { ...profile, sourceStatus: "FALLBACK_STALE" };
+    return { ...profile, sourceStatus: "FALLBACK_STALE", referenciaOficial };
   }
 
   const escolhido = PERCENTIL_POR_SENIORIDADE[profile.seniority];
@@ -124,6 +157,7 @@ export function aplicarObservacao(profile: LaborProfile, row: SalaryObservationR
       mediana,
       p75,
     },
+    referenciaOficial,
   };
 }
 
@@ -149,21 +183,28 @@ export async function getEnrichedLaborProfiles(options: { uf?: string | null } =
   ];
 
   let rows: SalaryObservationRow[] = [];
-  if (cbos.length) {
-    try {
-      rows = await findCurrentByCbo(cbos, { uf: options.uf ?? null, municipio: null });
-    } catch (err) {
-      // Benchmark degradado e melhor que tela quebrada: cai para o catalogo estatico, do mesmo
-      // jeito que o resto do app faz com fonte externa indisponivel.
-      logger.error("Falha ao ler salary_observations; usando o catalogo estatico", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+  let referencias = new Map<string, SalaryObservationRow>();
+  try {
+    // As duas consultas sao independentes e rodam juntas: o CAGED responde por CBO, o SISP pelo
+    // perfil da propria Portaria.
+    const [observadas, oficiais] = await Promise.all([
+      cbos.length ? findCurrentByCbo(cbos, { uf: options.uf ?? null, municipio: null }) : Promise.resolve([]),
+      findCurrentByRoleSlug(laborProfiles.map((p) => p.id), "SISP"),
+    ]);
+    rows = observadas;
+    referencias = new Map(oficiais.filter((r) => r.role_slug).map((r) => [r.role_slug as string, r]));
+  } catch (err) {
+    // Benchmark degradado e melhor que tela quebrada: cai para o catalogo estatico, do mesmo
+    // jeito que o resto do app faz com fonte externa indisponivel.
+    logger.error("Falha ao ler salary_observations; usando o catalogo estatico", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return laborProfiles.map((profile) => {
-    if (profile.employmentModel !== "CLT" || !profile.cbo) return aplicarObservacao(profile, undefined);
-    return aplicarObservacao(profile, melhorObservacao(rows, cboSemHifen(profile.cbo)));
+    const referencia = referencias.get(profile.id);
+    if (profile.employmentModel !== "CLT" || !profile.cbo) return aplicarObservacao(profile, undefined, referencia);
+    return aplicarObservacao(profile, melhorObservacao(rows, cboSemHifen(profile.cbo)), referencia);
   });
 }
 

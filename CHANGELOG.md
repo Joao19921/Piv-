@@ -2,6 +2,59 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — SISP como fonte oficial ao lado do mercado, e por que o PNCP ficou de fora
+
+O plano era construir o coletor do PNCP como fonte do lado PJ. A sondagem derrubou o plano, e a alternativa acabou entregando mais.
+
+### Por que o PNCP não se sustenta como fonte de benchmark
+
+Quatro achados, todos medidos contra a API real, não deduzidos:
+
+1. **Densidade de 0,63%.** Numa varredura de 950 contratações reais, só 6 eram TI *e* mão de obra. Para encontrá-las é preciso varrer tudo — **99.582 pregões + 175.262 dispensas em 90 dias** —, o que dá ~5.500 chamadas de listagem, mais ~1.700 de itens, mais as de resultado. Por trimestre.
+
+2. **A API bloqueia.** Depois de algumas centenas de chamadas, parou de responder — timeout puro. Confirmado que não era rede: o site do PNCP respondia 302, o BACEN 200 e o GitHub 200, enquanto só a API do PNCP estava em timeout. Um coletor que precisa de milhares de chamadas seria bloqueado. Deixou de ser hipótese.
+
+3. **A unidade de medida não é padronizada.** O que apareceu foi `UND SERVIÇO T`, não `POSTO`/`HORA`/`UST`. Sem normalizar para R$/hora ou R$/mês, os valores não se comparam entre si — e sem comparação não existe benchmark, só números soltos com aparência de autoridade.
+
+4. **A descrição não identifica cargo nem senioridade.** "Serviços de Consultoria em Tecnologia da Informação" não diz se é analista júnior ou arquiteto sênior.
+
+Construir isso produziria exatamente o que este projeto vem recusando desde a decisão de não inventar CBO para Cientista de Dados: número plausível e infundado.
+
+### O que apareceu olhando o catálogo com atenção
+
+**68 dos 73 perfis já vinham das Portarias SGD/MGI** — o *Mapa de Pesquisa Salarial* do SISP, que é pesquisa salarial oficial publicada pelo governo, com cargo, senioridade e valor mensal. Exatamente a forma que o PNCP não tem.
+
+E estavam marcados `sourceStatus: "FALLBACK_STALE"`: **o app tratava fonte oficial como se fosse chute**, sem proveniência navegável — o texto citava a Portaria, sem link nem data separável.
+
+### O que foi feito
+
+Migration `0010` abre `salary_observations` para fontes **publicadas**, além das amostradas: `n_amostra` passa a aceitar null, porque uma tabela de referência divulga o valor sem expor a amostra que o gerou. Forçar um número ali seria inventar dado para satisfazer constraint. Os comentários das colunas passaram a dizer o que cada uma significa em cada tipo de fonte.
+
+`pnpm run ingest:sisp` materializa os 68 perfis em `salary_observations` com `source_url` apontando para a página oficial de cada Portaria. O script **falha alto** se aparecer Portaria sem URL mapeada, em vez de gravar com proveniência inventada — `source_url` existe para o usuário poder auditar a estimativa, e link errado é pior que ausência de dado.
+
+O valor continua vindo de `catalogs.ts`, que é o que se edita quando sai Portaria nova; o script é uma projeção dele, não uma segunda fonte de verdade.
+
+`/labor/profiles` passa a devolver `referenciaOficial` **ao lado** de `observed`, não no lugar dela. A separação é deliberada: numa contratação pública, ver as duas — o que o mercado paga e o que a Portaria estabelece — vale mais que qualquer uma isolada.
+
+### O que os dados mostraram
+
+Estado em produção: **33 perfis com CAGED + SISP**, 35 só com SISP, 3 sem nenhuma (os PJ — o CAGED cobre apenas vínculo CLT, e não há Portaria para eles).
+
+E a divergência entre as duas fontes é sistemática, não ruído:
+
+| Perfil | Mercado (CAGED) | Oficial (SISP) | Divergência |
+| :--- | ---: | ---: | ---: |
+| Analista de suporte, Sênior | R$ 4.500 | R$ 7.487 | **−40%** |
+| Analista de redes, Pleno | R$ 4.211 | R$ 7.384 | **−43%** |
+| Administrador de BD, Pleno | R$ 9.500 | R$ 6.701 | **+42%** |
+| Gerente de infraestrutura | R$ 21.500 | R$ 17.852 | **+20%** |
+
+A tabela oficial **superprecifica suporte e redes** e **subprecifica banco de dados e gerência** em relação ao que o mercado efetivamente paga. Esse contraste é o argumento que faltava ao produto — e nenhuma das duas fontes isolada o revelaria.
+
+### Registrado como pendência
+
+A busca indicou que a **Portaria SGD/MGI nº 5.921/2026 já atualizou a nº 1.070/2023**, o que pode ter superado os valores de infraestrutura hoje no catálogo (que vêm da nº 6.055/2025). Não foi conferido nem alterado — exigiria ler o anexo novo.
+
 ## 2026-09-09 — Deploy passa a aplicar as migrations em produção
 
 Fecha a lacuna que mordeu hoje. O CI aplicava migrations apenas no Postgres efêmero do job de teste; para produção não havia caminho automatizado — era passo manual que alguém tinha que lembrar de fazer. O resultado foi as `0007`, `0008` e `0009` ficarem pendentes na Supabase com o código já no ar.

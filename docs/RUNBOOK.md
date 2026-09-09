@@ -172,7 +172,7 @@ server/
 | AWS Pricing API | SDK, IAM Role | Ingestão | ~5 dias, Lambda |
 | GCP Cloud Billing | REST, API key | Ingestão | ~5 dias, Lambda |
 | PNCP | REST, sem chave | Só prova de vida | Por requisição |
-| SISP / MGI | Hardcoded em `catalogs.ts` | Estimativa | — |
+| **SISP / MGI** | Portarias SGD/MGI (valores em `catalogs.ts`) | **Fonte oficial** — referência publicada por cargo e senioridade | A cada Portaria nova |
 | Catálogo de licenças | Hardcoded | Estimativa | — |
 
 ### Infraestrutura
@@ -327,6 +327,21 @@ Como saber se o resultado está bom: a hierarquia salarial tem que fazer sentido
 programador < desenvolvimento < DBA < gerência). Foi exatamente uma quebra dessa hierarquia que
 denunciou um mapa de CBO errado na primeira execução — ver CHANGELOG de 2026-09-09.
 
+### Rodar a ingestão do SISP
+
+Não é coleta externa: materializa em `salary_observations` os valores das Portarias SGD/MGI que
+vivem em `catalogs.ts`, com proveniência (link da Portaria + data).
+
+```bash
+pnpm run ingest:sisp -- --dry-run   # só lista
+pnpm run ingest:sisp                # grava
+```
+
+Rode **depois de editar `catalogs.ts`** quando sair Portaria nova. O script falha alto se
+encontrar Portaria sem URL oficial mapeada em `FONTE_POR_PORTARIA` — em vez de gravar com
+proveniência inventada. Nesse caso, acrescente a URL da página do modelo no gov.br (a página do
+modelo, não o PDF: o PDF muda de nome a cada republicação).
+
 ### Ativar verificação de certificado do Postgres
 
 1. Supabase Dashboard → Project Settings → Database → SSL Configuration → **Download certificate**.
@@ -417,7 +432,8 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 10 | **A suíte depende de APIs externas ao vivo** | Testes que batem em `/system-health` chamam BACEN/Azure/PNCP de verdade; latência do runner já quebrou o build sem nada errado no código | Injetar/stubar os coletores; hoje mitigado só com `testTimeout: 30s` |
 | 11 | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
 | 12 | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
-| 13 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
+| 13 | **Portaria de infraestrutura pode estar superada** | A SGD/MGI nº 5.921/2026 atualizou a nº 1.070/2023; o catálogo ainda usa os valores da nº 6.055/2025 | Conferir o anexo novo e atualizar `catalogs.ts`, depois `pnpm run ingest:sisp` |
+| 14 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
 
 ### Resolvidas nesta frente de trabalho
 
@@ -454,7 +470,8 @@ governo no lugar de raspagem autenticada. Mesma infra, sem o passivo jurídico.
 
 | Fonte | O que dá | Estado |
 | :--- | :--- | :--- |
-| **Novo CAGED (PDET/MTE)** | Salário **CLT** por CBO e UF, com P25/mediana/P75 e n amostral | **Em produção.** Validado na competência 202607: 4,4 M linhas, 14.405 admissões de TI, 81 recortes. Ligado em `/labor/profiles` |
+| **Novo CAGED (PDET/MTE)** | Salário **CLT** por CBO e UF, com P25/mediana/P75 e n amostral | **Em produção.** Validado na competência 202607: 4,4 M linhas, 14.405 admissões de TI, 81 recortes |
+| **SISP / Portarias SGD/MGI** | Referência **oficial** por cargo e senioridade — 68 perfis | **Em produção.** Aparece como `referenciaOficial`, ao lado do valor de mercado, não no lugar dele |
 
 Como o dado chega à tela:
 
@@ -486,11 +503,26 @@ desses 35 de fato exibem dado observado depende de a última ingestão ter ating
 mínima naquele CBO — a resposta de `/labor/profiles` traz `coverage` com a contagem real do
 momento, em vez de um número fixo escrito aqui.
 
+### PNCP: avaliado e descartado como fonte de benchmark
+
+A intenção era usá-lo para o lado PJ — quanto o setor público efetivamente paga por posto/hora de
+TI. A sondagem contra a API real derrubou a ideia, e vale registrar o porquê para não se repetir
+o esforço:
+
+| Achado | Medida |
+| :--- | :--- |
+| Densidade baixíssima | 0,63% das contratações são TI **e** mão de obra. Achá-las exige varrer 99.582 pregões + 175.262 dispensas por trimestre |
+| A API bloqueia | Após algumas centenas de chamadas, timeout puro. Confirmado que não era rede: site do PNCP 302, BACEN 200, GitHub 200 — só a API em timeout |
+| Unidade não padronizada | `UND SERVIÇO T`, não `POSTO`/`HORA`/`UST`. Sem normalizar, os valores não se comparam |
+| Descrição não identifica o cargo | "Serviços de Consultoria em TI" não diz se é júnior ou arquiteto sênior |
+
+Reabrir só faria sentido se o PNCP passar a oferecer filtro por objeto/categoria na consulta, ou
+um dump em lote. O código de sondagem não foi mantido no repositório — refazê-lo é meia hora.
+
 ### Próximos, em ordem de valor
 
 | Fonte | Ganho | Trabalho envolvido |
 | :--- | :--- | :--- |
-| **PNCP (preços contratados)** | O lado **PJ** que falta: quanto o setor público efetivamente paga por posto/hora de TI. A fonte mais defensável possível numa estimativa para contratação pública | Pipeline, não coletor. `api/pncp/v1/.../itens` já foi sondado e funciona (com `valorUnitarioEstimado` e resultado homologado), mas TI é ~1-5% das contratações e a maioria é compra de equipamento — exige varredura ampla + mapeamento fuzzy de descrição → cargo |
 | Tabelas SGD/MGI (SISP) | Já no catálogo, mas hardcoded | Automatizar a leitura das Portarias |
 | IBGE / SIDRA (PNAD) | Recorte por ocupação e região; cobriria parte dos cargos sem CBO | API pública, não sondada ainda |
 | Convenções coletivas (Mediador/MTE) | Piso legal por sindicato e UF — frequentemente o argumento decisivo numa negociação | — |

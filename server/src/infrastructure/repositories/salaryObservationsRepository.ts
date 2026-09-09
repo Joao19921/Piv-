@@ -21,7 +21,8 @@ export interface SalaryObservationInput {
   municipio?: string | null;
   /** Primeiro dia do mes de referencia (YYYY-MM-DD). */
   competencia: string;
-  nAmostra: number;
+  /** null para fonte publicada, que divulga o valor sem expor a amostra (migration 0010). */
+  nAmostra: number | null;
   p25?: number | null;
   mediana: number;
   p75?: number | null;
@@ -38,8 +39,9 @@ export interface SalaryObservationRow {
   uf: string | null;
   municipio: string | null;
   competencia: string;
-  n_amostra: number;
+  n_amostra: number | null;
   p25: string | null;
+  /** Valor central: mediana da amostra (CAGED) ou valor de referencia publicado (SISP). */
   mediana: string;
   p75: string | null;
   media: string | null;
@@ -145,4 +147,21 @@ export async function latestCompetencia(source: SalarySource): Promise<string | 
     [source],
   );
   return row?.competencia ?? null;
+}
+
+/**
+ * Valor corrente por perfil do catalogo, para fontes que identificam o cargo pelo proprio perfil
+ * em vez de CBO -- caso do SISP, cujas Portarias publicam por "perfil profissional".
+ */
+export async function findCurrentByRoleSlug(roleSlugs: string[], source: SalarySource): Promise<SalaryObservationRow[]> {
+  if (!roleSlugs.length) return [];
+  return query<SalaryObservationRow>(
+    "salary_benchmark_current.find_by_role_slug",
+    `select source, source_url, cbo, role_slug, seniority, employment_model, uf, municipio,
+            competencia::text, n_amostra, p25, mediana, p75, media, collected_at::text
+       from salary_benchmark_current
+      where source = $2
+        and role_slug = any($1::text[])`,
+    [roleSlugs, source],
+  );
 }
