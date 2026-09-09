@@ -2,6 +2,51 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — Fase 2: CAGED ingerido de verdade, e o que o dado real revelou
+
+Primeira fonte salarial **observada** do Pivô. Até aqui o benchmark saía de `laborProfiles`, 73 perfis hardcoded em `catalogs.ts` marcados `sourceStatus: "FALLBACK_STALE"` e declarando `benchmarkSource: "CAGED/MTE - snapshot tecnologia"` — a tela já dizia ao usuário que a fonte era o CAGED, mas o CAGED nunca havia sido ingerido.
+
+### O que foi verificado antes de projetar
+
+Nada aqui veio de documentação: as três fontes candidatas foram sondadas ao vivo.
+
+- **PNCP**: `api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens` responde 200 com `valorUnitarioEstimado`, `unidadeMedida` e `temResultado`, e há endpoint de resultado homologado (valor real pago). Mas numa amostra de 800 contratações reais, só **0,8%** citam "TI/tecnologia da informação" e **3,6%** "mão de obra/posto" — e a maioria é compra de equipamento, não mão de obra. Extrair benchmark salarial dali é um pipeline de dados, não um coletor; ficou para a etapa seguinte.
+- **CAGED**: FTP anônimo do PDET alcançável por `curl`. Um `.7z` por mês, `CAGEDMOV202607.7z` = 52,6 MB, publicado com ~1 mês de defasagem.
+- **IBGE/SIDRA**: não sondado ainda.
+
+### Por que a ingestão não roda na Lambda
+
+O `.7z` obriga um binário de descompressão, e o arquivo descomprimido tem centenas de MB. Empacotar p7zip numa imagem de Lambda + ECR — exatamente a complexidade que a proposta original de scraping previa — seria trabalho real para um job que roda **uma vez por mês**. O runner do GitHub Actions já tem `7z` e `curl`, 14 GB de RAM, 6h de limite, e sai de graça no repositório.
+
+Vale registrar: **a intuição arquitetural da proposta original estava certa** — cron → worker de timeout longo → Postgres é exatamente a forma. O que mudou foi a fonte: arquivo oficial do governo no lugar de raspagem com sessão persistida, mesma infra, sem o passivo jurídico.
+
+### Decisões de desenho
+
+`salary_observations` (migration `0009`) guarda **observação**, não "o salário do cargo":
+
+- Uma linha por (fonte, ocupação, recorte, competência, regime); cada mês acrescenta competência em vez de sobrescrever. O `UPDATE` cego previsto na proposta original destruiria a série histórica — que é justamente o ativo que esse dado acumula com o tempo.
+- Guarda **dispersão** (P25/mediana/P75) e **tamanho da amostra**. Benchmark sem dispersão não permite negociar nada; sem `n_amostra` não dá para saber se a mediana veio de 3 ou de 3 mil contratações.
+- Guarda **proveniência** (`source` + `source_url` + `competencia`), porque o número só vale numa contratação pública se a origem puder ser citada.
+- `unique nulls not distinct` é essencial: como `uf`/`municipio` são nulos nos agregados nacionais, sem isso o Postgres trataria cada NULL como distinto e a mesma competência entraria duplicada a cada reprocessamento.
+
+Filtros da amostra, todos deliberados: só **admissões** (`saldomovimentação = 1` — o salário de um desligamento é o de saída, sinal diferente de "quanto o mercado paga para contratar hoje"), jornada ≥ 30h (meio período distorce a mediana mensal), salário entre R$ 500 e R$ 200 mil (fora disso é erro de preenchimento), e **amostra mínima de 30** por recorte — abaixo disso não é benchmark e ainda levanta risco de reidentificação num recorte geográfico pequeno.
+
+O parser mapeia coluna **por nome de cabeçalho**, nunca por posição: o layout do CAGED já mudou entre versões, e índice fixo quebraria em silêncio, lendo idade no lugar de salário. Há teste que inverte a ordem das colunas e exige o mesmo resultado, e outro que exige falha alta quando uma coluna essencial some.
+
+### O erro que só o dado real denunciou
+
+A primeira execução processou 4.467.208 linhas e encontrou 11.071 admissões de TI. E mostrou "Analista de suporte computacional" com mediana de **R$ 15.000** — acima de desenvolvimento (R$ 7.333) e perto de gerência.
+
+O número estava certo; o rótulo é que estava errado. `2124-25` é **Arquiteto de soluções de TI**, não suporte — e arquiteto ganhando mais que desenvolvedor é o esperado. Conferindo os títulos oficiais da CBO 2002 um a um, o mapa que eu havia escrito de cabeça estava errado em **6 dos 9 códigos**. Descoberta relacionada: "Administrador de banco de dados" nem pertence à família 2124 — é `2123-05`, família separada.
+
+Rótulo errado ali não quebra nada visivelmente: só atribui salário ao cargo errado, em silêncio, numa ferramenta cujo propósito é sustentar estimativa auditável. **Fixture sintética não teria como pegar isso** — foi a implausibilidade do dado real que denunciou.
+
+Corrigido, o mapa cobre quatro famílias (1425, 2123, 2124, 3171) e 18 códigos, e a hierarquia salarial ficou coerente de ponta a ponta: suporte R$ 3.145 < programador R$ 4.322 < testes R$ 6.034 < desenvolvimento R$ 7.333 < DBA R$ 9.500 < gerente de projetos R$ 12.500 < gerente de desenvolvimento R$ 19.500. A cobertura subiu junto: 14.405 admissões e 81 recortes.
+
+### Pendência que bloqueia o próximo passo
+
+O campo `cbo` de `catalogs.ts` **não é um mapeamento real de CBO** — é um agrupamento grosseiro, onde `2124-05` carrega 10 cargos distintos (BI, UX/UI, Negócios, Testes, Administrador de SO…) e `1425-10` carrega os quatro gerentes, cada um dos quais tem código próprio. Fazer o join do CAGED por esse campo atribuiria o salário de desenvolvedor ao designer de UX. Corrigir isso é pré-requisito para substituir o catálogo estático pelo dado real, e envolve decisão de produto: parte dos cargos (Scrum Master, Engenheiro de IA, Cientista de Dados, UX/UI) simplesmente **não tem CBO** — a CBO 2002 é de 2002 e não previa essas ocupações.
+
 ## 2026-09-09 — Runbook, smoke test que verifica a versão publicada e TLS verificado no banco
 
 **Runbook** (`docs/RUNBOOK.md`), pedido do usuário: documento operacional com a arquitetura implementada — diagrama do fluxo (GitHub → CI → Render → Postgres/APIs externas, e EventBridge → Lambda → ingestão), as camadas do backend, a ordem exata da cadeia de middlewares, os três níveis de resiliência, as 15 tabelas por domínio, a tabela de controles de segurança com onde cada um vive, procedimentos de operação, diagnóstico dos incidentes que já aconteceram neste projeto (sessão caindo a cada deploy, conta bloqueada, fonte de preço fora, deploy que não subiu) e as 11 pendências conhecidas com causa e caminho de saída. Também registra a decisão de não fazer scraping de Glassdoor/Indeed e o desenho aprovado para a Fase 2.

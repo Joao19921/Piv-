@@ -180,6 +180,31 @@ pnpm run build:lambda
 powershell -File scripts/deploy-lambda.ps1
 ```
 
+### Rodar a ingestão do CAGED
+
+Lote **mensal**, no GitHub Actions (não na Lambda — ver `cagedCollector.ts` para o porquê).
+
+```bash
+# Na mão, pela CLI:
+gh workflow run ingest-caged.yml -f dry_run=true          # só calcula e imprime
+gh workflow run ingest-caged.yml                           # grava no banco
+gh workflow run ingest-caged.yml -f competencia=202606     # competência específica
+
+# Localmente (exige curl e 7z no PATH):
+pnpm run ingest:caged -- --dry-run
+```
+
+Agendado para todo dia 5 às 09:00 UTC. O MTE publica com ~1 mês de defasagem, sempre na virada
+do mês; se o arquivo ainda não estiver lá, o job reprocessa a competência anterior, que é
+idempotente (`on conflict do update` por competência).
+
+**O `dry_run` não exige `DATABASE_URL`** — de propósito: conferir os números do CAGED antes de
+configurar qualquer secret é justamente o uso mais útil dele.
+
+Como saber se o resultado está bom: a hierarquia salarial tem que fazer sentido (suporte <
+programador < desenvolvimento < DBA < gerência). Foi exatamente uma quebra dessa hierarquia que
+denunciou um mapa de CBO errado na primeira execução — ver CHANGELOG de 2026-09-09.
+
 ### Ativar verificação de certificado do Postgres
 
 1. Supabase Dashboard → Project Settings → Database → SSL Configuration → **Download certificate**.
@@ -271,7 +296,9 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 9c | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
 | 9d | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
 | 10 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
-| 11 | **CAGED nunca foi ingerido de verdade** | O catálogo diz `benchmarkSource: "CAGED/MTE"` mas é snapshot estático | Fase 2 — ver abaixo |
+| 4b | **Secret `DATABASE_URL` ausente no GitHub** | A ingestão mensal do CAGED falha sem ele; só o `dry_run` roda | Settings → Secrets and variables → Actions → New repository secret |
+| 4c | **`catalogs.ts` usa o campo `cbo` como agrupamento, não como CBO real** | `2124-05` carrega 10 cargos distintos; join do CAGED atribuiria salário de desenvolvedor ao UX/UI | Corrigir os códigos e marcar como "sem CBO" os cargos que a CBO 2002 não prevê |
+| ~~11~~ | ~~**CAGED nunca foi ingerido de verdade**~~ | Resolvido em 2026-09-09: pipeline em produção, validado contra a competência 202607 (4,4 M linhas, 14.405 admissões de TI, 81 recortes) | Falta ligar na tela — depende da pendência 4c |
 
 ---
 
