@@ -35,6 +35,8 @@ export interface ObservedSalary {
   /** null = agregado nacional. */
   uf: string | null;
   nAmostra: number;
+  /** Qual ponto da distribuicao sustentou o valor exibido, dado a senioridade do perfil. */
+  percentilAplicado: "p25" | "mediana" | "p75";
   p25: number;
   mediana: number;
   p75: number;
@@ -65,6 +67,31 @@ function melhorObservacao(rows: SalaryObservationRow[], cbo: string): SalaryObse
   return rows.find((r) => r.cbo === cbo);
 }
 
+/**
+ * Qual ponto da distribuicao representa cada senioridade.
+ *
+ * O CAGED agrega por CBO, e CBO **nao distingue senioridade** -- "Analista de suporte
+ * computacional" e um codigo so, do junior ao senior. Aplicar a mediana em todos os niveis faria
+ * Junior, Pleno e Senior exibirem o mesmo numero, o que e pior que a estimativa anterior: ela ao
+ * menos variava por nivel.
+ *
+ * A saida nao e inventar variacao, e sim usar a dispersao que a propria amostra ja fornece. Ler
+ * P25/mediana/P75 como faixa de senioridade e a leitura convencional de banda salarial, e cada
+ * ponto continua sendo um valor observado -- nao um numero derivado de multiplicador arbitrario.
+ *
+ * "Especialista" cai no P75 junto com "Senior" porque a amostra nao oferece ponto acima disso;
+ * o rotulo diz qual percentil sustentou o valor, entao a limitacao fica visivel em vez de
+ * disfarcada.
+ */
+const PERCENTIL_POR_SENIORIDADE: Record<LaborProfile["seniority"], "p25" | "mediana" | "p75"> = {
+  "Júnior": "p25",
+  Pleno: "mediana",
+  "Sênior": "p75",
+  Especialista: "p75",
+};
+
+const NOME_DO_PERCENTIL = { p25: "P25", mediana: "mediana", p75: "P75" } as const;
+
 /** Exportada para teste: e aqui que se decide se o perfil exibe dado observado ou estimativa. */
 export function aplicarObservacao(profile: LaborProfile, row: SalaryObservationRow | undefined): EnrichedLaborProfile {
   const mediana = row ? toNumber(row.mediana) : null;
@@ -75,11 +102,16 @@ export function aplicarObservacao(profile: LaborProfile, row: SalaryObservationR
     return { ...profile, sourceStatus: "FALLBACK_STALE" };
   }
 
+  const escolhido = PERCENTIL_POR_SENIORIDADE[profile.seniority];
+  const valor = { p25, mediana, p75 }[escolhido];
+
   return {
     ...profile,
-    monthlyCompensation: mediana,
+    monthlyCompensation: valor,
     sourceStatus: "OPERATIONAL",
-    benchmarkSource: `CAGED/MTE — competência ${row.competencia.slice(0, 7)} (${row.uf ?? "Brasil"}, n=${row.n_amostra})`,
+    benchmarkSource:
+      `CAGED/MTE — ${NOME_DO_PERCENTIL[escolhido]} da competência ${row.competencia.slice(0, 7)} ` +
+      `(${row.uf ?? "Brasil"}, n=${row.n_amostra})`,
     updatedAt: row.collected_at,
     observed: {
       source: "CAGED",
@@ -87,6 +119,7 @@ export function aplicarObservacao(profile: LaborProfile, row: SalaryObservationR
       competencia: row.competencia,
       uf: row.uf,
       nAmostra: row.n_amostra,
+      percentilAplicado: escolhido,
       p25,
       mediana,
       p75,

@@ -2,6 +2,44 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — CAGED gravado em produção: três problemas que só a execução real revelou
+
+A primeira ingestão com gravação (não `dry-run`) expôs coisas que nenhum teste tinha como pegar.
+
+### 1. Três migrations nunca haviam sido aplicadas em produção
+
+A ingestão falhou com `relation "salary_observations" does not exist`. Investigando, não era só a `0009`: **`0007`, `0008` e `0009` estavam todas pendentes** na Supabase. O CI aplica migrations apenas no Postgres efêmero do job de teste — **não existe caminho automatizado para produção**, e as três tinham sido aplicadas só ao banco de teste.
+
+Isso significa que o código das correções de segurança da Fase 1 estava no ar desde ontem esperando colunas que não existiam. O app não quebrou visivelmente porque os caminhos afetados são todos defensivos — `registerFailedLogin` e `clearFailedLogins` são `void ... .catch(() => undefined)`, o histórico de benchmark é fire-and-forget, e `readHistory` cai para o cache em arquivo quando a consulta falha. Ou seja: **degradou em silêncio**. O bloqueio de conta não tinha contador durável, a trilha de auditoria não gravava nada, e o histórico de benchmark voltava vazio em vez de filtrado.
+
+Sorte de desenho, não acerto de processo. As três foram aplicadas com `pnpm run migrate`. Fica registrado como pendência: aplicar migration em produção continua sendo passo manual.
+
+### 2. `date` e `timestamptz` chegam como `Date`, não string
+
+Com o schema no lugar, a junção estourou em `row.competencia.slice is not a function`. O driver `pg` devolve coluna `date`/`timestamptz` como objeto `Date` do JavaScript; o tipo `SalaryObservationRow` declarava `string`, e a fixture do teste usava string — então **o teste passava enquanto o runtime quebraria**. Teria derrubado `/labor/profiles` em produção.
+
+Corrigido na origem, com `competencia::text` e `collected_at::text` na consulta, para o tipo declarado passar a ser verdade em vez de promessa. É a segunda vez nesta fase que só a execução contra dado real denunciou um erro — a primeira foi o mapa de CBO.
+
+### 3. Senioridade colapsava num número só
+
+Rodando a junção de verdade, ficou visível: Júnior, Pleno e Sênior de "Analista de suporte computacional" recebiam **todos R$ 3.145**. O CAGED agrega por CBO, e CBO não distingue senioridade — é um código só, do júnior ao sênior. Aplicar a mediana em todos os níveis era pior que a estimativa anterior, que ao menos variava.
+
+A saída não foi inventar variação, e sim usar a dispersão que a própria amostra já fornece: **P25 → Júnior, mediana → Pleno, P75 → Sênior**. É a leitura convencional de banda salarial, e cada ponto continua sendo valor observado, não derivado de multiplicador arbitrário. "Especialista" cai no P75 junto com "Sênior" porque a amostra não oferece ponto acima disso — e o rótulo diz qual percentil sustentou cada valor, então a limitação fica visível em vez de disfarçada.
+
+Foi aqui que a decisão de guardar dispersão em `salary_observations`, em vez de um número solto, pagou: sem P25/P75 não haveria como resolver isso sem inventar.
+
+### Estado verificado em produção
+
+84 observações gravadas, competência 2026-07, `ingestion_runs` registrando `OPERATIONAL` em 77s, **zero duplicatas** (o `unique nulls not distinct` da migration `0009` funcionando). A junção responde:
+
+| | Nacional | SP |
+| :--- | :--- | :--- |
+| Cobertura | 35 de 73 perfis | 35 de 73 |
+| Desenvolvedor Full Stack (Pleno) | R$ 7.333 (n=6.044) | R$ 8.000 (n=3.234) |
+| Gerente de suporte técnico | R$ 6.981 (n=107) | R$ 11.600 (n=42) |
+
+O recorte por UF funciona e o degrade para o agregado nacional também.
+
 ## 2026-09-09 — CBO corrigido no catálogo e CAGED ligado na tela de Mão de obra
 
 Fecha a Fase 2: o salário observado no CAGED passa a aparecer no produto, no lugar da estimativa parametrizada.

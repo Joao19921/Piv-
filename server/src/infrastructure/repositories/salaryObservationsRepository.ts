@@ -118,7 +118,13 @@ export async function findCurrentByCbo(
   if (!cbos.length) return [];
   return query<SalaryObservationRow>(
     "salary_benchmark_current.find_by_cbo",
-    `select *
+    // `competencia::text` e `collected_at::text` nao sao enfeite: o driver pg devolve `date` e
+    // `timestamptz` como objeto Date do JavaScript, nao string. Sem o cast, o tipo declarado
+    // acima mentiria sobre o runtime -- e o codigo que chama faz `competencia.slice(0, 7)`,
+    // que estoura com Date. O teste nao pegou porque a fixture usava string; so a consulta
+    // real ao Postgres revelou.
+    `select source, source_url, cbo, role_slug, seniority, employment_model, uf, municipio,
+            competencia::text, n_amostra, p25, mediana, p75, media, collected_at::text
        from salary_benchmark_current
       where cbo = any($1::text[])
         and (uf is null or uf = $2)

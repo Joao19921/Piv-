@@ -43,7 +43,7 @@ function observacao(overrides: Partial<SalaryObservationRow> = {}): SalaryObserv
 
 describe("aplicarObservacao", () => {
   it("troca a estimativa pela mediana observada e marca a fonte como real", () => {
-    const r = aplicarObservacao(perfil(), observacao());
+    const r = aplicarObservacao(perfil({ seniority: "Pleno" }), observacao());
 
     expect(r.monthlyCompensation).toBe(8000);
     expect(r.sourceStatus).toBe("OPERATIONAL");
@@ -131,5 +131,42 @@ describe("integridade do catalogo apos a correcao de CBO", () => {
     // Erro original do catalogo: DBA estava em 2124-15, que e "Analista de sistemas de automacao".
     const dba = laborProfiles.find((p) => p.id === "sgd-abd-02");
     expect(dba?.cbo).toBe("2123-05");
+  });
+});
+
+describe("senioridade lida como faixa da distribuicao", () => {
+  // O CAGED agrega por CBO, e CBO nao distingue senioridade: sem isso, Junior, Pleno e Senior do
+  // mesmo codigo exibiriam o MESMO numero -- pior que a estimativa anterior, que ao menos variava.
+  // A saida usa a dispersao que a propria amostra fornece, em vez de inventar multiplicador.
+  it("cada senioridade recebe um ponto diferente da distribuicao", () => {
+    const obs = observacao({ p25: "4500", mediana: "8000", p75: "12000" });
+
+    expect(aplicarObservacao(perfil({ seniority: "Júnior" }), obs).monthlyCompensation).toBe(4500);
+    expect(aplicarObservacao(perfil({ seniority: "Pleno" }), obs).monthlyCompensation).toBe(8000);
+    expect(aplicarObservacao(perfil({ seniority: "Sênior" }), obs).monthlyCompensation).toBe(12000);
+  });
+
+  it("o rotulo diz qual percentil sustentou o valor", () => {
+    const jr = aplicarObservacao(perfil({ seniority: "Júnior" }), observacao());
+    expect(jr.benchmarkSource).toContain("P25");
+    expect(jr.observed?.percentilAplicado).toBe("p25");
+
+    const sr = aplicarObservacao(perfil({ seniority: "Sênior" }), observacao());
+    expect(sr.benchmarkSource).toContain("P75");
+  });
+
+  // Limitacao conhecida e deliberada: a amostra nao oferece ponto acima do P75. Fica explicito
+  // no rotulo em vez de disfarcado com um numero inventado.
+  it("Especialista cai no P75, junto com Senior, por falta de ponto acima", () => {
+    const esp = aplicarObservacao(perfil({ seniority: "Especialista" }), observacao());
+    expect(esp.observed?.percentilAplicado).toBe("p75");
+    expect(esp.monthlyCompensation).toBe(12000);
+  });
+
+  // Toda observacao carrega a distribuicao inteira, independentemente de qual ponto foi aplicado:
+  // e o que permite a tela mostrar a faixa, nao so o numero.
+  it("expoe a distribuicao completa qualquer que seja a senioridade", () => {
+    const r = aplicarObservacao(perfil({ seniority: "Júnior" }), observacao());
+    expect(r.observed).toMatchObject({ p25: 4500, mediana: 8000, p75: 12000 });
   });
 });
