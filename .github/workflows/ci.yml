@@ -20,7 +20,7 @@ jobs:
     name: Typecheck + build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
       # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
@@ -68,7 +68,7 @@ jobs:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
       # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
@@ -92,7 +92,7 @@ jobs:
     name: Segurança (dependências + segredos)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Antes do pnpm install de proposito: com node_modules no disco, a varredura levaria
       # minutos e acusaria segredos de exemplo dentro de dependencias de terceiros.
