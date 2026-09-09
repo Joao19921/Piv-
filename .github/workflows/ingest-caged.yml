@@ -70,15 +70,20 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
-          if [ -z "$DATABASE_URL" ]; then
+          DRY="${{ inputs.dry_run }}"
+
+          # DATABASE_URL so e obrigatorio quando vamos gravar. Exigi-lo tambem no dry-run
+          # inviabilizaria justamente o uso mais util dele: conferir os numeros do CAGED antes
+          # de configurar qualquer secret.
+          if [ "$DRY" != "true" ] && [ -z "$DATABASE_URL" ]; then
             echo "::error::Secret DATABASE_URL nao configurado (Settings > Secrets and variables > Actions)."
-            echo "Sem ele nao ha onde gravar as observacoes."
+            echo "Sem ele nao ha onde gravar as observacoes. Rode com dry_run marcado para so inspecionar."
             exit 1
           fi
 
           ARGS=""
           if [ -n "${{ inputs.competencia }}" ]; then ARGS="$ARGS ${{ inputs.competencia }}"; fi
-          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "$DRY" = "true" ]; then ARGS="$ARGS --dry-run"; fi
 
           echo "Executando: pnpm run ingest:caged --$ARGS"
           pnpm run ingest:caged -- $ARGS
