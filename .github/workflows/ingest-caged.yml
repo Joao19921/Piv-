@@ -1,0 +1,84 @@
+name: Ingestão CAGED
+
+# Lote mensal que alimenta `salary_observations` com salário real por CBO/UF, vindo dos
+# microdados do Novo CAGED (PDET/MTE).
+#
+# Por que aqui e nao na Lambda `pivo-refresh-sources`: o MTE nao publica API. Os microdados sao
+# um `.7z` de ~55 MB por mes (centenas de MB de texto dentro), no FTP anonimo do PDET. Processar
+# isso exige um binario de descompressao, RAM folgada e minutos de execucao -- empacotar p7zip
+# numa imagem de Lambda + ECR seria complexidade real para um job que roda uma vez por mes. O
+# runner do GitHub ja tem `7z` e `curl`, 14 GB de RAM e 6h de limite, e sai de graca no repo.
+#
+# Ver server/src/infrastructure/collectors/cagedCollector.ts.
+
+on:
+  schedule:
+    # O MTE publica a competencia com ~1 mes de defasagem, sempre na virada do mes (a de
+    # julho/2026 saiu em 28/08). Rodar todo dia 5 as 09:00 UTC da folga para o arquivo estar la;
+    # se ainda nao estiver, o job so reprocessa a competencia anterior, que e idempotente.
+    - cron: "0 9 5 * *"
+  # Permite disparar na mao, inclusive apontando uma competencia especifica.
+  workflow_dispatch:
+    inputs:
+      competencia:
+        description: "Competência AAAAMM (vazio = a mais recente publicada no FTP)"
+        required: false
+        type: string
+      dry_run:
+        description: "Só calcula e imprime, sem gravar no banco"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Duas ingestoes simultaneas gravariam a mesma competencia ao mesmo tempo. O upsert aguenta,
+# mas nao ha ganho nenhum em rodar em paralelo.
+concurrency:
+  group: ingest-caged
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: Baixar, agregar e gravar
+    runs-on: ubuntu-latest
+    # O download do FTP do MTE costuma ser lento; a agregacao em si leva poucos minutos.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Conferir as ferramentas externas
+        # Falhar aqui, com mensagem clara, e muito melhor do que estourar la dentro do
+        # collector com "spawn 7z ENOENT" depois de ja ter baixado 55 MB.
+        run: |
+          curl --version | head -1
+          7z i > /dev/null && echo "7z disponivel"
+
+      - name: Ingerir CAGED
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL nao configurado (Settings > Secrets and variables > Actions)."
+            echo "Sem ele nao ha onde gravar as observacoes."
+            exit 1
+          fi
+
+          ARGS=""
+          if [ -n "${{ inputs.competencia }}" ]; then ARGS="$ARGS ${{ inputs.competencia }}"; fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+
+          echo "Executando: pnpm run ingest:caged --$ARGS"
+          pnpm run ingest:caged -- $ARGS

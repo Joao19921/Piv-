@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "refresh-sources": "tsx server/scripts/refreshSources.ts",
     "migrate": "tsx server/scripts/migrate.ts",
+    "ingest:caged": "tsx server/scripts/ingestCaged.ts",
     "seed:admin": "tsx server/scripts/seedAdmin.ts",
     "build:lambda": "esbuild server/lambda/refreshSourcesHandler.ts --platform=node --target=node22 --bundle --format=cjs --outfile=dist-lambda/index.cjs",
     "test": "vitest run"
