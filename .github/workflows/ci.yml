@@ -141,6 +141,12 @@ jobs:
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 traz o historico completo, necessario para o `merge-base --is-ancestor`
+      # do smoke test abaixo.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Disparar deploy hook do Render
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
@@ -176,6 +182,16 @@ jobs:
 
             if [ "$deployed" = "$EXPECTED_COMMIT" ]; then
               echo "OK: o commit $EXPECTED_COMMIT esta no ar (tentativa $attempt)."
+              exit 0
+            fi
+
+            # Aceita tambem um commit MAIS NOVO que ja contenha o nosso. Sem isso, dois pushes
+            # em sequencia se atropelam: o Render publica o mais recente, a comparacao exata por
+            # SHA nunca bate, e o job estoura o timeout mesmo com o deploy perfeitamente saudavel
+            # -- o que treinaria o time a ignorar um smoke test vermelho.
+            if [ -n "$deployed" ] && git cat-file -e "${deployed}^{commit}" 2>/dev/null \
+               && git merge-base --is-ancestor "$EXPECTED_COMMIT" "$deployed"; then
+              echo "OK: no ar esta o commit $deployed, mais novo e que ja contem $EXPECTED_COMMIT."
               exit 0
             fi
 
