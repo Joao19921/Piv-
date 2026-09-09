@@ -113,6 +113,3 @@ temp/
 .webdev/
 
 .project-config.json
-
-# GitHub Actions exige token com escopo workflow para push via OAuth.
-.github/workflows/ci.yml

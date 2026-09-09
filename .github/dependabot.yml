@@ -1,0 +1,39 @@
+# Atualizacao automatica de dependencias. Antes disso nada avisava sobre uma CVE nova: a
+# unica varredura era manual, e o audit do CI so quebra o build depois que a vulnerabilidade
+# ja esta no lockfile -- o Dependabot e quem abre o PR com a correcao.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Ferramentas de build/teste sobem juntas num PR so: sao muitas, mudam com frequencia e
+      # nao vao para o runtime -- um PR por pacote afogaria os PRs que importam.
+      dev-tooling:
+        dependency-type: development
+      # UI da Radix: dezenas de pacotes versionados em conjunto, sempre atualizados juntos.
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(docker)"

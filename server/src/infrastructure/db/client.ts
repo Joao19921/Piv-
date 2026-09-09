@@ -9,6 +9,35 @@ const connectionString = process.env.DATABASE_URL;
 /** Falso quando DATABASE_URL nao esta configurado; repositorios devem cair para fallback estatico neste caso. */
 export const isDatabaseConfigured = Boolean(connectionString);
 
+/**
+ * TLS da conexao com o Postgres.
+ *
+ * Em producao (Supabase via pooler Supavisor) a cadeia de certificados tem uma raiz que nao
+ * esta no bundle padrao de CAs do Node ("self-signed certificate in certificate chain"),
+ * mesmo sendo uma conexao TLS legitima -- verificado em producao (Lambda us-east-1) apos
+ * tentar rejectUnauthorized: true. Ate pinarmos o CA correto da Supabase, a conexao segue
+ * criptografada, mas sem verificacao de identidade do servidor.
+ *
+ * Num Postgres local (o service container do CI, ou docker-compose em dev) nao ha TLS
+ * nenhum: insistir em SSL faz o servidor recusar a conexao com "The server does not support
+ * SSL connections" e derruba a suite inteira. Por isso host local desliga o TLS
+ * automaticamente, e DATABASE_SSL=disable/require permite forcar os dois lados quando a
+ * deteccao por host nao servir.
+ */
+export function resolveSslConfig(url: string | undefined): { rejectUnauthorized: boolean } | false {
+  if (process.env.DATABASE_SSL === "disable") return false;
+  if (process.env.DATABASE_SSL === "require") return { rejectUnauthorized: false };
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname;
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false;
+  } catch {
+    // Connection string em formato nao-URL (ex.: "host=... dbname=..."): mantem o padrao
+    // seguro (TLS ligado) em vez de adivinhar.
+  }
+  return { rejectUnauthorized: false };
+}
+
 let pool: Pool | null = null;
 
 function getPool(): Pool {
@@ -18,12 +47,7 @@ function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       connectionString,
-      // O pooler Supavisor da Supabase envia uma cadeia de certificados cuja raiz nao esta no
-      // bundle padrao de CAs do Node ("self-signed certificate in certificate chain"), mesmo
-      // sendo uma conexao TLS legitima. Verificado em producao (Lambda us-east-1) apos tentar
-      // rejectUnauthorized: true. Ate pinarmos o CA correto da Supabase, mantemos sem verificacao
-      // de certificado (ainda criptografado, mas sem checagem de identidade do servidor).
-      ssl: { rejectUnauthorized: false },
+      ssl: resolveSslConfig(connectionString),
       max: 5,
       idleTimeoutMillis: 30_000,
     });

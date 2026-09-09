@@ -55,7 +55,80 @@ pnpm run check    # Type-check
 pnpm run build    # Build de producao em dist/
 pnpm run start    # Roda o build em modo producao
 pnpm run format   # Prettier
+pnpm run migrate  # Aplica as migrations pendentes (ver "Banco De Dados" abaixo)
+pnpm test         # Suite automatizada (exige um Postgres de teste -- ver "Testes" abaixo)
 ```
+
+## Banco De Dados E Migrations
+
+O schema vive em [server/db/migrations/](server/db/migrations/), um arquivo `.sql` por mudanca,
+aplicado em ordem alfabetica por `pnpm run migrate`. O runner registra o que ja rodou na tabela
+`schema_migrations` e recusa aplicar de novo; ele tambem compara o checksum de cada arquivo ja
+aplicado, entao **migration aplicada e imutavel** — para corrigir algo, crie um arquivo novo.
+
+```bash
+pnpm run migrate                # aplica as pendentes
+pnpm run migrate -- --dry-run   # so lista o que rodaria
+pnpm run migrate -- --baseline  # marca as pendentes como aplicadas SEM executar o SQL
+```
+
+`--baseline` serve para um banco que **ja tem o schema**, aplicado antes deste runner existir
+(e o caso da Supabase de producao, cujas migrations foram rodadas na mao via MCP). Rodar sem
+`--baseline` ali tentaria recriar tabelas existentes e falharia. Rode o baseline uma unica vez
+e, dali em diante, use `pnpm run migrate` normalmente.
+
+## Testes
+
+```bash
+pnpm test
+```
+
+A suite sobe o Express de verdade (supertest) e **escreve num Postgres real**: cria usuarios,
+faz login, grava historico de benchmark e apaga tudo no teardown. Por isso ela precisa de um
+banco descartavel — nunca aponte `DATABASE_URL` para a Supabase de producao ao rodar os testes,
+porque a limpeza final apaga linhas de verdade.
+
+Para um banco local:
+
+```bash
+docker run -d --name pivo-test-db -p 5432:5432 \
+  -e POSTGRES_USER=pivo -e POSTGRES_PASSWORD=pivo -e POSTGRES_DB=pivo_test \
+  postgres:17-alpine
+
+export DATABASE_URL="postgresql://pivo:pivo@localhost:5432/pivo_test"
+export DATABASE_SSL=disable
+pnpm run migrate
+pnpm test
+```
+
+No CI isso e feito automaticamente por um service container — ver
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
+
+## CI/CD
+
+O pipeline ([.github/workflows/ci.yml](.github/workflows/ci.yml)) roda em todo push e PR, com
+quatro jobs; o deploy so acontece se os tres primeiros passarem:
+
+| Job | O que faz | Bloqueia deploy |
+| :--- | :--- | :--- |
+| `build` | `pnpm run check` (type-check) + `pnpm run build` | Sim |
+| `test` | Sobe Postgres 17 efemero, aplica as migrations e roda `pnpm test` | Sim |
+| `security` | gitleaks (segredos) + `pnpm audit --prod --audit-level high` (gate) + audit completo (informativo) | Sim |
+| `deploy` | Dispara o deploy hook do Render e valida `/api/v1/healthz` respondendo 200 | — |
+
+O gate de auditoria quebra o build em qualquer vulnerabilidade high/critical **nova** nas
+dependencias de producao. O passivo conhecido no momento em que o gate foi criado esta listado,
+com motivo e caminho de saida de cada item, em `pnpm.auditConfig` no [package.json](package.json)
+— essa lista deve encolher, nunca crescer sem justificativa no PR.
+
+Configuracao necessaria no GitHub (Settings > Secrets and variables > Actions):
+
+- Secret `RENDER_DEPLOY_HOOK_URL` — sem ele o job de deploy avisa e passa sem publicar.
+- Variable `PRODUCTION_URL` (ex.: `https://pivo-i8m3.onrender.com`) — sem ela o smoke test
+  pos-deploy avisa e e pulado.
+
+Atualizacao de dependencias e automatizada pelo [Dependabot](.github/dependabot.yml)
+(npm, GitHub Actions e Docker).
 
 ## Variaveis De Ambiente
 
@@ -68,6 +141,7 @@ Veja tambem [.env.example](.env.example).
 | `APP_ENV` | Nao | Rotulo de ambiente exibido no rodape do app (ex.: "Homologacao"); nao afeta comportamento. |
 | `SESSION_SECRET` | Recomendado | Segredo usado para assinar o cookie de sessao. Gere um valor forte e mantenha entre deploys. |
 | `DATABASE_URL` | Recomendado | Postgres/Supabase para usuarios, permissoes, precos e historicos. Sem ele, parte do app usa snapshots/fallbacks, mas login multiusuario depende do banco. |
+| `DATABASE_SSL` | Nao | `disable` forca conexao sem TLS (necessario com Postgres local/CI, que sobe sem SSL); `require` forca TLS. Vazio decide pelo host. |
 | `ADMIN_NAME` | Apenas seed | Nome do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
 | `ADMIN_EMAIL` | Apenas seed | E-mail do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
 | `ADMIN_INITIAL_PASSWORD` | Apenas seed | Senha inicial do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
