@@ -58,6 +58,7 @@ export const CBOS_TI: Record<string, string> = {
   "212305": "Administrador de banco de dados",
   "212310": "Administrador de redes",
   "212315": "Administrador de sistemas operacionais",
+  "212320": "Administrador em segurança da informação",
 
   // Familia 2124 -- Analistas de tecnologia da informacao
   "212405": "Analista de desenvolvimento de sistemas",

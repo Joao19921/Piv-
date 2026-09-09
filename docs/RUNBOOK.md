@@ -32,7 +32,7 @@ Complementa, sem repetir: [ARQUITETURA.md](ARQUITETURA.md) (decisões de desenho
 └──────┼───────┘
        │
        ├──────────────► Postgres (Supabase, sa-east-1) ── pooler Supavisor :5432
-       │                 15 tabelas · RLS ligado sem policies
+       │                 16 tabelas · RLS ligado sem policies
        │
        ├──────────────► BACEN PTAX  (ao vivo, sem chave)
        ├──────────────► Azure Retail Prices (ao vivo, sem chave)
@@ -88,16 +88,127 @@ importa tanto quanto o número.
 
 ---
 
-## 2. Banco de dados
+## 2. Stack da solução
 
-15 tabelas, 8 migrations. Schema versionado em [`server/db/migrations/`](../server/db/migrations/).
+Tudo o que o Pivô usa, e **por que** — não só a lista.
+
+### Linguagem e runtime
+
+| Item | Versão | Onde é declarado |
+| :--- | :--- | :--- |
+| Node.js | 22 LTS | `.nvmrc` (fonte única), `ARG NODE_VERSION` no Dockerfile, `--target=node22` em `build:lambda` |
+| TypeScript | 5.6.3 (pinado, sem `^`) | `tsconfig.json` com `target: ES2022`, `strict: true` |
+| pnpm | 10.4.1 | `packageManager` — o CI lê daqui via `pnpm/action-setup` |
+
+> **Bump de major do Node é manual e deliberado.** A versão vive em três lugares que precisam
+> andar juntos; um PR que mexa só no Dockerfile faria o CI testar num runtime e o Render publicar
+> noutro. O `dependabot.yml` ignora major do Node por isso.
+
+### Frontend
+
+| Camada | Escolha | Nota |
+| :--- | :--- | :--- |
+| UI | React 19 + TypeScript | — |
+| Build | Vite 8 | Bundle final ~540 kB (gzip ~156 kB) |
+| Roteamento | `wouter` | Com patch local em `patches/wouter@3.7.1.patch` |
+| Estado de servidor | TanStack Query 5 | Cache e invalidação das chamadas à API |
+| Estilo | Tailwind CSS 4 + `tailwind-merge` + `tailwindcss-animate` | — |
+| Componentes | shadcn/ui sobre Radix UI (26 pacotes) | Ver a ressalva abaixo |
+| Formulários | React Hook Form + `@hookform/resolvers` + Zod | — |
+| Animação | Framer Motion 13 | — |
+| Ícones | `lucide-react` | — |
+| Toasts | `sonner` | — |
+| Tema | `next-themes` | Dark mode alternável |
+
+> **Ressalva:** mais de 40 componentes em `client/src/components/ui/` **não são usados** por
+> nenhuma tela — o kit shadcn foi adicionado inteiro de uma vez. Eles arrastam dependências
+> (`embla-carousel-react`, `cmdk`, `vaul`, `input-otp`) que geram PR de atualização
+> indefinidamente e ampliam a superfície. Três já foram removidos por terem quebrado o build ou
+> carregado vulnerabilidade: `resizable`, `chart` (recharts) e `calendar` (react-day-picker).
+> Ver pendência 9c.
+
+### Backend
+
+| Camada | Escolha | Nota |
+| :--- | :--- | :--- |
+| HTTP | Express 4 | `express-async-errors` para rejeição em rota async cair no handler global |
+| Banco | `pg` (driver nativo, sem ORM) | Queries SQL explícitas, com nome, para observabilidade por consulta |
+| Segurança | `helmet` + `express-rate-limit` | Ver seção 4 |
+| Validação | Zod (no cliente) / `typeof` manual (nas rotas) | Inconsistência conhecida — pendência 5 |
+| Observabilidade | `@sentry/node` | Todo `logger.error()` vai para o Sentry quando `SENTRY_DSN` existe |
+| Preços AWS | `@aws-sdk/client-pricing` | Só na Lambda; autentica por IAM Role, sem access key |
+| Build | esbuild | `--packages=external`, então o runtime precisa do `node_modules` de produção |
+
+Arquitetura em camadas (Clean Architecture) — `domain` não importa `infrastructure`:
+
+```
+server/
+├── index.ts                    bootstrap: trust proxy → helmet → rotas → handler de erro
+├── src/
+│   ├── domain/services/        regra pura, sem I/O
+│   │                           pricingEngine · laborPricing · laborBenchmark
+│   │                           passwordPolicy · authorization · catalogs
+│   ├── infrastructure/
+│   │   ├── db/                 pool pg, transações, TLS condicional
+│   │   ├── collectors/         aws · azure · gcp · bacen · pncp · caged
+│   │   ├── repositories/       uma por agregado
+│   │   ├── auth/               password (scrypt) · session (HMAC) · loginThrottle
+│   │   ├── resilience/         circuit breaker + retry + fallback
+│   │   └── observability/      logger · sentry · queryStats
+│   └── presentation/           app.ts · authRoutes · adminUsersRoutes · securityHeaders
+├── db/migrations/              9 arquivos .sql, aplicados por pnpm run migrate
+├── scripts/                    migrate · seedAdmin · refreshSources · ingestCaged
+├── lambda/                     handler da ingestão de preços
+└── tests/                      vitest + supertest
+```
+
+### Dados e fontes
+
+| Fonte | Acesso | Estado | Cadência |
+| :--- | :--- | :--- | :--- |
+| **CAGED / MTE** | FTP anônimo (`.7z`, ~53 MB/mês) | **Ao vivo** — salário CLT por CBO/UF | Mensal, GitHub Actions |
+| BACEN PTAX | REST, sem chave | Ao vivo | Por requisição |
+| Azure Retail Prices | REST, sem chave | Ao vivo | Por requisição |
+| AWS Pricing API | SDK, IAM Role | Ingestão | ~5 dias, Lambda |
+| GCP Cloud Billing | REST, API key | Ingestão | ~5 dias, Lambda |
+| PNCP | REST, sem chave | Só prova de vida | Por requisição |
+| SISP / MGI | Hardcoded em `catalogs.ts` | Estimativa | — |
+| Catálogo de licenças | Hardcoded | Estimativa | — |
+
+### Infraestrutura
+
+| Função | Provedor | Plano | Nota |
+| :--- | :--- | :--- | :--- |
+| App web | Render | Free | Docker, hiberna sem uso |
+| Banco | Supabase (Postgres 17) | Free | `sa-east-1`, via pooler Supavisor |
+| Ingestão de preços | AWS Lambda + EventBridge | On-demand | Conta **pessoal** do time — pendência 8 |
+| Ingestão do CAGED | GitHub Actions | Free | `7z` e `curl` já no runner |
+| CI/CD | GitHub Actions | Free | 4 jobs, deploy só se os 3 passarem |
+| Erros | Sentry | Free | `agentanalisedegoverno.sentry.io` |
+| Uptime | UptimeRobot | Free | Monitora `/api/v1/healthz` |
+| Keep-alive | cron-job.org | Free | Evita a Supabase pausar por inatividade |
+
+**Custo fixo de infraestrutura: zero.** Todo o stack roda em plano gratuito — o que também
+explica as limitações aceitas (hibernação do Render, pausa da Supabase, sem SLA).
+
+### Ferramental de desenvolvimento
+
+`vitest` + `supertest` (testes) · `prettier` (formatação) · `tsx` (executar TS direto) ·
+`concurrently` (subir API e web juntos) · `cross-env` · `esbuild` · `postcss` + `autoprefixer` ·
+`gitleaks` (segredos, no CI) · `pnpm audit` (dependências, no CI) · Dependabot (atualização).
+
+---
+
+## 3. Banco de dados
+
+16 tabelas, 9 migrations. Schema versionado em [`server/db/migrations/`](../server/db/migrations/).
 
 | Domínio | Tabelas |
 | :--- | :--- |
 | Catálogo cloud | `cloud_skus`, `cloud_regions`, `cloud_prices`, `storage_prices` |
 | Arquiteturas salvas | `cloud_architectures`, `architecture_services` |
 | Câmbio | `fx_rates` |
-| Benchmark salarial | `market_benchmark_searches`, `market_benchmark_sources` |
+| Benchmark salarial | `market_benchmark_searches`, `market_benchmark_sources`, `salary_observations` (+ view `salary_benchmark_current`) |
 | RBAC | `users`, `permissions`, `user_permissions` |
 | Auditoria | `audit_logs` |
 | Observabilidade | `ingestion_runs` |
@@ -128,7 +239,7 @@ corrigir, crie um arquivo novo.
 
 ---
 
-## 3. Segurança implementada
+## 4. Segurança implementada
 
 | Controle | Onde | Detalhe |
 | :--- | :--- | :--- |
@@ -139,7 +250,7 @@ corrigir, crie um arquivo novo.
 | Bloqueio de conta | `auth/loginThrottle.ts` | 5 falhas → 15 min; **nem a senha correta passa** |
 | Anti-enumeração | `loginThrottle` + `GENERIC_LOGIN_ERROR` | contagem por e-mail existindo a conta ou não; mesma mensagem para senha errada, conta inexistente e conta inativa |
 | Cabeçalhos | `presentation/securityHeaders.ts` | helmet: HSTS (só em prod), nosniff, anti-clickjacking, sem `x-powered-by` |
-| CSP | idem | **report-only** — ver pendência #2 |
+| CSP | idem | **report-only** — ver pendência 3 |
 | RBAC | `authMiddleware.ts` | gate no servidor, não só no menu; `INACTIVE` tratado como não autenticado mesmo com cookie válido |
 | Isolamento de histórico | migration `0007` | benchmark filtrado por `user_id`; nem ADMIN vê o dos outros |
 | Auditoria | `repositories/auditRepository.ts` | login (ok/negado/bloqueado/inativo), troca de senha, CRUD de usuário |
@@ -156,7 +267,7 @@ corrigir, crie um arquivo novo.
 
 ---
 
-## 4. Operação do dia a dia
+## 5. Operação do dia a dia
 
 ### Criar o primeiro ADMIN
 
@@ -217,7 +328,7 @@ bomba-relógio que derruba produção no dia da troca.
 
 ---
 
-## 5. Diagnóstico de incidentes
+## 6. Diagnóstico de incidentes
 
 ### "Todo mundo foi deslogado depois do deploy"
 
@@ -277,7 +388,7 @@ a versão subiu. Se falhou por timeout, o build do Render quebrou — veja o pai
 
 ---
 
-## 6. Pendências conhecidas
+## 7. Pendências conhecidas
 
 Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 
@@ -286,7 +397,7 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 1 | **Sem branch protection** exigindo os checks do CI | PRs com CI vermelho podem ser mergeados — já aconteceu: o merge do PR #7 quebrou o `master` | Settings → Branches → require status checks `build`, `test`, `security` |
 | 2 | **Auto-Deploy do Render possivelmente ligado** | Se estiver, o Render publica a cada push sem esperar o CI, e o gate vira alarme depois do fato | Render → Settings → Build & Deploy → Auto-Deploy: `No` |
 | 3 | **CSP em report-only** | Não bloqueia XSS ainda, só relata | Revisar violações e trocar `reportOnly: false` em `securityHeaders.ts` |
-| 4 | **`DATABASE_CA_CERT` não configurada** | Conexão com o banco é cifrada mas sem verificar identidade do servidor (MITM ativo) | Seção 4 acima |
+| 4 | **`DATABASE_CA_CERT` não configurada** | Conexão com o banco é cifrada mas sem verificar identidade do servidor (MITM ativo) | Seção 5 acima |
 | 5 | **Validação de rota feita à mão** com `typeof` | `zod` já é dependência e é usado no cliente; validação manual é fácil de esquecer num campo novo | Migrar rotas para schemas zod |
 | 6 | **Sem checagem de senha vazada** | Política bloqueia senha óbvia, mas não senha real que já vazou | Integrar HaveIBeenPwned (range API, k-anonymity) |
 | 7 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |
@@ -297,40 +408,67 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 9d | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
 | 10 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
 | 4b | **Secret `DATABASE_URL` ausente no GitHub** | A ingestão mensal do CAGED falha sem ele; só o `dry_run` roda | Settings → Secrets and variables → Actions → New repository secret |
-| 4c | **`catalogs.ts` usa o campo `cbo` como agrupamento, não como CBO real** | `2124-05` carrega 10 cargos distintos; join do CAGED atribuiria salário de desenvolvedor ao UX/UI | Corrigir os códigos e marcar como "sem CBO" os cargos que a CBO 2002 não prevê |
-| ~~11~~ | ~~**CAGED nunca foi ingerido de verdade**~~ | Resolvido em 2026-09-09: pipeline em produção, validado contra a competência 202607 (4,4 M linhas, 14.405 admissões de TI, 81 recortes) | Falta ligar na tela — depende da pendência 4c |
+| ~~4c~~ | ~~**`catalogs.ts` usa `cbo` como agrupamento**~~ | Resolvido em 2026-09-09: 66 dos 73 perfis tiveram o CBO corrigido; cargos sem ocupação na CBO 2002 ficaram com `cbo: null` | — |
+| ~~11~~ | ~~**CAGED nunca foi ingerido de verdade**~~ | Resolvido em 2026-09-09: pipeline validado contra a competência 202607 (4,4 M linhas, 14.405 admissões, 81 recortes) e ligado em `/labor/profiles` | Falta só configurar o secret `DATABASE_URL` (pendência 4b) para a gravação rodar |
 
 ---
 
-## 7. Próxima fase: enriquecimento de dados
+## 8. Enriquecimento de dados: o que foi feito e o que falta
 
 Decisão registrada: **não** haverá scraping de Glassdoor/Indeed. Os termos de uso proíbem, a
 proposta original previa contornar CAPTCHA com sessão persistida (burla de controle de acesso), e
 — o que mais pesa aqui — o Pivô estima custo para **contratação pública**, onde a fonte precisa
 ser citável num processo. "Raspagem não autorizada" não sustenta estimativa diante de TCU/CGU.
 
-O caminho aprovado reaproveita o que já existe (`ingestionOrchestrator` + Lambda + EventBridge +
-`ingestion_runs` + `resilienceManager`), **sem** Docker/ECR/Playwright:
+Vale registrar que a **intuição arquitetural da proposta original estava certa**: cron → worker
+de timeout longo → Postgres é exatamente a forma. O que mudou foi a fonte — arquivo oficial do
+governo no lugar de raspagem autenticada. Mesma infra, sem o passivo jurídico.
 
-| Fonte | Ganho | Estado |
+### Entregue
+
+| Fonte | O que dá | Estado |
 | :--- | :--- | :--- |
-| Novo CAGED / RAIS (PDET-MTE) | Salário por CBO/UF/município — o formato exato de `laborProfiles` | Maior ganho isolado |
-| PNCP (preços contratados) | Valor efetivamente pago em contratos públicos de TI; cliente HTTP já existe | Hoje só faz prova de vida |
-| Tabelas SGD/MGI (SISP) | Já no catálogo, mas hardcoded | Automatizar leitura das Portarias |
-| Salariômetro (Fipe) / PNAD (IBGE) | Recorte por ocupação e região | API pública |
-| Convenções coletivas (Mediador/MTE) | Piso legal por sindicato/UF | — |
+| **Novo CAGED (PDET/MTE)** | Salário **CLT** por CBO e UF, com P25/mediana/P75 e n amostral | **Em produção.** Validado na competência 202607: 4,4 M linhas, 14.405 admissões de TI, 81 recortes. Ligado em `/labor/profiles` |
 
-Schema proposto: `salary_observations` **append-only** (`source`, `cbo`, `uf`, `municipio`,
-`employment_model`, `p25`, `mediana`, `p75`, `n_amostra`, `competencia`, `url_fonte`) +
-view materializada `salary_benchmark_current`. Único em
-`(source, cbo, uf, municipio, competencia, employment_model)`.
+Como o dado chega à tela:
 
-O hook `MARKET_BENCHMARK_CONNECTOR_URL` já está escrito em `marketBenchmark.ts` e nunca foi
-ligado — é o ponto de entrada natural dessa camada.
+```
+FTP do PDET ──► GitHub Actions (mensal) ──► salary_observations ──► laborBenchmark.ts ──► /labor/profiles
+   .7z 53 MB      7z + parse streaming        1 linha/competência      junta com catalogs.ts
+```
+
+Duas regras que governam a junção, e não são negociáveis:
+
+1. **Só perfil CLT recebe dado do CAGED.** O CAGED é o cadastro de emprego formal — por
+   definição, vínculo celetista. Aplicar a mediana dele num perfil PJ misturaria duas coisas que
+   o mercado precifica de formas diferentes.
+2. **Perfil sem CBO não recebe nada.** A CBO 2002 não tem ocupação para Cientista de Dados,
+   Engenheiro de IA, UX/UI nem Scrum Master. Esses ficam com `cbo: null` e seguem exibindo a
+   estimativa, rotulada como tal — inventar um código "próximo" produziria número plausível e
+   infundado, pior que ausência de número.
+
+Hoje, dos 73 perfis do catálogo: **35 são elegíveis** ao CAGED (CLT e com CBO), distribuídos em
+13 CBOs distintos; 36 estão sem CBO porque a CBO 2002 não prevê a ocupação, e 3 são PJ. Quantos
+desses 35 de fato exibem dado observado depende de a última ingestão ter atingido a amostra
+mínima naquele CBO — a resposta de `/labor/profiles` traz `coverage` com a contagem real do
+momento, em vez de um número fixo escrito aqui.
+
+### Próximos, em ordem de valor
+
+| Fonte | Ganho | Trabalho envolvido |
+| :--- | :--- | :--- |
+| **PNCP (preços contratados)** | O lado **PJ** que falta: quanto o setor público efetivamente paga por posto/hora de TI. A fonte mais defensável possível numa estimativa para contratação pública | Pipeline, não coletor. `api/pncp/v1/.../itens` já foi sondado e funciona (com `valorUnitarioEstimado` e resultado homologado), mas TI é ~1-5% das contratações e a maioria é compra de equipamento — exige varredura ampla + mapeamento fuzzy de descrição → cargo |
+| Tabelas SGD/MGI (SISP) | Já no catálogo, mas hardcoded | Automatizar a leitura das Portarias |
+| IBGE / SIDRA (PNAD) | Recorte por ocupação e região; cobriria parte dos cargos sem CBO | API pública, não sondada ainda |
+| Convenções coletivas (Mediador/MTE) | Piso legal por sindicato e UF — frequentemente o argumento decisivo numa negociação | — |
+| RAIS (anual) | Base muito maior que o CAGED mensal; permitiria recorte por **município** | Mesmo FTP, arquivo bem maior |
+
+O hook `MARKET_BENCHMARK_CONNECTOR_URL` continua escrito em `marketBenchmark.ts` e nunca foi
+ligado — é o ponto de entrada natural para a busca livre por cargo/UF/cidade, quando ela existir.
 
 ---
 
-## 8. Contatos e acessos
+## 9. Contatos e acessos
 
 | Recurso | Onde | Quem tem acesso |
 | :--- | :--- | :--- |

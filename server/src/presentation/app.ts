@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getCloudCatalog } from "../domain/services/cloudCatalog";
 import { getLaborProfile, laborProfiles, licenseCatalog } from "../domain/services/catalogs";
+import { getEnrichedLaborProfiles, resumirCobertura } from "../domain/services/laborBenchmark";
 import { searchCloudServiceDefinitions, type CloudProvider } from "../domain/services/cloudServiceCatalog";
 import { computeLaborRate } from "../domain/services/laborPricing";
 import { getMarketBenchmarkHistory, searchMarketBenchmark } from "../domain/services/marketBenchmark";
@@ -412,15 +413,28 @@ export function createApiRouter(): Router {
   router.use("/labor", requirePermission("LABOR"));
   router.use("/market-benchmark", requirePermission("LABOR"));
 
-  router.get("/labor/profiles", (_req, res) => {
+  // `uf` opcional recorta o benchmark: com "SP", perfis que tenham observacao paulista usam a
+  // mediana de SP; sem amostra local, cai para a nacional.
+  router.get("/labor/profiles", async (req, res) => {
+    const uf = typeof req.query.uf === "string" && req.query.uf.trim() ? req.query.uf.trim().toUpperCase() : null;
+    const profiles = await getEnrichedLaborProfiles({ uf });
+    const cobertura = resumirCobertura(profiles);
+
+    // A fonte descreve a cobertura REAL, perfil a perfil, em vez de um rotulo fixo. Antes daqui
+    // este bloco dizia "CAGED / MTE" com status FALLBACK_STALE para todo mundo -- o usuario lia
+    // "CAGED" numa tela cujos numeros nunca tinham vindo do CAGED.
+    const temDadoReal = cobertura.comDadoReal > 0;
     res.json({
-      profiles: laborProfiles,
+      profiles,
+      coverage: cobertura,
       source: {
         name: "CAGED / MTE",
-        status: "FALLBACK_STALE",
-        source: "STATIC_SNAPSHOT",
-        timestamp: laborProfiles[0]?.updatedAt ?? new Date().toISOString(),
-        warning: "Ingestão real do CAGED ainda pendente; perfis usam snapshot parametrizado de CBOs de tecnologia.",
+        status: temDadoReal ? "OPERATIONAL" : "FALLBACK_STALE",
+        source: temDadoReal ? "CAGED_MICRODADOS" : "STATIC_SNAPSHOT",
+        timestamp: profiles.find((p) => p.observed)?.updatedAt ?? laborProfiles[0]?.updatedAt ?? new Date().toISOString(),
+        warning: temDadoReal
+          ? `${cobertura.comDadoReal} de ${cobertura.total} perfis com salário observado no CAGED (competência ${cobertura.competencia}). Os demais seguem com estimativa do catálogo — a CBO 2002 não tem ocupação correspondente, ou o perfil é PJ (o CAGED cobre apenas vínculo CLT).`
+          : "Ingestão do CAGED ainda não rodou neste ambiente; perfis usam snapshot parametrizado de CBOs de tecnologia.",
         data: null,
       },
     });

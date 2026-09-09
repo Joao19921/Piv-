@@ -19,17 +19,19 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Observabilidade externa | Implementado | Sentry (error tracking) + UptimeRobot (uptime) + keep-alive do Supabase via cron externo — ver [REQUISITOS-INFRA.md](docs/REQUISITOS-INFRA.md#observabilidade-gratuita-sentry--uptimerobot). |
 | Ambiente de teste | Implementado | Docker + Render Free + login com sessao, RBAC e tela propria do produto. URL real: `https://pivo-i8m3.onrender.com`. |
 | Identidade visual no produto | Implementado | Tela inicial e hero da visao geral usam os assets em `client/public/brand/`, derivados das referencias em `docs/assets/identidade-visual/`. Layout validado para mobile, desktop, 4K e 8K sem overflow horizontal. |
-| CAGED ao vivo | Pendente | MTE so disponibiliza microdados via FTP (sem API); hoje aparece como snapshot/fallback. |
+| CAGED ao vivo | Implementado | Ingestao mensal dos microdados do PDET/MTE (FTP, `.7z`) via GitHub Actions; salario CLT observado por CBO/UF com P25/mediana/P75 e n amostral, aplicado em `/labor/profiles`. Ver [RUNBOOK](docs/RUNBOOK.md#8-enriquecimento-de-dados-o-que-foi-feito-e-o-que-falta). |
 | MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
 | Multiusuario | Implementado | Login por e-mail/senha com usuarios em Postgres, troca obrigatoria de senha inicial, perfis ADMIN/USER e permissoes por modulo. Decisao de produto: nao havera modulo de "Propostas". |
 
 ## Stack
 
-- Frontend: React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, TanStack Query, Recharts.
+- Frontend: React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui (Radix), TanStack Query, React Hook Form + Zod, Framer Motion.
 - Backend: Node.js, Express, TypeScript.
 - Arquitetura: camadas inspiradas em Clean Architecture (`domain`, `infrastructure`, `presentation`).
 - Build: Vite para o cliente e esbuild para o servidor.
 - Deploy: Dockerfile unico; recomendado Render Free para testes.
+
+A stack completa — versoes, o porque de cada escolha, as oito fontes de dados com estado e cadencia, e a infraestrutura provedor a provedor — esta em [docs/RUNBOOK.md](docs/RUNBOOK.md#2-stack-da-solução).
 
 ## Como Rodar Localmente
 
@@ -56,6 +58,7 @@ pnpm run build    # Build de producao em dist/
 pnpm run start    # Roda o build em modo producao
 pnpm run format   # Prettier
 pnpm run migrate  # Aplica as migrations pendentes (ver "Banco De Dados" abaixo)
+pnpm run ingest:caged -- --dry-run  # Ingestao do CAGED (exige curl e 7z no PATH)
 pnpm test         # Suite automatizada (exige um Postgres de teste -- ver "Testes" abaixo)
 ```
 
@@ -126,6 +129,8 @@ Configuracao necessaria no GitHub (Settings > Secrets and variables > Actions):
 - Secret `RENDER_DEPLOY_HOOK_URL` — sem ele o job de deploy avisa e passa sem publicar.
 - Variable `PRODUCTION_URL` (ex.: `https://pivo-i8m3.onrender.com`) — sem ela o smoke test
   pos-deploy avisa e e pulado.
+- Secret `DATABASE_URL` — usado pelo workflow mensal de ingestao do CAGED
+  ([ingest-caged.yml](.github/workflows/ingest-caged.yml)). Sem ele so o `dry_run` roda.
 
 Atualizacao de dependencias e automatizada pelo [Dependabot](.github/dependabot.yml)
 (npm, GitHub Actions e Docker).

@@ -2,6 +2,41 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — CBO corrigido no catálogo e CAGED ligado na tela de Mão de obra
+
+Fecha a Fase 2: o salário observado no CAGED passa a aparecer no produto, no lugar da estimativa parametrizada.
+
+### O pré-requisito: o campo `cbo` não era um CBO
+
+Antes de ligar o dado, era preciso corrigir a chave de junção. O campo `cbo` de `catalogs.ts` funcionava como **agrupamento grosseiro**, não como classificação: `2124-05` carregava dez cargos distintos (BI, UX/UI, Negócios, Testes, Métricas, Administrador de SO, Analista de suporte…), `2124-15` carregava Cientista de Dados, Engenheiro de IA, Arquiteto de Dados e DBA juntos, e `1425-10` carregava os quatro gerentes — sendo que infraestrutura, projetos, segurança e suporte têm código próprio na CBO.
+
+Ligar o CAGED nesse campo daria **o salário de desenvolvedor para o designer de UX**.
+
+Conferidos os títulos oficiais família a família (1425, 2123, 2124, 3171), **66 dos 73 perfis tiveram o CBO corrigido**. Dois erros estruturais no meio: "Administrador de banco de dados" estava em `2124-15` quando pertence a `2123-05` — família diferente, Administradores de TI, não Analistas —, e os quatro gerentes compartilhavam `1425-10`.
+
+A decisão mais importante foi sobre o que **não** mapear. 36 perfis ficaram com `cbo: null`: Cientista de Dados, Engenheiro de IA, Analista de UX/UI, Scrum Master, Especialista em Cloud, Arquiteto de Dados, Analista de BI e outros simplesmente não existem na CBO 2002 — a classificação é de 2002. Escolher um código "próximo" produziria um número plausível e infundado, que num produto cujo propósito é sustentar estimativa auditável é pior do que a ausência de número. O tipo virou `cbo: string | null` para que a ausência seja explícita, não um valor de fachada.
+
+### A junção
+
+Novo `laborBenchmark.ts` combina o catálogo estático com `salary_observations`. O catálogo continua sendo a lista de cargos que o produto conhece (título, senioridade, Fator K, regime); o que muda é a origem do **número**: onde há observação real para o CBO do perfil, a remuneração passa a ser a mediana registrada, com dispersão e tamanho de amostra; onde não há, a estimativa permanece, marcada como tal.
+
+Duas regras não negociáveis, ambas cobertas por teste:
+
+1. **Só perfil CLT recebe dado do CAGED.** O CAGED é o cadastro de emprego formal — por definição, vínculo celetista. Aplicar a mediana dele num perfil PJ misturaria duas coisas que o mercado precifica de formas diferentes. O lado PJ virá do PNCP.
+2. **Perfil sem CBO não recebe nada**, pelo motivo acima.
+
+`/labor/profiles` aceita `?uf=SP` para recortar o benchmark, com degradação de município → UF → nacional, e passou a devolver `coverage` com a contagem real de perfis com dado observado. O bloco `source` da resposta descreve a cobertura de verdade em vez de um rótulo fixo — antes ele dizia "CAGED / MTE" com status `FALLBACK_STALE` para todo mundo, ou seja, o usuário lia "CAGED" numa tela cujos números nunca tinham vindo do CAGED.
+
+Do catálogo de 73 perfis: 35 elegíveis (CLT com CBO) em 13 CBOs distintos, 36 sem CBO, 3 PJ.
+
+### Nada disso derruba a tela
+
+Se o Postgres não estiver configurado, ou estiver fora, `getEnrichedLaborProfiles` devolve o catálogo estático como sempre foi — mesmo padrão de degradação que o resto do app usa com fonte externa indisponível. Benchmark degradado é melhor que tela quebrada.
+
+### Runbook ganhou a stack completa
+
+A pedido: nova seção 2 documentando linguagem e runtime (e por que o bump de major do Node é manual), frontend, backend com a árvore de diretórios e a regra de camadas, as oito fontes de dados com estado e cadência de cada uma, a infraestrutura provedor a provedor — registrando que **o custo fixo é zero**, o que também explica as limitações aceitas — e o ferramental de desenvolvimento. A seção 8 foi reescrita para separar o que já está entregue do que falta, com o PNCP detalhado como próximo passo e a nota de que ele é pipeline, não coletor.
+
 ## 2026-09-09 — Fase 2: CAGED ingerido de verdade, e o que o dado real revelou
 
 Primeira fonte salarial **observada** do Pivô. Até aqui o benchmark saía de `laborProfiles`, 73 perfis hardcoded em `catalogs.ts` marcados `sourceStatus: "FALLBACK_STALE"` e declarando `benchmarkSource: "CAGED/MTE - snapshot tecnologia"` — a tela já dizia ao usuário que a fonte era o CAGED, mas o CAGED nunca havia sido ingerido.
