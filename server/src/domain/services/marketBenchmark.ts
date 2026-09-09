@@ -43,7 +43,12 @@ export interface MarketBenchmarkHistoryEntry extends MarketBenchmarkResult {
   id: string;
 }
 
-const HISTORY_CACHE_KEY = "market-benchmark-history";
+/** Chave por usuario: o cache em arquivo (fallback quando nao ha Postgres) tinha uma chave
+ * global unica, entao no modo sem banco o historico tambem era compartilhado entre todo mundo
+ * -- o mesmo vazamento que a migration 0007 corrige no lado do Postgres. */
+function historyCacheKey(userId: string): string {
+  return `market-benchmark-history-u${userId}`;
+}
 const BENCHMARK_CACHE_VERSION = "v4";
 const REQUEST_TIMEOUT_MS = 8_000;
 
@@ -187,37 +192,37 @@ async function fetchLiveBenchmark(input: MarketBenchmarkInput): Promise<MarketBe
   return { ...data, sourceMode: "LIVE_CONNECTOR", generatedAt: data.generatedAt ?? new Date().toISOString() };
 }
 
-async function readHistory(): Promise<MarketBenchmarkHistoryEntry[]> {
+async function readHistory(userId: string): Promise<MarketBenchmarkHistoryEntry[]> {
   if (isDatabaseConfigured) {
     try {
-      return await listRecentBenchmarkSearches();
+      return await listRecentBenchmarkSearches(userId);
     } catch (err) {
       logger.error("Falha ao ler historico de benchmark do Postgres; usando cache em arquivo", { error: err instanceof Error ? err.message : String(err) });
     }
   }
-  return readCache<MarketBenchmarkHistoryEntry[]>(HISTORY_CACHE_KEY)?.data ?? [];
+  return readCache<MarketBenchmarkHistoryEntry[]>(historyCacheKey(userId))?.data ?? [];
 }
 
 /** Persiste a busca (Postgres quando configurado; cache em arquivo como fallback) e devolve a entrada com id. */
-async function saveHistoryEntry(result: MarketBenchmarkResult): Promise<MarketBenchmarkHistoryEntry> {
+async function saveHistoryEntry(result: MarketBenchmarkResult, userId: string): Promise<MarketBenchmarkHistoryEntry> {
   if (isDatabaseConfigured) {
     try {
-      const id = await insertBenchmarkSearch(result);
+      const id = await insertBenchmarkSearch(result, userId);
       return { ...result, id };
     } catch (err) {
       logger.error("Falha ao gravar historico de benchmark no Postgres; usando cache em arquivo", { error: err instanceof Error ? err.message : String(err) });
     }
   }
   const entry: MarketBenchmarkHistoryEntry = { ...result, id: `${Date.now()}-${slugify(result.roleSearched)}` };
-  const existing = readCache<MarketBenchmarkHistoryEntry[]>(HISTORY_CACHE_KEY)?.data ?? [];
+  const existing = readCache<MarketBenchmarkHistoryEntry[]>(historyCacheKey(userId))?.data ?? [];
   writeCache(
-    HISTORY_CACHE_KEY,
+    historyCacheKey(userId),
     [entry, ...existing.filter((item) => item.roleSearched !== entry.roleSearched || item.city !== entry.city || item.state !== entry.state)].slice(0, 50),
   );
   return entry;
 }
 
-export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promise<ResilienceResult<MarketBenchmarkResult>> {
+export async function searchMarketBenchmark(input: MarketBenchmarkInput, userId: string): Promise<ResilienceResult<MarketBenchmarkResult>> {
   const role = input.role.trim();
   if (!role) {
     return {
@@ -250,7 +255,7 @@ export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promis
   // não deve fazer o analista esperar nem arriscar que uma escrita lenta no Postgres derrube a
   // resposta da busca (e, com ela, o resultado que já foi computado com sucesso).
   if (result.data) {
-    saveHistoryEntry(result.data).catch((err) => {
+    saveHistoryEntry(result.data, userId).catch((err) => {
       logger.error("Falha ao salvar historico de benchmark", { error: err instanceof Error ? err.message : String(err) });
     });
   }
@@ -258,6 +263,6 @@ export async function searchMarketBenchmark(input: MarketBenchmarkInput): Promis
   return result;
 }
 
-export async function getMarketBenchmarkHistory(): Promise<MarketBenchmarkHistoryEntry[]> {
-  return readHistory();
+export async function getMarketBenchmarkHistory(userId: string): Promise<MarketBenchmarkHistoryEntry[]> {
+  return readHistory(userId);
 }

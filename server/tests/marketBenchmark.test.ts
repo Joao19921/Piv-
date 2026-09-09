@@ -18,15 +18,20 @@ async function loginCookie(email: string): Promise<string> {
 
 let laborCookie: string;
 let noPermCookie: string;
+let outroLaborCookie: string;
 
 beforeAll(async () => {
   const laborId = await insertUser({ name: "Benchmark Labor", email: `benchmark-labor${EMAIL_DOMAIN}`, passwordHash: hashPassword(PASSWORD), role: "USER", status: "ACTIVE", permissions: ["LABOR"] });
   await updateUserPassword(laborId, hashPassword(PASSWORD), false);
   const noPermId = await insertUser({ name: "Benchmark Sem Permissao", email: `benchmark-noperm${EMAIL_DOMAIN}`, passwordHash: hashPassword(PASSWORD), role: "USER", status: "ACTIVE", permissions: [] });
   await updateUserPassword(noPermId, hashPassword(PASSWORD), false);
+  // Segundo usuario com LABOR: existe so para provar que um nao ve o historico do outro.
+  const outroLaborId = await insertUser({ name: "Benchmark Outro Labor", email: `benchmark-outro${EMAIL_DOMAIN}`, passwordHash: hashPassword(PASSWORD), role: "USER", status: "ACTIVE", permissions: ["LABOR"] });
+  await updateUserPassword(outroLaborId, hashPassword(PASSWORD), false);
 
   laborCookie = await loginCookie(`benchmark-labor${EMAIL_DOMAIN}`);
   noPermCookie = await loginCookie(`benchmark-noperm${EMAIL_DOMAIN}`);
+  outroLaborCookie = await loginCookie(`benchmark-outro${EMAIL_DOMAIN}`);
 });
 
 afterAll(async () => {
@@ -37,7 +42,7 @@ afterAll(async () => {
   // nada apaga uma busca recem-feita nesse intervalo.
   await new Promise((resolve) => setTimeout(resolve, 500));
   await query("test_cleanup.delete_benchmark_searches", `delete from market_benchmark_searches where role_searched = any($1)`, [
-    ["Teste automatizado de benchmark", "Consultor SAP FI/CO senior automatizado", "Desenvolvedor Backend automatizado"],
+    ["Teste automatizado de benchmark", "Consultor SAP FI/CO senior automatizado", "Desenvolvedor Backend automatizado", "Cargo privado do usuario A"],
   ]);
   // Prefixo proprio (nao o dominio inteiro): outro arquivo de teste roda em paralelo (mesmo
   // worker pool do vitest) e tambem usa @test.pivo.internal -- um DELETE por dominio inteiro
@@ -107,5 +112,36 @@ describe("POST /market-benchmark/search", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.hasDirectMatch).toBe(true);
+  });
+});
+
+describe("GET /market-benchmark/history", () => {
+  // Regressao (vazamento horizontal): a rota fazia `order by generated_at desc limit 50` sem
+  // filtro nenhum, e a tabela nem tinha coluna de dono -- entao qualquer usuario com LABOR via
+  // as buscas de todos os outros, incluindo o campo `notes`, que e texto livre onde o analista
+  // cola nome de cliente e contexto da negociacao. Ver migration 0007.
+  it("nao expoe a busca de um usuario no historico de outro", async () => {
+    const cargoPrivado = "Cargo privado do usuario A";
+
+    const busca = await request(app)
+      .post("/api/v1/market-benchmark/search")
+      .set("Cookie", laborCookie)
+      .send({ role: cargoPrivado, state: "SP", city: "São Paulo", notes: "Proposta confidencial do cliente X" });
+    expect(busca.status).toBe(200);
+
+    // O historico e gravado em fire-and-forget (nao bloqueia a resposta da busca), entao a
+    // leitura logo abaixo precisa esperar a escrita em segundo plano terminar.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const historicoDoDono = await request(app).get("/api/v1/market-benchmark/history").set("Cookie", laborCookie);
+    expect(historicoDoDono.status).toBe(200);
+    expect(historicoDoDono.body.entries.some((e: { roleSearched: string }) => e.roleSearched === cargoPrivado)).toBe(true);
+
+    const historicoDoOutro = await request(app).get("/api/v1/market-benchmark/history").set("Cookie", outroLaborCookie);
+    expect(historicoDoOutro.status).toBe(200);
+    expect(historicoDoOutro.body.entries.some((e: { roleSearched: string }) => e.roleSearched === cargoPrivado)).toBe(false);
+    // E nao basta nao vazar aquele cargo: o outro usuario nao deve ver NENHUMA busca alheia.
+    const notasAlheias = historicoDoOutro.body.entries.map((e: { notes?: string }) => e.notes ?? "");
+    expect(notasAlheias.some((n: string) => n.includes("Proposta confidencial"))).toBe(false);
   });
 });

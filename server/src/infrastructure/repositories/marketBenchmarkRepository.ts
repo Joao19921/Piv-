@@ -24,13 +24,13 @@ interface SourceRow {
   observation: string;
 }
 
-export async function insertBenchmarkSearch(result: MarketBenchmarkResult): Promise<string> {
+export async function insertBenchmarkSearch(result: MarketBenchmarkResult, userId: string): Promise<string> {
   const [row] = await query<{ id: string }>(
     "market_benchmark_searches.insert",
-    `insert into market_benchmark_searches (role_searched, state, city, notes, suggested_monthly_compensation, source_mode, summary, generated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+    `insert into market_benchmark_searches (role_searched, state, city, notes, suggested_monthly_compensation, source_mode, summary, generated_at, user_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      returning id`,
-    [result.roleSearched, result.state, result.city, result.notes ?? null, result.suggestedMonthlyCompensation, result.sourceMode, result.summary, result.generatedAt],
+    [result.roleSearched, result.state, result.city, result.notes ?? null, result.suggestedMonthlyCompensation, result.sourceMode, result.summary, result.generatedAt, userId],
   );
 
   if (result.sources.length) {
@@ -53,14 +53,20 @@ export async function insertBenchmarkSearch(result: MarketBenchmarkResult): Prom
   return row.id;
 }
 
-export async function listRecentBenchmarkSearches(limit = 50): Promise<MarketBenchmarkHistoryEntry[]> {
+/**
+ * Historico de UM usuario. O filtro por `user_id` nao e opcional: sem ele esta consulta
+ * devolvia a busca de todo mundo para qualquer pessoa com a permissao LABOR (ver a migration
+ * 0007). Buscas anteriores a essa migration tem user_id null e nao aparecem para ninguem.
+ */
+export async function listRecentBenchmarkSearches(userId: string, limit = 50): Promise<MarketBenchmarkHistoryEntry[]> {
   const searches = await query<SearchRow>(
-    "market_benchmark_searches.list_recent",
+    "market_benchmark_searches.list_recent_by_user",
     `select id, role_searched, state, city, notes, suggested_monthly_compensation, source_mode, summary, generated_at
      from market_benchmark_searches
+     where user_id = $1
      order by generated_at desc
-     limit $1`,
-    [limit],
+     limit $2`,
+    [userId, limit],
   );
   if (!searches.length) return [];
 

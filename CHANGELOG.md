@@ -2,6 +2,18 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — Correção de vazamento: histórico de benchmark era compartilhado entre todos os usuários
+
+Achado da auditoria de segurança/compliance, não relatado por usuário — encontrado lendo o código.
+
+**O problema**: `GET /api/v1/market-benchmark/history` devolvia as 50 buscas mais recentes de **todos** os usuários para **qualquer** usuário com a permissão `LABOR`. A consulta em `marketBenchmarkRepository.listRecentBenchmarkSearches()` era um `order by generated_at desc limit 50` sem filtro nenhum, e a tabela `market_benchmark_searches` nem tinha coluna de dono — não havia como filtrar. Como o campo `notes` é texto livre, onde o analista naturalmente cola nome de cliente e contexto da negociação, na prática todo mundo com `LABOR` enxergava para quem os colegas estavam precificando. É vazamento horizontal entre usuários do mesmo nível, o tipo que RBAC por módulo não pega: os dois usuários têm legitimamente a mesma permissão, o que não deviam ter é acesso ao dado um do outro.
+
+**Correção**: migration `0007` adiciona `user_id` em `market_benchmark_searches` (FK para `users`, `on delete set null`) mais índice `(user_id, generated_at desc)`; a consulta passa a filtrar por dono e a rota passa `req.user!.id` (garantido pelo `requireAuth` global + `requirePermission("LABOR")`). O mesmo vazamento existia no caminho sem Postgres: o cache em arquivo usava uma chave global única (`market-benchmark-history`), agora derivada por usuário.
+
+**Decisões que vale registrar**: (1) buscas anteriores à migration ficam com `user_id` null e deixam de aparecer para qualquer pessoa — na dúvida sobre quem é o dono, ninguém vê; as linhas permanecem no banco para não perder histórico de uso agregado. (2) ADMIN **não** vê o histórico dos outros. Seria fácil abrir essa exceção, mas ela recriaria o mesmo vazamento com outro nome; se virar necessidade de produto, deve ser uma tela explícita e auditada, não um efeito colateral do papel.
+
+Coberto por teste de regressão em `server/tests/marketBenchmark.test.ts`: usuário A faz uma busca com `notes` sensível, e o teste exige que ela apareça no histórico de A e **não** apareça no de B — outro usuário com a mesma permissão `LABOR`.
+
 ## 2026-09-08 — Fase 0 de engenharia: pipeline versionado, testes no CI, gate de segurança e runner de migrations
 
 Auditoria do repositório pedida pelo usuário ("veja se já construímos testes automatizados, de SI e compliance, e também esteira de CI/CD") antes de avaliar uma proposta de scraping de benchmark salarial. O levantamento achou quatro buracos de processo que tornavam qualquer evolução arriscada — todos corrigidos aqui.

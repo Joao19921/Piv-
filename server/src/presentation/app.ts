@@ -441,17 +441,24 @@ export function createApiRouter(): Router {
     // toSourceView adiciona "name": sem isso, o parse() do schema no cliente falha sempre (campo
     // obrigatorio ausente) e a busca aparece como erro genérico mesmo quando o resultado (com
     // fallback estático) foi computado e salvo no histórico com sucesso.
-    const result = await searchMarketBenchmark({
-      role,
-      state: typeof state === "string" ? state : undefined,
-      city: typeof city === "string" ? city : undefined,
-      notes: typeof notes === "string" ? notes : undefined,
-    });
+    // req.user existe garantido: requireAuth (global) + requirePermission("LABOR") acima.
+    const result = await searchMarketBenchmark(
+      {
+        role,
+        state: typeof state === "string" ? state : undefined,
+        city: typeof city === "string" ? city : undefined,
+        notes: typeof notes === "string" ? notes : undefined,
+      },
+      req.user!.id,
+    );
     res.json(toSourceView("Benchmark salarial", result));
   });
 
-  router.get("/market-benchmark/history", async (_req, res) => {
-    res.json({ entries: await getMarketBenchmarkHistory() });
+  // Historico do proprio usuario, nunca o de todos: `notes` e texto livre onde o analista cola
+  // nome de cliente/contexto da negociacao, e antes da migration 0007 esta rota devolvia as 50
+  // buscas mais recentes de qualquer pessoa com a permissao LABOR.
+  router.get("/market-benchmark/history", async (req, res) => {
+    res.json({ entries: await getMarketBenchmarkHistory(req.user!.id) });
   });
 
   router.use("/licenses", requirePermission("LICENSES"));
