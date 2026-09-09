@@ -125,7 +125,7 @@ Tudo o que o Pivô usa, e **por que** — não só a lista.
 > (`embla-carousel-react`, `cmdk`, `vaul`, `input-otp`) que geram PR de atualização
 > indefinidamente e ampliam a superfície. Três já foram removidos por terem quebrado o build ou
 > carregado vulnerabilidade: `resizable`, `chart` (recharts) e `calendar` (react-day-picker).
-> Ver pendência 9c.
+> Ver pendência 11.
 
 ### Backend
 
@@ -414,14 +414,28 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 7 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |
 | 8 | **Deploy da Lambda é manual**, de máquina de dev, sem IaC | Sem revisão, sem estado, sem drift detection | Terraform/SAM + job no CI |
 | 9 | **Sem teste no cliente** (0 arquivos) | Regressão de UI só aparece em produção | Vitest + Testing Library |
-| 9b | **A suíte depende de APIs externas ao vivo** | Testes que batem em `/system-health` chamam BACEN/Azure/PNCP de verdade; latência do runner já quebrou o build sem nada errado no código | Injetar/stubar os coletores; hoje mitigado só com `testTimeout: 30s` |
-| 9c | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
-| 9d | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
-| 10 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
-| ~~1b~~ | ~~**Migration em produção é passo manual**~~ | Resolvido em 2026-09-09: o job `deploy` aplica as pendentes antes de publicar, e falha aborta o deploy | — |
-| ~~4b~~ | ~~**Secret `DATABASE_URL` ausente no GitHub**~~ | Configurado em 2026-09-09; ingestão gravando | — |
-| ~~4c~~ | ~~**`catalogs.ts` usa `cbo` como agrupamento**~~ | Resolvido em 2026-09-09: 66 dos 73 perfis tiveram o CBO corrigido; cargos sem ocupação na CBO 2002 ficaram com `cbo: null` | — |
-| ~~11~~ | ~~**CAGED nunca foi ingerido de verdade**~~ | Resolvido em 2026-09-09: pipeline validado contra a competência 202607 (4,4 M linhas, 14.405 admissões, 81 recortes) e ligado em `/labor/profiles` | Concluído: 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
+| 10 | **A suíte depende de APIs externas ao vivo** | Testes que batem em `/system-health` chamam BACEN/Azure/PNCP de verdade; latência do runner já quebrou o build sem nada errado no código | Injetar/stubar os coletores; hoje mitigado só com `testTimeout: 30s` |
+| 11 | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
+| 12 | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
+| 13 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
+
+### Resolvidas nesta frente de trabalho
+
+Mantidas aqui porque o **motivo** de cada uma continua valendo como referência — três das quatro
+só apareceram depois de causar dano real.
+
+| O que era | Como fechou |
+| :--- | :--- |
+| **Migration em produção era passo manual** — as `0007`, `0008` e `0009` ficaram pendentes com o código já no ar, e o app degradou em silêncio porque os caminhos afetados são defensivos | O job `deploy` aplica as pendentes antes de publicar; falha aborta o deploy |
+| **Secret `DATABASE_URL` ausente no GitHub** — a ingestão mensal não tinha onde gravar | Configurado; ingestão gravando |
+| **`catalogs.ts` usava `cbo` como agrupamento, não como CBO** — `2124-05` carregava dez cargos distintos; o join do CAGED daria salário de desenvolvedor ao designer de UX | 66 dos 73 perfis com o CBO corrigido contra a classificação oficial; os 36 cargos que a CBO 2002 não prevê ficaram com `cbo: null`, sem código inventado |
+| **CAGED nunca havia sido ingerido** — o catálogo declarava `benchmarkSource: "CAGED/MTE"` sobre números que nunca vieram do CAGED | Pipeline mensal em produção: 4,4 M linhas processadas, 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
+
+--- | :--- | :--- |
+| 1b | **Migration em produção é passo manual** | Resolvido em 2026-09-09: o job `deploy` aplica as pendentes antes de publicar, e falha aborta o deploy | — |
+| 4b | **Secret `DATABASE_URL` ausente no GitHub** | Configurado em 2026-09-09; ingestão gravando | — |
+| 4c | **`catalogs.ts` usa `cbo` como agrupamento** | Resolvido em 2026-09-09: 66 dos 73 perfis tiveram o CBO corrigido; cargos sem ocupação na CBO 2002 ficaram com `cbo: null` | — |
+| 11 | **CAGED nunca foi ingerido de verdade** | Resolvido em 2026-09-09: pipeline validado contra a competência 202607 (4,4 M linhas, 14.405 admissões, 81 recortes) e ligado em `/labor/profiles` | Concluído: 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
 
 ---
 
@@ -495,7 +509,7 @@ ligado — é o ponto de entrada natural para a busca livre por cargo/UF/cidade,
 | Produção | `https://pivo-i8m3.onrender.com` | — |
 | Render | painel do serviço `pivo` | só quem tem a conta |
 | Supabase | projeto `pivo` (sa-east-1) | idem |
-| AWS | conta **pessoal** do time, us-east-1 | idem — ver pendência #8 |
+| AWS | conta **pessoal** do time, us-east-1 | idem — ver pendência 8 |
 | Sentry | `agentanalisedegoverno.sentry.io`, projeto `pivo` | — |
 | UptimeRobot | monitor de `/api/v1/healthz` | — |
 | cron-job.org | keep-alive do Supabase, 1x/dia | — |
