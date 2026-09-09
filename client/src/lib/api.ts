@@ -156,22 +156,58 @@ export async function priceCloudService(serviceId: string, params: { region: str
   return z.object({ pricing: servicePricingSchema }).parse(await res.json()).pricing;
 }
 
+/** Uma fonte que sustentou o valor de um perfil: amostra (CAGED) ou tabela publicada (SISP). */
+const observedSalarySchema = z.object({
+  source: z.enum(["CAGED", "SISP"]),
+  sourceUrl: z.string(),
+  competencia: z.string(),
+  uf: z.string().nullable(),
+  /** null em fonte publicada, que divulga o valor sem expor a amostra. */
+  nAmostra: z.number().nullable(),
+  /** Qual ponto da distribuição sustentou o valor, dada a senioridade do perfil. */
+  percentilAplicado: z.enum(["p25", "mediana", "p75"]).nullable(),
+  p25: z.number().nullable(),
+  mediana: z.number(),
+  p75: z.number().nullable(),
+});
+export type ObservedSalary = z.infer<typeof observedSalarySchema>;
+
 const laborProfileSchema = z.object({
   id: z.string(),
   title: z.string(),
   seniority: z.enum(["Júnior", "Pleno", "Sênior", "Especialista"]),
-  cbo: z.string(),
+  // nullable: a CBO 2002 é de 2002 e não tem ocupação para Cientista de Dados, Engenheiro de IA,
+  // UX/UI nem Scrum Master. Esses perfis vêm com null em vez de um código inventado.
+  cbo: z.string().nullable(),
   employmentModel: z.enum(["CLT", "PJ"]),
   monthlyCompensation: z.number(),
   factorK: z.number(),
   benchmarkSource: z.string(),
-  sourceStatus: z.literal("FALLBACK_STALE"),
+  // Deixou de ser sempre FALLBACK_STALE: perfis cobertos pelo CAGED vêm OPERATIONAL. Manter o
+  // literal aqui quebrava o parse e derrubava a tela inteira de Mão de obra.
+  sourceStatus: z.enum(["OPERATIONAL", "FALLBACK_STALE"]),
   updatedAt: z.string(),
+  /** Fonte de mercado (CAGED) que sustentou o valor, quando houver. */
+  observed: observedSalarySchema.optional(),
+  /** Referência oficial (Portaria SGD/MGI) para o mesmo perfil. Não substitui o valor de
+   * mercado: aparece ao lado dele, e a divergência entre os dois costuma ser o argumento. */
+  referenciaOficial: observedSalarySchema.optional(),
 });
 export type LaborProfile = z.infer<typeof laborProfileSchema>;
 
-const laborProfilesResponseSchema = z.object({
+/** Exportado para o teste de contrato em server/tests/laborProfilesContract.test.ts, que valida
+ * a resposta REAL do servidor contra este schema -- foi a divergencia silenciosa entre os dois
+ * que derrubou a tela quando `cbo` virou nullable e `sourceStatus` deixou de ser literal. */
+export const laborProfilesResponseSchema = z.object({
   profiles: z.array(laborProfileSchema),
+  /** Quantos perfis têm dado observado, para a tela dizer a cobertura real em vez de um rótulo fixo. */
+  coverage: z
+    .object({
+      total: z.number(),
+      comDadoReal: z.number(),
+      competencia: z.string().nullable(),
+    })
+    .optional(),
   source: apiSourceResultSchema(z.null()),
 });
 export type LaborProfilesResponse = z.infer<typeof laborProfilesResponseSchema>;

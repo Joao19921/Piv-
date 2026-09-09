@@ -2,6 +2,25 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — Schema do cliente rejeitava a resposta nova, e roadmap atualizado
+
+Fui atualizar o roadmap, conferi se a tela consumia os campos novos, e encontrei coisa pior: **o schema zod do cliente rejeitava a resposta que o servidor passou a devolver.**
+
+```
+cbo: z.string()                            <- servidor manda null em 36 perfis
+sourceStatus: z.literal("FALLBACK_STALE")  <- servidor manda OPERATIONAL em 33
+```
+
+Qualquer um dos dois faz o `parse()` falhar e derruba a tela inteira de Mão de obra. Introduzi nos commits que tornaram `cbo` nullable e ligaram o CAGED, e passou porque **não há teste no cliente** — a pendência 9 do runbook, agora com custo concreto.
+
+É a **terceira vez** que este projeto quebra por divergência de schema zod entre servidor e cliente: já aconteceu com Licenças/Mão de obra em produção e com o campo `name` ausente em market-benchmark. Duas vezes é coincidência; três é padrão, e padrão pede teste, não atenção.
+
+**Novo `server/tests/laborProfilesContract.test.ts`**: importa o schema do *cliente* e valida a resposta *real* do servidor contra ele. É exatamente o teste que faltava — o servidor estava certo, o cliente estava certo isoladamente, e ninguém comparava os dois. Afirma explicitamente os dois formatos que quebraram, para não regredirem.
+
+**Roadmap reescrito.** Estava defasado: três dos sete itens já tinham sido resolvidos ou descartados. Agora tem três blocos — entregue, próximo (ordenado por valor) e avaliado/descartado com o motivo, para ninguém repetir o esforço do PNCP ou do scraping.
+
+O item 1 do "próximo" é uma entrega incompleta minha, e está nomeada como tal: a API devolve `observed`, `referenciaOficial` e `coverage`, mas a tela ignora os três. O dado mais valioso que o produto tem hoje está escondido atrás da API.
+
 ## 2026-09-09 — SISP como fonte oficial ao lado do mercado, e por que o PNCP ficou de fora
 
 O plano era construir o coletor do PNCP como fonte do lado PJ. A sondagem derrubou o plano, e a alternativa acabou entregando mais.

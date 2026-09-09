@@ -285,15 +285,64 @@ docker run --rm -p 3000:3000 \
   pivo:test
 ```
 
-## Roadmap Tecnico
+## Roadmap
 
-1. Ligar ingestao real de CAGED/MTE (exige pipeline de download/parse dos microdados via FTP, sem API disponivel).
-2. Expandir o PNCP de checagem de saude para preco de referencia por item (hoje so prova que a API esta no ar).
-3. Trocar snapshots AWS/GCP por coletores dedicados.
-4. ~~Persistir simulacoes/propostas em Postgres~~ — decisao de produto: nao havera modulo de propostas; a unica persistencia por nome e a arquitetura de cloud salva (ja implementado).
-5. Implementar MCP server para consumo por assistentes.
-6. Criar pipeline CI/CD quando o token GitHub tiver escopo `workflow`.
-7. Trocar o preco de catalogo (estimado) dos servicos alem de compute por preco real. Azure ja feito (Storage/SQL/Load Balancer/Functions, ao vivo via Azure Retail Prices API — ver CHANGELOG.md). GCP e AWS ainda pendentes: exigem estender a ingestao periodica da Lambda (nao dá pra chamar ao vivo por requisicao do app web, mesmo motivo do compute — custo/credencial).
+Direção de **produto**. A dívida de engenharia e operação vive em
+[docs/RUNBOOK.md](docs/RUNBOOK.md#7-pendências-conhecidas), com 14 pendências ordenadas por risco.
+
+### Entregue
+
+| | Estado |
+| :--- | :--- |
+| **Ingestão real do CAGED/MTE** | Lote mensal no GitHub Actions: baixa o `.7z` do FTP do PDET, filtra os CBOs de TI e agrega P25/mediana/P75 por CBO e UF. Validado na competência 2026-07 — 4,4 M linhas, 14.405 admissões, 84 recortes gravados |
+| **SISP como fonte oficial** | As Portarias SGD/MGI deixaram de ser rótulo `FALLBACK_STALE` e viraram fonte com proveniência navegável, ao lado do valor de mercado |
+| **Esteira de CI/CD** | 4 jobs com gate real; deploy aplica migrations em produção e valida que o commit do push subiu |
+| **Mapeamento de CBO corrigido** | 66 dos 73 perfis; cargos que a CBO 2002 não prevê ficaram sem código, em vez de receber um "próximo" |
+| **Preço ao vivo Azure** | Storage, SQL, Load Balancer e Functions via Azure Retail Prices API |
+| ~~Persistir propostas em Postgres~~ | Decisão de produto: não haverá módulo de propostas. A única persistência por nome é a arquitetura de cloud salva |
+
+### Próximo, em ordem de valor
+
+1. **Mostrar a divergência mercado × oficial na tela.** A API já devolve `observed` (CAGED),
+   `referenciaOficial` (SISP) e `coverage`; a tela de Mão de obra ainda ignora os três. O dado
+   mais valioso que o produto tem hoje não está visível: a tabela oficial **superprecifica
+   suporte e redes em ~40%** e **subprecifica banco de dados e gerência em 20-42%** frente ao que
+   o mercado paga. É o argumento que sustenta uma negociação, e está escondido atrás da API.
+
+2. **Conferir a Portaria SGD/MGI nº 5.921/2026.** Ela atualizou a nº 1.070/2023, e os valores de
+   infraestrutura no catálogo ainda vêm da nº 6.055/2025 — podem estar superados. Exige ler o
+   anexo novo, atualizar `catalogs.ts` e rodar `pnpm run ingest:sisp`.
+
+3. **Busca livre por cargo, UF e cidade.** O hook `MARKET_BENCHMARK_CONNECTOR_URL` está escrito
+   em `marketBenchmark.ts` desde o começo e nunca foi ligado. Com `salary_observations`
+   populado, ele passa a ter o que servir — inclusive o cache de 10 dias previsto no desenho
+   original.
+
+4. **RAIS anual** para recorte por **município**. O CAGED mensal só sustenta amostra por UF; a
+   RAIS é bem maior e permitiria descer ao município sem violar a amostra mínima. Mesmo FTP,
+   arquivo bem mais pesado.
+
+5. **IBGE / SIDRA (PNAD Contínua).** Cobriria parte dos **36 perfis sem CBO** — Cientista de
+   Dados, Engenheiro de IA, UX/UI, Scrum Master —, que hoje seguem só com estimativa por não
+   existirem na CBO 2002. API pública, ainda não sondada.
+
+6. **Convenções coletivas (Sistema Mediador/MTE).** Piso legal por sindicato e UF. Numa
+   negociação costuma ser o argumento decisivo, e nenhuma das fontes atuais o cobre.
+
+7. **Preço real para GCP e AWS fora de compute.** Hoje é catálogo estimado com fonte explícita.
+   Exige estender a ingestão da Lambda — não dá para chamar ao vivo por requisição, mesmo motivo
+   do compute (custo e credencial).
+
+8. **MCP server** para consumo por assistentes. Previsto no PRD original, nunca implementado.
+
+### Avaliado e descartado
+
+Registrado para não se repetir o esforço.
+
+| | Por quê |
+| :--- | :--- |
+| **Scraping de Glassdoor/Indeed** | Os termos de uso proíbem, e a proposta previa contornar CAPTCHA com sessão persistida — burla de controle de acesso. O agravante: o Pivô estima custo para contratação pública, onde a fonte precisa ser citável num processo. "Raspagem não autorizada" não sustenta estimativa diante de TCU/CGU |
+| **PNCP como preço de referência por item** | Sondado contra a API real: só **0,63%** das contratações são TI *e* mão de obra (achá-las exigiria varrer ~275 mil por trimestre); a API **bloqueia** após algumas centenas de chamadas; a unidade de medida não é padronizada (`UND SERVIÇO T`, não `POSTO`/`HORA`/`UST`), então os valores não se comparam entre si; e a descrição não identifica cargo nem senioridade. Detalhes e medições em [RUNBOOK §8](docs/RUNBOOK.md). Só faria sentido reabrir se o PNCP passar a oferecer filtro por objeto ou dump em lote |
 
 ## Licenca
 
