@@ -27,6 +27,21 @@ function sign(value: string, secret: string): string {
   return crypto.createHmac("sha256", secret).update(value).digest("base64url");
 }
 
+/**
+ * Comparacao em tempo constante. O `!==` que existia aqui antes para quando encontra o primeiro
+ * byte diferente, entao o tempo de resposta varia conforme quantos bytes iniciais da assinatura
+ * o atacante ja acertou -- e um oraculo que permite forjar um cookie byte a byte, sem conhecer
+ * o SESSION_SECRET. Exploracao pela rede e dificil (o ruido costuma cobrir a diferenca), mas o
+ * custo de fechar e uma linha.
+ */
+function signatureMatches(expected: string, received: string): boolean {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(received);
+  // timingSafeEqual exige buffers do mesmo tamanho; o tamanho da assinatura nao e segredo.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 /** userId como string (o driver pg devolve bigint como string p/ nao perder precisao). */
 export function createSessionCookieValue(userId: string, ttlMs: number = SESSION_TTL_MS): string {
   const expiresAt = String(Date.now() + ttlMs);
@@ -41,7 +56,7 @@ export function readSessionUserId(cookieValue: string | undefined): string | nul
   if (parts.length !== 3) return null;
   const [userId, expiresAt, signature] = parts;
   const payload = `${userId}.${expiresAt}`;
-  if (sign(payload, getSessionSecret()) !== signature) return null;
+  if (!signatureMatches(sign(payload, getSessionSecret()), signature)) return null;
   const expiresAtMs = Number(expiresAt);
   if (!Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs) return null;
   return userId || null;

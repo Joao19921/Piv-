@@ -11,6 +11,7 @@ import { isDatabaseConfigured } from "./src/infrastructure/db/client";
 import { logger } from "./src/infrastructure/observability/logger";
 import { attachUser } from "./src/presentation/authMiddleware";
 import { createApiRouter } from "./src/presentation/app";
+import { applySecurityHeaders } from "./src/presentation/securityHeaders";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,14 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   const isProduction = process.env.NODE_ENV === "production";
+
+  // O Render coloca o app atras de um proxy: sem isto, req.ip e o IP do proxy para todo mundo,
+  // e o rate limit do login (express-rate-limit, em authRoutes) derrubaria o time inteiro junto
+  // com o atacante. "1" = confia em exatamente um hop; confiar em toda a cadeia permitiria a
+  // qualquer cliente forjar X-Forwarded-For e escapar do limite.
+  app.set("trust proxy", 1);
+
+  applySecurityHeaders(app, { isProduction });
 
   // Sem banco nao ha usuarios possiveis (RBAC e todo persistido no Postgres) -- app.use
   // condicional aqui evita atrasar toda requisicao com uma consulta que sempre falharia.

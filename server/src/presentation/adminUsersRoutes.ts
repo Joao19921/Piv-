@@ -1,6 +1,8 @@
 import express, { type Router } from "express";
 import { PERMISSION_CODES, type PermissionCode, type Role, type UserStatus } from "../domain/services/authorization";
+import { validatePassword } from "../domain/services/passwordPolicy";
 import { hashPassword } from "../infrastructure/auth/password";
+import { recordAuditEvent } from "../infrastructure/repositories/auditRepository";
 import { emailExists, insertUser, listUsers, setUserStatus, updateUser, type UserWithPermissions } from "../infrastructure/repositories/userRepository";
 import { requireRole } from "./authMiddleware";
 
@@ -47,8 +49,16 @@ export function createAdminUsersRouter(): Router {
       res.status(400).json({ error: "Informe um e-mail válido." });
       return;
     }
-    if (typeof password !== "string" || password.length < 8) {
-      res.status(400).json({ error: "A senha inicial precisa ter pelo menos 8 caracteres." });
+    if (typeof password !== "string") {
+      res.status(400).json({ error: "A senha inicial é obrigatória." });
+      return;
+    }
+    // Mesma politica da troca de senha (passwordPolicy): antes eram duas regras `length >= 8`
+    // separadas, com textos diferentes -- a senha inicial definida pelo admin ficava livre para
+    // ser "12345678", justo a que o usuario mais tende a manter.
+    const policy = validatePassword(password, { name: typeof name === "string" ? name : undefined, email: typeof email === "string" ? email : undefined });
+    if (!policy.ok) {
+      res.status(400).json({ error: `Senha inicial: ${policy.error}` });
       return;
     }
     if (password !== confirmPassword) {
@@ -79,6 +89,14 @@ export function createAdminUsersRouter(): Router {
       role: role as Role,
       status: resolvedStatus,
       permissions: resolvedPermissions,
+    });
+
+    void recordAuditEvent({
+      action: "USER_CREATED",
+      actorUserId: req.user!.id,
+      targetUserId: id,
+      // Sem a senha, obviamente: a trilha registra quem criou quem, com qual acesso.
+      metadata: { email: normalizedEmail, role, status: resolvedStatus, permissions: resolvedPermissions },
     });
 
     // Senha inicial em texto puro so aparece nesta resposta -- nunca mais recuperavel depois.
@@ -120,11 +138,18 @@ export function createAdminUsersRouter(): Router {
       status: resolvedStatus,
       permissions: resolvedPermissions,
     });
+    void recordAuditEvent({
+      action: "USER_UPDATED",
+      actorUserId: req.user!.id,
+      targetUserId: req.params.id,
+      metadata: { email: normalizedEmail, role, status: resolvedStatus, permissions: resolvedPermissions },
+    });
     res.json({ ok: true });
   });
 
   router.post("/admin/users/:id/activate", async (req, res) => {
     await setUserStatus(req.params.id, "ACTIVE");
+    void recordAuditEvent({ action: "USER_ACTIVATED", actorUserId: req.user!.id, targetUserId: req.params.id });
     res.json({ ok: true });
   });
 
@@ -134,6 +159,7 @@ export function createAdminUsersRouter(): Router {
       return;
     }
     await setUserStatus(req.params.id, "INACTIVE");
+    void recordAuditEvent({ action: "USER_DEACTIVATED", actorUserId: req.user!.id, targetUserId: req.params.id });
     res.json({ ok: true });
   });
 

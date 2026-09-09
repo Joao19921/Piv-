@@ -12,6 +12,9 @@ export interface UserRow {
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
+  /** Migration 0008 — contador duravel de falhas de login. */
+  failed_login_attempts: number;
+  locked_until: string | null;
 }
 
 export interface UserWithPermissions extends UserRow {
@@ -140,4 +143,29 @@ export async function updateUserPassword(id: string, passwordHash: string, mustC
 
 export async function touchLastLogin(id: string): Promise<void> {
   await query("users.touch_last_login", `update users set last_login_at = now() where id = $1`, [id]);
+}
+
+/**
+ * Contador duravel de falhas de login (migration 0008). O bloqueio em si e decidido pelo
+ * `loginThrottle` (em memoria, uniforme para conta existente ou nao, para nao virar oraculo de
+ * enumeracao); estas colunas existem para o bloqueio SOBREVIVER a um restart do processo --
+ * o Render Free reinicia sozinho, e sem isso bastaria esperar um restart para zerar o contador.
+ */
+export async function registerFailedLogin(id: string, lockUntil: Date | null): Promise<void> {
+  await query(
+    "users.register_failed_login",
+    `update users
+        set failed_login_attempts = failed_login_attempts + 1,
+            locked_until = coalesce($2, locked_until)
+      where id = $1`,
+    [id, lockUntil],
+  );
+}
+
+export async function clearFailedLogins(id: string): Promise<void> {
+  await query(
+    "users.clear_failed_logins",
+    `update users set failed_login_attempts = 0, locked_until = null where id = $1`,
+    [id],
+  );
 }

@@ -2,6 +2,32 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — Endurecimento da autenticação: força bruta, cabeçalhos, política de senha e auditoria
+
+Fase 1 da auditoria de SI. Cinco lacunas fechadas de uma vez, todas encontradas lendo o código, nenhuma relatada por usuário.
+
+**1. Login aceitava tentativas ilimitadas.** Não havia rate limit, contador de falhas nem bloqueio de conta: com a lista de e-mails do time, dava para testar senha indefinidamente, e nada em lugar nenhum registrava a tentativa. Agora há duas camadas — rate limit por IP (`express-rate-limit`, 100 tentativas/15min) e bloqueio por conta (5 falhas consecutivas → 15 minutos travado, e nem a senha correta passa nesse intervalo).
+
+O limite por IP é alto **de propósito**: o Pivô é ferramenta corporativa e é provável que o time inteiro saia pelo mesmo IP público (NAT do escritório) — um teto baixo trancaria todo mundo junto com o atacante, virando negação de serviço contra o próprio time. Quem segura o ataque de verdade é o bloqueio por conta, que também cobre o ataque distribuído (cada IP tentando pouco).
+
+A decisão mais sutil aqui: **a contagem de falhas é feita em memória por e-mail normalizado, exista a conta ou não**. Se o bloqueio dependesse só do contador no banco, e-mail inexistente responderia 401 para sempre enquanto e-mail real passaria a responder 429 depois de 5 tentativas — e a diferença entre as duas respostas viraria um oráculo dizendo ao atacante exatamente quais e-mails existem. Há teste cobrindo isso especificamente. O contador em `users.failed_login_attempts`/`locked_until` (migration `0008`) existe em paralelo, para o bloqueio sobreviver a restart: o Render Free reinicia sozinho, e sem ele bastaria esperar um restart para zerar tudo.
+
+**2. Nenhum cabeçalho de segurança.** O app não enviava HSTS, `nosniff`, proteção de clickjacking nem `Referrer-Policy`, e ainda anunciava `x-powered-by: Express` (o próprio `docs/REQUISITOS-INFRA.md` usava esse header como confirmação de deploy). Adicionado `helmet`, num módulo próprio (`securityHeaders.ts`) chamado tanto por `server/index.ts` quanto pelo `testApp` dos testes — se a suíte montasse uma pilha diferente da de produção, uma regressão aqui passaria batido justamente nos testes que existem para pegá-la.
+
+A CSP entra em **report-only**, deliberadamente, como primeira etapa de um rollout em duas fases: Radix e Framer Motion aplicam estilo inline o tempo todo, e não dá para afirmar que uma CSP em modo bloqueio não quebra a tela sem exercitar o app num navegador real. Report-only envia a mesma política e apenas relata a violação. Migrar para modo bloqueio está registrado como próximo passo no runbook.
+
+**3. Assinatura de sessão comparada com `!==`.** A comparação para no primeiro byte diferente, então o tempo de resposta varia conforme quantos bytes o atacante já acertou — um oráculo que permite forjar cookie byte a byte sem conhecer o `SESSION_SECRET`. Explorar isso pela rede é difícil (o ruído costuma cobrir a diferença), mas o custo de fechar era uma linha: agora usa `crypto.timingSafeEqual`.
+
+**4. Política de senha era `length >= 8`,** duplicada em dois lugares com textos diferentes — e a senha inicial definida pelo admin, justo a que o usuário mais tende a manter, ficava livre para ser "12345678". Novo `passwordPolicy.ts` centraliza a regra nos dois pontos: mínimo de 10 caracteres, letras combinadas com número ou símbolo, variedade mínima de caracteres, bloqueio de senhas óbvias e de senha derivada do próprio nome/e-mail. Segue a linha do NIST SP 800-63B, inclusive em **não** exigir expiração periódica, que leva o usuário a rotacionar "Senha1" → "Senha2".
+
+Duas decisões de calibragem valem registro. (a) A comparação com a lista de senhas óbvias é por igualdade — e por "sem os dígitos do fim", para pegar `senha123` — e **não** por "contém": `contém "senha"` reprovaria "MinhaSenhaForte!2026", que é uma senha boa, e treinaria o usuário a burlar a regra. (b) A checagem do nome compara cada parte separadamente, não o nome inteiro: escrever o teste revelou que a primeira versão deixava passar "JoaoHenrique2026" para o usuário "Joao Henrique", porque a senha não tem o espaço do meio.
+
+**5. A tabela `audit_logs` nunca teve uma única escrita.** Existia desde a migration `0006` com o comentário "preparado para auditoria futura (... só no login)" — nem a de login chegou a ser implementada. Agora é alimentada de verdade: login bem-sucedido, login negado, bloqueio de conta, tentativa em conta inativa, troca de senha e todas as ações administrativas sobre usuários (criar, editar, ativar, desativar). Duas regras valem para todo evento: nunca gravar segredo (senha, hash ou cookie não entram no `metadata`), e nunca derrubar a operação auditada se a gravação falhar — auditoria que quebra a funcionalidade vira incentivo para alguém desligá-la.
+
+**Corrigido no caminho**: o `tsconfig.json` não definia `target`, então o `tsc` checava tudo com semântica **ES5** apesar de `module: ESNext`, `lib: esnext` e o código rodar em Node 22. Só apareceu porque o código novo usa `\p{...}` com flag `u` e iteração de `Map`. Definido `target: ES2022`.
+
+Cobertura nova: `server/tests/passwordPolicy.test.ts` (12 casos), `server/tests/loginThrottle.test.ts` (7 casos) e, em `auth.test.ts`, testes de integração para bloqueio por força bruta, ausência de oráculo de enumeração e presença dos cabeçalhos de segurança.
+
 ## 2026-09-09 — Correção de vazamento: histórico de benchmark era compartilhado entre todos os usuários
 
 Achado da auditoria de segurança/compliance, não relatado por usuário — encontrado lendo o código.

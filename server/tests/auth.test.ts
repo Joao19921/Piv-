@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hashPassword } from "../src/infrastructure/auth/password";
 import { closePool, query } from "../src/infrastructure/db/client";
 import { insertUser, updateUserPassword, type CreateUserInput } from "../src/infrastructure/repositories/userRepository";
+import { MAX_FAILED_ATTEMPTS } from "../src/infrastructure/auth/loginThrottle";
 import { buildTestApp } from "./testApp";
 
 const app = buildTestApp();
@@ -41,6 +42,9 @@ beforeAll(async () => {
   inactiveEmail = `rbac-inactive${EMAIL_DOMAIN}`;
   await createReadyUser({ name: "Inativo", email: inactiveEmail, role: "USER", status: "INACTIVE", permissions: ["LABOR"] });
   deactivatableUserId = await createReadyUser({ name: "Desativavel", email: `rbac-deactivatable${EMAIL_DOMAIN}`, role: "USER", status: "ACTIVE", permissions: ["LABOR"] });
+  // Usuario exclusivo do teste de bloqueio: ele termina o teste com a conta travada, entao nao
+  // pode ser reaproveitado por nenhum outro caso.
+  await createReadyUser({ name: "Alvo Bruteforce", email: `rbac-bruteforce${EMAIL_DOMAIN}`, role: "USER", status: "ACTIVE", permissions: ["LABOR"] });
 
   adminCookie = await loginCookie(`rbac-admin${EMAIL_DOMAIN}`);
   noPermCookie = await loginCookie(`rbac-noperm${EMAIL_DOMAIN}`);
@@ -212,5 +216,68 @@ describe("primeiro acesso (troca obrigatoria de senha)", () => {
 
     const allowed = await request(app).get("/api/v1/system-health").set("Cookie", cookie);
     expect(allowed.status).toBe(200);
+  });
+});
+
+describe("protecao contra forca bruta no login", () => {
+  // Antes disso o login aceitava tentativas ilimitadas: sem rate limit, sem contador de falhas
+  // e sem bloqueio. Com a lista de e-mails do time, dava para testar senha indefinidamente e
+  // nada em lugar nenhum registrava a tentativa.
+  it("bloqueia a conta depois de MAX_FAILED_ATTEMPTS falhas e recusa ate a senha certa", async () => {
+    const email = `rbac-bruteforce${EMAIL_DOMAIN}`;
+
+    for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) {
+      const res = await request(app).post("/api/v1/auth/login").send({ email, password: "chute-errado" });
+      expect(res.status).toBe(401);
+    }
+
+    const queFecha = await request(app).post("/api/v1/auth/login").send({ email, password: "chute-errado" });
+    expect(queFecha.status).toBe(429);
+
+    // O ponto do bloqueio: nem a senha correta passa enquanto ele durar. Sem isso, o atacante
+    // que acertasse a senha na tentativa seguinte entraria assim mesmo.
+    const comSenhaCerta = await request(app).post("/api/v1/auth/login").send({ email, password: PASSWORD });
+    expect(comSenhaCerta.status).toBe(429);
+  });
+
+  // Se e-mail inexistente respondesse sempre 401 enquanto um real passasse a responder 429, a
+  // diferenca entre as duas respostas diria ao atacante exatamente quais contas existem.
+  it("trata e-mail inexistente igual a um existente (sem oraculo de enumeracao)", async () => {
+    const inexistente = `rbac-nao-existe-mesmo${EMAIL_DOMAIN}`;
+
+    for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i++) {
+      const res = await request(app).post("/api/v1/auth/login").send({ email: inexistente, password: "chute-errado" });
+      expect(res.status).toBe(401);
+    }
+    const queFecha = await request(app).post("/api/v1/auth/login").send({ email: inexistente, password: "chute-errado" });
+    expect(queFecha.status).toBe(429);
+  });
+
+  it("a mensagem de erro nao revela se o e-mail existe", async () => {
+    const existente = await request(app).post("/api/v1/auth/login").send({ email: `rbac-labor${EMAIL_DOMAIN}`, password: "chute-errado" });
+    const inexistente = await request(app).post("/api/v1/auth/login").send({ email: `rbac-fantasma${EMAIL_DOMAIN}`, password: "chute-errado" });
+    expect(existente.status).toBe(401);
+    expect(inexistente.status).toBe(401);
+    expect(existente.body.error).toBe(inexistente.body.error);
+  });
+});
+
+describe("cabecalhos de seguranca", () => {
+  // O app nao enviava nenhum cabecalho de seguranca e ainda anunciava a stack no x-powered-by.
+  it("envia os cabecalhos do helmet e nao expoe x-powered-by", async () => {
+    const res = await request(app).get("/api/v1/healthz");
+    expect(res.status).toBe(200);
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["x-frame-options"]).toBeDefined();
+    expect(res.headers["referrer-policy"]).toBeDefined();
+    expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+
+  // CSP entra em duas fases: report-only primeiro, para descobrir o que Radix/Framer Motion
+  // violam de verdade, e so depois em modo bloqueio. Ver securityHeaders.ts.
+  it("envia a CSP em modo report-only por enquanto", async () => {
+    const res = await request(app).get("/api/v1/healthz");
+    expect(res.headers["content-security-policy-report-only"]).toContain("default-src 'self'");
+    expect(res.headers["content-security-policy"]).toBeUndefined();
   });
 });
