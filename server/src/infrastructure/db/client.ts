@@ -24,9 +24,39 @@ export const isDatabaseConfigured = Boolean(connectionString);
  * automaticamente, e DATABASE_SSL=disable/require permite forcar os dois lados quando a
  * deteccao por host nao servir.
  */
-export function resolveSslConfig(url: string | undefined): { rejectUnauthorized: boolean } | false {
+export interface DbSslConfig {
+  rejectUnauthorized: boolean;
+  ca?: string;
+}
+
+/**
+ * Quando `DATABASE_CA_CERT` traz o certificado raiz em PEM, a conexao passa a VERIFICAR a
+ * identidade do servidor (`rejectUnauthorized: true`) em vez de apenas criptografar. E o unico
+ * jeito de fechar de fato a exposicao a um MITM ativo entre o app e o banco.
+ *
+ * Fica em variavel de ambiente, e nao versionado no repositorio, de proposito: o CA da Supabase
+ * tem validade e e rotacionado: um .crt commitado vira uma bomba-relogio que derruba producao
+ * no dia da troca, com um erro de TLS que ninguem relaciona com um arquivo esquecido no repo.
+ * Onde pegar: Supabase Dashboard > Project Settings > Database > SSL Configuration >
+ * "Download certificate". Ver docs/RUNBOOK.md.
+ */
+function certificateAuthority(): string | undefined {
+  const pem = process.env.DATABASE_CA_CERT?.trim();
+  if (!pem) return undefined;
+  // Permite colar o PEM com "\n" literais, que e como ele sobrevive a um campo de env var de
+  // uma linha so nos paineis do Render e da AWS Lambda.
+  return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
+}
+
+export function resolveSslConfig(url: string | undefined): DbSslConfig | false {
   if (process.env.DATABASE_SSL === "disable") return false;
-  if (process.env.DATABASE_SSL === "require") return { rejectUnauthorized: false };
+
+  const ca = certificateAuthority();
+  // Com o CA em maos, verifica a identidade do servidor. Sem ele, mantem o comportamento
+  // historico: criptografado, mas sem verificacao -- ver o comentario acima.
+  const secure: DbSslConfig = ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: false };
+
+  if (process.env.DATABASE_SSL === "require") return secure;
   if (!url) return false;
   try {
     const host = new URL(url).hostname;
@@ -35,7 +65,7 @@ export function resolveSslConfig(url: string | undefined): { rejectUnauthorized:
     // Connection string em formato nao-URL (ex.: "host=... dbname=..."): mantem o padrao
     // seguro (TLS ligado) em vez de adivinhar.
   }
-  return { rejectUnauthorized: false };
+  return secure;
 }
 
 let pool: Pool | null = null;

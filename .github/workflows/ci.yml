@@ -151,26 +151,45 @@ jobs:
           fi
           curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
 
-      # O deploy hook responde na hora, antes do build do Render terminar -- sem esta etapa
-      # ninguem descobre um deploy que subiu quebrado a nao ser abrindo o app na mao.
-      - name: Smoke test pós-deploy (/healthz)
+      # Espera a versao DESTE push estar no ar, e nao so "o servico esta de pe".
+      #
+      # O deploy hook do Render responde na hora, muito antes do build terminar. A primeira
+      # versao deste passo so checava HTTP 200 e passava em 3 segundos -- acertando a instancia
+      # ANTIGA, que obviamente estava saudavel. Comparar o commit publicado em /healthz
+      # (RENDER_GIT_COMMIT, injetada pelo Render) com github.sha e o que torna o smoke test uma
+      # verificacao de verdade.
+      - name: Smoke test pós-deploy (versão publicada)
         env:
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           if [ -z "$PRODUCTION_URL" ]; then
             echo "Variavel PRODUCTION_URL nao definida (Settings > Secrets and variables > Actions > Variables)."
             echo "Sem ela nao da pra validar o deploy automaticamente. Pulando."
             exit 0
           fi
-          echo "Aguardando $PRODUCTION_URL/api/v1/healthz responder 200 (ate 10 min)..."
-          for attempt in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$PRODUCTION_URL/api/v1/healthz" || echo "000")
-            if [ "$code" = "200" ]; then
-              echo "OK: /healthz respondeu 200 na tentativa $attempt."
+
+          echo "Aguardando $PRODUCTION_URL publicar o commit $EXPECTED_COMMIT (ate 12 min)..."
+          for attempt in $(seq 1 72); do
+            body=$(curl -s --max-time 20 "$PRODUCTION_URL/api/v1/healthz" || echo "")
+            deployed=$(printf '%s' "$body" | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+            if [ "$deployed" = "$EXPECTED_COMMIT" ]; then
+              echo "OK: o commit $EXPECTED_COMMIT esta no ar (tentativa $attempt)."
               exit 0
             fi
-            echo "  tentativa $attempt: HTTP $code"
+
+            # "unknown" = versao antiga, publicada antes de /healthz passar a expor o commit.
+            # Nesse caso nao da para comparar; aceita 200 como suficiente so nesta transicao.
+            if [ "$deployed" = "unknown" ]; then
+              echo "AVISO: a instancia no ar e anterior a este campo em /healthz; aceitando 200 desta vez."
+              exit 0
+            fi
+
+            echo "  tentativa $attempt: commit publicado = '${deployed:-sem resposta}'"
             sleep 10
           done
-          echo "FALHOU: /healthz nao respondeu 200 em 10 minutos apos o deploy."
+
+          echo "FALHOU: $PRODUCTION_URL nao publicou o commit $EXPECTED_COMMIT em 12 minutos."
+          echo "Verifique o build no painel do Render."
           exit 1

@@ -131,8 +131,14 @@ export function createApiRouter(): Router {
   router.use(express.json());
 
   // Health check leve para orquestradores (Render, etc.): não toca fontes externas nem exige login.
+  //
+  // `commit` existe para o smoke test pós-deploy do CI poder afirmar que a versão NOVA subiu.
+  // Sem ele o smoke test só provava que "o serviço está de pé": o deploy hook do Render responde
+  // na hora, muito antes de o build terminar, então a primeira chamada acertava a instância
+  // ANTIGA — que estava saudável — e o job passava sem ter verificado nada do que subiu.
+  // `RENDER_GIT_COMMIT` é injetada pelo próprio Render; fora dele o campo vem "unknown".
   router.get("/healthz", (_req, res) => {
-    res.json({ status: "ok" });
+    res.json({ status: "ok", commit: process.env.RENDER_GIT_COMMIT ?? "unknown" });
   });
 
   // Login por e-mail/senha (RBAC): rotas de sessão, sempre acessíveis sem estar autenticado.

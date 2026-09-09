@@ -2,7 +2,7 @@
 
 Pivo e uma aplicacao full-stack para precificacao de projetos de TI. A solucao consolida custos de mao de obra, infraestrutura cloud, cambio, licencas SaaS e benchmark salarial em uma interface unica, sempre mostrando a origem e o estado de confiabilidade de cada dado.
 
-O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md).
+O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md); o documento operacional (o que esta no ar, como opera e o que fazer quando quebra) esta em [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## O Que Existe Hoje
 
@@ -114,7 +114,7 @@ quatro jobs; o deploy so acontece se os tres primeiros passarem:
 | `build` | `pnpm run check` (type-check) + `pnpm run build` | Sim |
 | `test` | Sobe Postgres 17 efemero, aplica as migrations e roda `pnpm test` | Sim |
 | `security` | gitleaks (segredos) + `pnpm audit --prod --audit-level high` (gate) + audit completo (informativo) | Sim |
-| `deploy` | Dispara o deploy hook do Render e valida `/api/v1/healthz` respondendo 200 | — |
+| `deploy` | Dispara o deploy hook do Render e espera `/api/v1/healthz` publicar o commit **deste push** | — |
 
 O gate de auditoria quebra o build em qualquer vulnerabilidade high/critical **nova** nas
 dependencias de producao. O passivo conhecido no momento em que o gate foi criado esta listado,
@@ -141,6 +141,7 @@ Veja tambem [.env.example](.env.example).
 | `APP_ENV` | Nao | Rotulo de ambiente exibido no rodape do app (ex.: "Homologacao"); nao afeta comportamento. |
 | `SESSION_SECRET` | Recomendado | Segredo usado para assinar o cookie de sessao. Gere um valor forte e mantenha entre deploys. |
 | `DATABASE_URL` | Recomendado | Postgres/Supabase para usuarios, permissoes, precos e historicos. Sem ele, parte do app usa snapshots/fallbacks, mas login multiusuario depende do banco. |
+| `DATABASE_CA_CERT` | Recomendado em prod | Certificado raiz (PEM) do Postgres. Com ele a conexão verifica a identidade do servidor (`rejectUnauthorized: true`) em vez de só criptografar. Ver [RUNBOOK](docs/RUNBOOK.md). |
 | `DATABASE_SSL` | Nao | `disable` forca conexao sem TLS (necessario com Postgres local/CI, que sobe sem SSL); `require` forca TLS. Vazio decide pelo host. |
 | `ADMIN_NAME` | Apenas seed | Nome do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
 | `ADMIN_EMAIL` | Apenas seed | E-mail do primeiro administrador ao rodar `pnpm run seed:admin`. Nao deixe configurado permanentemente. |
