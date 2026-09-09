@@ -37,3 +37,12 @@ updates:
       interval: monthly
     commit-message:
       prefix: "chore(docker)"
+    ignore:
+      # Major do Node nao pode entrar por PR automatico. A versao vive em tres lugares que
+      # precisam andar juntos (.nvmrc, ARG NODE_VERSION no Dockerfile e --target=nodeXX em
+      # build:lambda): um PR que mexe so no Dockerfile faz a gente testar num runtime e publicar
+      # noutro. Alem disso, o major mais novo costuma ser "Current", nao LTS -- producao nao e
+      # lugar de rodar release que ainda vai virar LTS. Bump de major aqui e trabalho manual e
+      # deliberado; minor/patch continuam automaticos.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

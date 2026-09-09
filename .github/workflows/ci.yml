@@ -29,7 +29,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Versao vem do .nvmrc, nao repetida aqui: a versao do Node estava declarada em
+          # quatro lugares (3x neste arquivo, 2x no Dockerfile e no --target do build:lambda),
+          # e um bump que mexesse so num deles faria a gente testar num runtime e publicar noutro.
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -77,7 +80,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Versao vem do .nvmrc, nao repetida aqui: a versao do Node estava declarada em
+          # quatro lugares (3x neste arquivo, 2x no Dockerfile e no --target do build:lambda),
+          # e um bump que mexesse so num deles faria a gente testar num runtime e publicar noutro.
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -109,7 +115,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Versao vem do .nvmrc, nao repetida aqui: a versao do Node estava declarada em
+          # quatro lugares (3x neste arquivo, 2x no Dockerfile e no --target do build:lambda),
+          # e um bump que mexesse so num deles faria a gente testar num runtime e publicar noutro.
+          node-version-file: .nvmrc
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile

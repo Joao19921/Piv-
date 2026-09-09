@@ -1,4 +1,7 @@
-FROM node:22-alpine AS build
+# Mantenha em sincronia com .nvmrc e com --target=nodeXX em build:lambda (package.json).
+ARG NODE_VERSION=22
+
+FROM node:${NODE_VERSION}-alpine AS build
 
 WORKDIR /app
 RUN corepack enable
@@ -10,7 +13,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm run build
 
-FROM node:22-alpine AS runner
+FROM node:${NODE_VERSION}-alpine AS runner
 
 WORKDIR /app
 RUN corepack enable
