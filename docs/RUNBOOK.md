@@ -266,10 +266,10 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 6 | **Sem checagem de senha vazada** | Política bloqueia senha óbvia, mas não senha real que já vazou | Integrar HaveIBeenPwned (range API, k-anonymity) |
 | 7 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |
 | 8 | **Deploy da Lambda é manual**, de máquina de dev, sem IaC | Sem revisão, sem estado, sem drift detection | Terraform/SAM + job no CI |
-| 8b | **A suíte depende de internet de saída** | `/system-health` consulta BACEN/Azure/PNCP ao vivo; sem rede, esses testes ficam lentos e dependem do fallback. `testTimeout` está em 30s por isso | Isolar os coletores por injeção de dependência nos testes de rota |
 | 9 | **Sem teste no cliente** (0 arquivos) | Regressão de UI só aparece em produção | Vitest + Testing Library |
+| 9b | **A suíte depende de APIs externas ao vivo** | Testes que batem em `/system-health` chamam BACEN/Azure/PNCP de verdade; latência do runner já quebrou o build sem nada errado no código | Injetar/stubar os coletores; hoje mitigado só com `testTimeout: 30s` |
+| 9c | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
 | 10 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
-| 10b | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Kit inteiro adicionado de uma vez; arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Decisão de produto: remover os não usados |
 | 11 | **CAGED nunca foi ingerido de verdade** | O catálogo diz `benchmarkSource: "CAGED/MTE"` mas é snapshot estático | Fase 2 — ver abaixo |
 
 ---
