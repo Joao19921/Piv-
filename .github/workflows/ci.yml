@@ -25,7 +25,7 @@ jobs:
       # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
       # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
       # com ERR_PNPM_BAD_PM_VERSION -- era o motivo de este pipeline nunca ter passado.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
@@ -73,7 +73,7 @@ jobs:
       # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
       # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
       # com ERR_PNPM_BAD_PM_VERSION -- era o motivo de este pipeline nunca ter passado.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
@@ -105,7 +105,7 @@ jobs:
       # Sem `version:` de proposito: a acao le o campo `packageManager` do package.json, que
       # fixa a versao exata + hash de integridade. Declarar nos dois lugares faz a acao abortar
       # com ERR_PNPM_BAD_PM_VERSION -- era o motivo de este pipeline nunca ter passado.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
         with:
