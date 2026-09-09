@@ -32,20 +32,45 @@ import { logger } from "../observability/logger";
 const FTP_BASE = "ftp://ftp.mtps.gov.br/pdet/microdados/NOVO%20CAGED";
 
 /**
- * CBOs 2002 de TI presentes no catalogo interno (`catalogs.ts`), sem hifen -- que e o formato do
- * proprio CAGED. Filtrar por eles derruba o volume de milhoes de linhas para dezenas de milhares
- * e e o que torna o calculo de percentil viavel em memoria.
+ * CBOs 2002 de TI, sem hifen -- que e o formato do proprio CAGED. Filtrar por eles derruba o
+ * volume de milhoes de linhas para dezenas de milhares e e o que torna o calculo de percentil
+ * viavel em memoria.
+ *
+ * Os titulos sao os OFICIAIS da CBO 2002, conferidos um a um. A primeira versao deste mapa foi
+ * escrita de cabeca e estava errada em 6 dos 9 codigos -- o erro so apareceu porque a ingestao
+ * real mostrou "Analista de suporte computacional" com mediana de R$ 15.000, acima de
+ * desenvolvimento. O numero estava certo: 2124-25 e "Arquiteto de solucoes de TI", nao suporte.
+ * Rotulo errado aqui nao quebra nada visivelmente -- so atribui salario ao cargo errado, em
+ * silencio, numa ferramenta cujo proposito e sustentar estimativa auditavel.
  */
 export const CBOS_TI: Record<string, string> = {
+  // Familia 1425 -- Gerentes de tecnologia da informacao
+  "142505": "Gerente de rede",
   "142510": "Gerente de desenvolvimento de sistemas",
-  "142515": "Gerente de suporte técnico de TI",
+  "142515": "Gerente de produção de tecnologia da informação",
+  "142520": "Gerente de projetos de tecnologia da informação",
+  "142525": "Gerente de segurança de tecnologia da informação",
+  "142530": "Gerente de suporte técnico de tecnologia da informação",
+
+  // Familia 2123 -- Administradores de TI. Fica FORA da familia 2124, detalhe que ja gerou erro
+  // no catalogo interno: "Administrador de banco de dados" estava com o CBO 2124-15, que na
+  // verdade e "Analista de sistemas de automacao".
+  "212305": "Administrador de banco de dados",
+  "212310": "Administrador de redes",
+  "212315": "Administrador de sistemas operacionais",
+
+  // Familia 2124 -- Analistas de tecnologia da informacao
   "212405": "Analista de desenvolvimento de sistemas",
-  "212410": "Analista de redes e comunicação de dados",
-  "212415": "Administrador de banco de dados",
-  "212420": "Analista de sistemas",
-  "212425": "Analista de suporte computacional",
-  "212430": "Engenheiro de software / segurança da informação",
-  "317105": "Técnico de desenvolvimento de sistemas",
+  "212410": "Analista de redes e de comunicação de dados",
+  "212415": "Analista de sistemas de automação",
+  "212420": "Analista de suporte computacional",
+  "212425": "Arquiteto de soluções de tecnologia da informação",
+  "212430": "Analista de testes de tecnologia da informação",
+
+  // Familia 3171 -- Tecnicos de desenvolvimento de sistemas e aplicacoes
+  "317105": "Programador de internet",
+  "317110": "Programador de sistemas de informação",
+  "317120": "Programador de multimídia",
 };
 
 /** Codigo IBGE de UF -> sigla. O CAGED grava a UF como codigo numerico. */
