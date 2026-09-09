@@ -117,7 +117,7 @@ quatro jobs; o deploy so acontece se os tres primeiros passarem:
 | `build` | `pnpm run check` (type-check) + `pnpm run build` | Sim |
 | `test` | Sobe Postgres 17 efemero, aplica as migrations e roda `pnpm test` | Sim |
 | `security` | gitleaks (segredos) + `pnpm audit --prod --audit-level high` (gate) + audit completo (informativo) | Sim |
-| `deploy` | Dispara o deploy hook do Render e espera `/api/v1/healthz` publicar o commit **deste push** | — |
+| `deploy` | Aplica migrations pendentes em producao, dispara o deploy hook do Render e espera `/api/v1/healthz` publicar o commit **deste push** | — |
 
 O gate de auditoria quebra o build em qualquer vulnerabilidade high/critical **nova** nas
 dependencias de producao. O passivo conhecido no momento em que o gate foi criado esta listado,

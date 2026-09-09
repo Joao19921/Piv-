@@ -147,6 +147,44 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Aplica o schema ANTES de publicar o codigo que depende dele.
+      #
+      # Sem esta etapa, migration em producao era passo manual -- e isso mordeu de verdade: as
+      # migrations 0007, 0008 e 0009 ficaram pendentes na Supabase com o codigo ja no ar. Nao
+      # quebrou visivelmente porque os caminhos afetados sao defensivos (void ... .catch,
+      # fire-and-forget, fallback para cache), entao o app degradou EM SILENCIO: bloqueio de
+      # conta sem contador duravel, auditoria sem gravar nada, historico voltando vazio.
+      #
+      # Rodar aqui e seguro por construcao: este job so existe se `test` passou, e o job de teste
+      # aplica exatamente estas migrations num Postgres virgem e roda a suite inteira em cima
+      # delas. Producao nunca ve migration que nao provou aplicar limpo.
+      #
+      # Falha aqui ABORTA o deploy de proposito: publicar codigo que espera um schema que nao
+      # subiu e precisamente o problema que esta etapa existe para evitar.
+      #
+      # CONTRATO: migration tem que ser compativel com a versao ANTERIOR do codigo, porque ela
+      # roda enquanto a versao antiga ainda esta servindo (o build do Render leva minutos).
+      # Na pratica: `add column` sim, `drop column`/`rename` so em duas etapas (expand/contract).
+      - name: Aplicar migrations pendentes em produção
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::Secret DATABASE_URL nao configurado; migrations NAO foram aplicadas."
+            echo "O deploy segue, mas o schema pode ficar defasado em relacao ao codigo."
+            exit 0
+          fi
+          pnpm run migrate
+
       - name: Disparar deploy hook do Render
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}

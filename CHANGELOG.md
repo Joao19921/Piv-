@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-09 — Deploy passa a aplicar as migrations em produção
+
+Fecha a lacuna que mordeu hoje. O CI aplicava migrations apenas no Postgres efêmero do job de teste; para produção não havia caminho automatizado — era passo manual que alguém tinha que lembrar de fazer. O resultado foi as `0007`, `0008` e `0009` ficarem pendentes na Supabase com o código já no ar.
+
+O sintoma foi pior que uma quebra: **degradou em silêncio**. Como os caminhos afetados são todos defensivos, nada apareceu na tela nem no Sentry — o bloqueio de conta ficou sem contador durável, a auditoria não gravou nada, e o histórico de benchmark voltava vazio em vez de filtrado. Um erro visível teria sido melhor.
+
+O job `deploy` agora roda `pnpm run migrate` antes de disparar o deploy hook. Duas propriedades sustentam isso: o job só existe se `test` passou, e o job de teste aplica exatamente essas migrations num Postgres virgem rodando a suíte inteira em cima delas — produção nunca vê migration que não provou aplicar limpo; e falha na aplicação **aborta o deploy**, porque publicar código que espera um schema que não subiu é precisamente o problema que a etapa resolve.
+
+**Contrato novo**: migration precisa ser compatível com a versão *anterior* do código, já que roda enquanto a versão antiga ainda está servindo (o build do Render leva minutos). `add column` sim; `drop column`, `rename` ou `not null` sem default exigem duas etapas (expand/contract) em deploys separados. Documentado no runbook.
+
 ## 2026-09-09 — CAGED gravado em produção: três problemas que só a execução real revelou
 
 A primeira ingestão com gravação (não `dry-run`) expôs coisas que nenhum teste tinha como pegar.

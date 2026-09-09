@@ -231,6 +231,17 @@ pnpm run migrate -- --baseline  # marca como aplicadas SEM executar (banco que j
 Migration aplicada é **imutável**: o runner compara checksum e recusa arquivo alterado. Para
 corrigir, crie um arquivo novo.
 
+**Em produção isso é automático desde 2026-09-09**: o job `deploy` do CI aplica as pendentes
+antes de disparar o deploy do Render, e falha na aplicação aborta o deploy. Rodar `pnpm run
+migrate` na mão contra a Supabase só é necessário fora do fluxo normal (hotfix, ou primeira
+adoção do runner num banco novo).
+
+> **Contrato que isso impõe: migration precisa ser compatível com a versão ANTERIOR do código.**
+> Ela roda enquanto a versão antiga ainda está servindo — o build do Render leva minutos. Na
+> prática: `add column` com default ou nulo, sim; `drop column`, `rename` ou `not null` sem
+> default exigem duas etapas (expand/contract) em deploys separados. Ignorar isso derruba a
+> versão em produção no intervalo entre a migration e a publicação.
+
 > **Porta do pooler muda conforme o consumidor.** Render (processo longo, pool persistente):
 > `5432` (modo Session). Lambda (uma invocação por vez): `6543` (modo Transaction). E use
 > **sempre** o pooler `aws-0-sa-east-1.pooler.supabase.com` — o host direto
@@ -407,7 +418,7 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 9c | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
 | 9d | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
 | 10 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
-| 1b | **Migration em produção é passo manual** | O CI aplica migrations só no Postgres efêmero de teste. As `0007`, `0008` e `0009` ficaram pendentes na Supabase com o código já no ar — degradou em silêncio porque os caminhos afetados são defensivos | Aplicar no job de deploy, depois dos testes passarem, com `DATABASE_URL` de produção |
+| ~~1b~~ | ~~**Migration em produção é passo manual**~~ | Resolvido em 2026-09-09: o job `deploy` aplica as pendentes antes de publicar, e falha aborta o deploy | — |
 | ~~4b~~ | ~~**Secret `DATABASE_URL` ausente no GitHub**~~ | Configurado em 2026-09-09; ingestão gravando | — |
 | ~~4c~~ | ~~**`catalogs.ts` usa `cbo` como agrupamento**~~ | Resolvido em 2026-09-09: 66 dos 73 perfis tiveram o CBO corrigido; cargos sem ocupação na CBO 2002 ficaram com `cbo: null` | — |
 | ~~11~~ | ~~**CAGED nunca foi ingerido de verdade**~~ | Resolvido em 2026-09-09: pipeline validado contra a competência 202607 (4,4 M linhas, 14.405 admissões, 81 recortes) e ligado em `/labor/profiles` | Concluído: 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
