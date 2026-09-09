@@ -267,7 +267,8 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 7 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |
 | 8 | **Deploy da Lambda é manual**, de máquina de dev, sem IaC | Sem revisão, sem estado, sem drift detection | Terraform/SAM + job no CI |
 | 9 | **Sem teste no cliente** (0 arquivos) | Regressão de UI só aparece em produção | Vitest + Testing Library |
-| 10 | **2 vulnerabilidades high aceitas** (`path-to-regexp` via express 4, `lodash` via recharts 2) | Ambas exigem entrada controlada pelo atacante que o app não expõe | express 5 / recharts 3 — majors |
+| 10 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
+| 10b | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Kit inteiro adicionado de uma vez; arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Decisão de produto: remover os não usados |
 | 11 | **CAGED nunca foi ingerido de verdade** | O catálogo diz `benchmarkSource: "CAGED/MTE"` mas é snapshot estático | Fase 2 — ver abaixo |
 
 ---

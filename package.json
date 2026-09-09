@@ -64,10 +64,8 @@
     "next-themes": "^0.4.6",
     "pg": "^8.23.0",
     "react": "^19.2.1",
-    "react-day-picker": "^9.11.1",
     "react-dom": "^19.2.1",
     "react-hook-form": "^7.87.0",
-    "recharts": "^2.15.2",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
@@ -112,10 +110,8 @@
     "auditConfig": {
       "_comment": "Passivo conhecido de `pnpm audit --prod --audit-level high`, que e o gate do CI (job 'security' em .github/workflows/ci.yml). Cada entrada precisa de motivo e caminho de saida; a lista deve encolher, nunca crescer sem justificativa no PR. Vulnerabilidade high/critical nova em dependencia de producao quebra o build de proposito.",
       "_GHSA-37ch-88jc-xwx2": "path-to-regexp (ReDoS) via express@4.21.2. Sem correcao na linha 4.x -- so o express 5 traz o path-to-regexp corrigido. Exploracao exige rota com padrao dinamico controlado pelo atacante; todas as rotas do Pivo sao estaticas. Saida: migrar para express 5.",
-      "_GHSA-r5fr-rjxr-66jc": "lodash (code injection via _.template) via recharts@2.15.4, dependencia transitiva de grafico no cliente. Exige que _.template seja chamado com template controlado pelo atacante -- o recharts nao expoe isso. Saida: recharts 3.x, que nao depende mais de lodash (major com breaking changes).",
       "ignoreGhsas": [
-        "GHSA-37ch-88jc-xwx2",
-        "GHSA-r5fr-rjxr-66jc"
+        "GHSA-37ch-88jc-xwx2"
       ]
     }
   }
