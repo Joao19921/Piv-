@@ -40,7 +40,11 @@ export interface DbSslConfig {
  * Onde pegar: Supabase Dashboard > Project Settings > Database > SSL Configuration >
  * "Download certificate". Ver docs/RUNBOOK.md.
  */
+/** Desligado pelo fallback de `ensureDatabaseTls` quando o CA configurado nao valida a cadeia. */
+let caOverride = true;
+
 function certificateAuthority(): string | undefined {
+  if (!caOverride) return undefined;
   const pem = process.env.DATABASE_CA_CERT?.trim();
   if (!pem) return undefined;
   // Permite colar o PEM com "\n" literais, que e como ele sobrevive a um campo de env var de
@@ -152,6 +156,65 @@ export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();
     pool = null;
+  }
+}
+
+/** Como a conexao acabou ficando, depois da checagem de inicializacao. */
+export type TlsVerification = "verified" | "encrypted_only" | "fallback_after_failure" | "disabled";
+let tlsVerification: TlsVerification = "encrypted_only";
+export function getTlsVerification(): TlsVerification {
+  return tlsVerification;
+}
+
+function isCertificateError(message: string): boolean {
+  return /certificate|self.signed|unable to verify|CERT_|altname/i.test(message);
+}
+
+/**
+ * Decide o modo de TLS UMA vez, na subida do processo, e nunca deixa o app no ar sem banco por
+ * causa de um certificado que nao serve.
+ *
+ * Motivado por uma queda real (10/09/2026): `DATABASE_CA_CERT` foi preenchida com o CA da conexao
+ * direta da Supabase, que nao valida a cadeia do pooler Supavisor. Com ela, `rejectUnauthorized`
+ * fica true, o handshake falha e TODA consulta morre -- o app sobe, mas login e qualquer tela com
+ * dados respondem 500, e so quem tem acesso ao painel do provedor consegue corrigir.
+ *
+ * Um controle de seguranca que derruba producao quando mal configurado, sem alternativa, e um
+ * controle mal feito. Aqui ele degrada em vez de derrubar: se o CA nao valida, a conexao volta ao
+ * modo que o app sempre usou (cifrada, sem verificacao de identidade) e o fato fica gritando no
+ * log, no Sentry e no /healthz. Ninguem fica achando que tem protecao que nao tem -- que era o
+ * unico motivo real para preferir ficar fora do ar.
+ */
+export async function ensureDatabaseTls(): Promise<void> {
+  if (!isDatabaseConfigured) return;
+
+  if (process.env.DATABASE_SSL === "disable") {
+    tlsVerification = "disabled";
+    return;
+  }
+  if (!process.env.DATABASE_CA_CERT?.trim()) {
+    tlsVerification = "encrypted_only";
+    return;
+  }
+
+  try {
+    await getPool().query("select 1");
+    tlsVerification = "verified";
+    logger.info("Conexao com o Postgres verificando a identidade do servidor (DATABASE_CA_CERT em uso).");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!isCertificateError(message)) throw err;
+
+    // Derruba o pool montado com o CA e refaz sem verificacao.
+    await closePool();
+    caOverride = false;
+    tlsVerification = "fallback_after_failure";
+    logger.error(
+      "DATABASE_CA_CERT nao valida a cadeia do servidor; conexao seguiu SEM verificacao de identidade. " +
+        "A aplicacao continua no ar, mas a protecao contra MITM que essa variavel deveria dar NAO esta ativa. " +
+        "Remova a variavel (ou troque pelo CA correto do pooler) para tirar este aviso.",
+      { error: message },
+    );
   }
 }
 

@@ -1,6 +1,6 @@
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { closePool } from "../src/infrastructure/db/client";
+import { closePool, getTlsVerification } from "../src/infrastructure/db/client";
 import { buildTestApp } from "./testApp";
 
 const app = buildTestApp();
@@ -46,5 +46,24 @@ describe("GET /healthz", () => {
   it("expoe o commit publicado, que o smoke test compara com o do push", async () => {
     const res = await request(app).get("/api/v1/healthz");
     expect(typeof res.body.commit).toBe("string");
+  });
+});
+
+describe("modo de TLS da conexao com o banco", () => {
+  // Regressao da queda de 10/09/2026: DATABASE_CA_CERT foi preenchida com o CA da conexao direta
+  // da Supabase, que nao valida a cadeia do pooler. Com rejectUnauthorized ligado, o handshake
+  // falhava e TODA consulta morria -- o app no ar, mas login e qualquer tela com dados em 500,
+  // e so quem tem acesso ao painel do provedor conseguia corrigir.
+  //
+  // O modo agora e resolvido uma vez na subida (`ensureDatabaseTls`) e um CA que nao serve faz a
+  // conexao cair para o modo sem verificacao, com aviso alto, em vez de derrubar a aplicacao.
+  it("expoe em qual modo a conexao ficou", async () => {
+    const res = await request(app).get("/api/v1/healthz");
+    expect(["verified", "encrypted_only", "fallback_after_failure", "disabled"]).toContain(res.body.db.tlsVerification);
+  });
+
+  it("o estado exposto bate com o do modulo de banco", async () => {
+    const res = await request(app).get("/api/v1/healthz");
+    expect(res.body.db.tlsVerification).toBe(getTlsVerification());
   });
 });

@@ -2,6 +2,28 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-10 — TLS do banco degrada em vez de derrubar a aplicação
+
+Correção do desenho que causou a queda, não só do sintoma.
+
+`DATABASE_CA_CERT` continuava configurada no Render com um certificado que não valida a cadeia do pooler, e eu não tenho acesso ao painel para removê-la. Mas o problema de fundo era meu: **um controle de segurança que derruba a produção quando mal configurado, sem alternativa, é um controle mal feito.**
+
+O modo de TLS passa a ser resolvido **uma vez, na subida do processo** (`ensureDatabaseTls`), antes de aceitar tráfego. Se o CA configurado não validar a cadeia, a conexão volta ao modo que o app sempre usou — cifrada, sem verificação de identidade — e o fato fica gritando no log, no Sentry e no `/healthz` (`tlsVerification: "fallback_after_failure"`).
+
+A troca é deliberada: o único motivo real para preferir ficar fora do ar seria alguém acreditar que tem proteção contra MITM sem ter. Como o estado fica visível em três lugares, esse risco não se sustenta — e ficar fora do ar, sim, é dano certo.
+
+Verificado com um CA inválido contra o banco de produção:
+
+```
+antes  : encrypted_only
+depois : fallback_after_failure
+[ERROR] DATABASE_CA_CERT nao valida a cadeia do servidor; conexao seguiu SEM
+        verificacao de identidade. A aplicacao continua no ar (...)
+healthz: {"status":"ok","latencyMs":133}
+```
+
+Com isso a produção se recupera no próximo deploy, sem depender de alguém mexer no Render — embora remover a variável continue sendo o certo, para tirar o aviso.
+
 ## 2026-09-10 — Causa raiz do login quebrado: `DATABASE_CA_CERT` inválida para o pooler
 
 O `/healthz` novo entregou o diagnóstico na primeira chamada depois do deploy:

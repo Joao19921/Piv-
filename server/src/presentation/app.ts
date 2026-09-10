@@ -13,7 +13,7 @@ import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
 import { getPendingSources } from "../infrastructure/collectors/staticFallbacks";
-import { isDatabaseConfigured, pingDatabase, type DbHealth } from "../infrastructure/db/client";
+import { getTlsVerification, isDatabaseConfigured, pingDatabase, type DbHealth } from "../infrastructure/db/client";
 import {
   deleteArchitecture,
   getArchitecture,
@@ -165,7 +165,7 @@ export function createApiRouter(): Router {
     res.json({
       status: "ok",
       commit: process.env.RENDER_GIT_COMMIT ?? "unknown",
-      db: await cachedDbHealth(),
+      db: { ...(await cachedDbHealth()), tlsVerification: getTlsVerification() },
     });
   });
 
