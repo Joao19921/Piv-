@@ -2,6 +2,31 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-10 — Login quebrado em produção: a aplicação perdeu acesso ao banco
+
+Usuário relatou que o login parou. O diagnóstico separou app de banco em quatro chamadas:
+
+| Rota | Toca banco? | Produção |
+| :--- | :--- | :--- |
+| `GET /auth/session` sem cookie | não | 200 |
+| `POST /auth/login` sem campos | não (valida antes) | 400 |
+| `POST /auth/login` com campos | **sim** | **500** |
+| `POST /auth/logout` | não | 200 |
+
+**A aplicação em produção não está conseguindo falar com o Postgres.** Não é o código: o mesmo commit, o mesmo bundle de produção e o mesmo banco respondem 401 corretamente em ambiente local, e a conexão direta ao Postgres daqui leva 246 ms com o usuário intacto (ACTIVE, hash presente, sem bloqueio). A diferença está nas variáveis de ambiente do Render — `DATABASE_CA_CERT` preenchida com PEM inválido faz o TLS exigir verificação contra um CA que não confere e derruba *toda* consulta; `DATABASE_SSL=disable` faz o pooler da Supabase recusar a conexão.
+
+### O que este commit conserta
+
+Não a causa, que depende do painel do Render — mas **o motivo de ninguém ter sabido**. O smoke test que eu construí validava `/healthz`, e `/healthz` não tocava o banco: o deploy passou verde com a aplicação inutilizável, e o problema só apareceu quando um usuário reclamou. Publicar não é o mesmo que funcionar, e essa distinção estava faltando na única etapa que existia para garanti-la.
+
+`/healthz` passa a devolver `db: { status, latencyMs, reason }`, com cache de 15s (Render e UptimeRobot batem nele o tempo todo). O **status HTTP continua 200** mesmo com o banco fora, deliberadamente: o Render usa esse endpoint como health check, e devolver erro colocaria o serviço em loop de restart justamente quando o problema está fora dele. Liveness e readiness são perguntas diferentes; a segunda virou campo, não status. O smoke test do CI lê esse campo e **falha o deploy** quando o banco está inacessível, apontando as três variáveis a conferir.
+
+### Como isso chegou em produção
+
+O PR #17 foi mergeado com o check `Typecheck + build` vermelho — aquele que eu havia comentado explicitamente para não mergear. Com o job `build` falhando, o `deploy` do CI foi **pulado**; a versão subiu mesmo assim pelo **Auto-Deploy do Render**, que publica direto do push sem esperar o CI.
+
+São as pendências 1 e 2 do runbook — branch protection e Auto-Deploy — agora com consequência concreta em vez de hipótese. O gate funcionou: marcou vermelho. O que faltou foi ele ter autoridade para barrar.
+
 ## 2026-09-09 — Schema do cliente rejeitava a resposta nova, e roadmap atualizado
 
 Fui atualizar o roadmap, conferi se a tela consumia os campos novos, e encontrei coisa pior: **o schema zod do cliente rejeitava a resposta que o servidor passou a devolver.**

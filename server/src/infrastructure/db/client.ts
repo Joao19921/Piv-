@@ -154,3 +154,43 @@ export async function closePool(): Promise<void> {
     pool = null;
   }
 }
+
+export interface DbHealth {
+  /** "ok" | "unreachable" | "not_configured" */
+  status: "ok" | "unreachable" | "not_configured";
+  latencyMs?: number;
+  /** Motivo resumido da falha. Nunca contem credencial: so a mensagem do driver. */
+  reason?: string;
+}
+
+/**
+ * Prova de vida da conexao com o Postgres, para o /healthz.
+ *
+ * Existe por causa de um incidente real: a aplicacao em producao ficou sem conseguir falar com o
+ * banco -- toda rota que consultava dava 500, enquanto /healthz seguia respondendo 200 porque
+ * nao tocava o banco. O deploy passou verde com o app inutilizavel, e ninguem soube ate um
+ * usuario relatar que o login parou.
+ *
+ * Deliberadamente NAO derruba o /healthz: o Render usa esse endpoint como health check, e
+ * devolver erro faria o servico entrar em loop de restart justamente quando o problema esta
+ * fora dele. Liveness (o processo esta de pe) e readiness (as dependencias respondem) sao
+ * perguntas diferentes; aqui a segunda vira um campo, nao um status HTTP.
+ */
+export async function pingDatabase(timeoutMs = 3_000): Promise<DbHealth> {
+  if (!isDatabaseConfigured) return { status: "not_configured" };
+
+  const startedAt = Date.now();
+  try {
+    // Promise.race em vez de statement_timeout: o custo aqui e o handshake/pool, nao a consulta,
+    // e um `select 1` pendurado nao segura recurso relevante.
+    await Promise.race([
+      getPool().query("select 1"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`sem resposta em ${timeoutMs}ms`)), timeoutMs)),
+    ]);
+    return { status: "ok", latencyMs: Date.now() - startedAt };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error("Banco inacessivel na verificacao do /healthz", { reason, latencyMs: Date.now() - startedAt });
+    return { status: "unreachable", latencyMs: Date.now() - startedAt, reason };
+  }
+}

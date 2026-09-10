@@ -215,6 +215,35 @@ jobs:
             exit 0
           fi
 
+          # Publicar nao e o mesmo que funcionar. A versao pode subir com o app inutilizavel: foi
+          # o que aconteceu quando a aplicacao perdeu acesso ao Postgres -- toda rota que
+          # consultava respondia 500 enquanto /healthz devolvia 200, porque ele nao tocava o
+          # banco. O deploy passou verde e ninguem soube ate um usuario relatar que o login parou.
+          verificar_banco() {
+            estado=$(printf '%s' "$1" | sed -n 's/.*"db"[^{]*{[^}]*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+            case "$estado" in
+              ok)
+                echo "OK: o banco responde."
+                return 0
+                ;;
+              not_configured)
+                echo "::warning::A instancia no ar esta sem DATABASE_URL. Rotas que consultam vao falhar."
+                return 0
+                ;;
+              unreachable)
+                echo "::error::A versao subiu, mas a aplicacao NAO consegue falar com o banco."
+                echo "Toda rota que consulta o Postgres responde 500 -- login inclusive."
+                echo "Verifique DATABASE_URL, DATABASE_SSL e DATABASE_CA_CERT no painel do Render."
+                return 1
+                ;;
+              *)
+                echo "::warning::A instancia no ar e anterior ao campo 'db' em /healthz; sem como verificar o banco."
+                return 0
+                ;;
+            esac
+          }
+
           echo "Aguardando $PRODUCTION_URL publicar o commit $EXPECTED_COMMIT (ate 12 min)..."
           for attempt in $(seq 1 72); do
             body=$(curl -s --max-time 20 "$PRODUCTION_URL/api/v1/healthz" || echo "")
@@ -222,7 +251,8 @@ jobs:
 
             if [ "$deployed" = "$EXPECTED_COMMIT" ]; then
               echo "OK: o commit $EXPECTED_COMMIT esta no ar (tentativa $attempt)."
-              exit 0
+              verificar_banco "$body"
+              exit $?
             fi
 
             # Aceita tambem um commit MAIS NOVO que ja contenha o nosso. Sem isso, dois pushes
@@ -232,7 +262,8 @@ jobs:
             if [ -n "$deployed" ] && git cat-file -e "${deployed}^{commit}" 2>/dev/null \
                && git merge-base --is-ancestor "$EXPECTED_COMMIT" "$deployed"; then
               echo "OK: no ar esta o commit $deployed, mais novo e que ja contem $EXPECTED_COMMIT."
-              exit 0
+              verificar_banco "$body"
+              exit $?
             fi
 
             # "unknown" = versao antiga, publicada antes de /healthz passar a expor o commit.

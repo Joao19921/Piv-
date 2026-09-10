@@ -388,6 +388,35 @@ update users set failed_login_attempts = 0, locked_until = null where email = '.
 > O contador em memória também precisa zerar. Ele expira em 15 min sozinho; um restart do
 > serviço também limpa.
 
+### "O login parou" / "toda tela dá erro, mas o app abre"
+
+**Primeira coisa a olhar**, porque distingue as duas causas em uma chamada:
+
+```bash
+curl -s https://pivo-i8m3.onrender.com/api/v1/healthz
+```
+
+- `"db":{"status":"ok"}` — o banco responde; o problema é outro.
+- `"db":{"status":"unreachable", "reason": "..."}` — **é isto**. A aplicação subiu mas não fala
+  com o Postgres. Toda rota que consulta responde 500 (login inclusive), enquanto as que não
+  consultam seguem normais — foi exatamente esse o padrão do incidente de 10/09/2026.
+
+Confirmando pelo comportamento das rotas:
+
+| Rota | Toca banco? | Se o banco caiu |
+| :--- | :--- | :--- |
+| `GET /auth/session` sem cookie | não | 200 |
+| `POST /auth/login` sem campos | não | 400 |
+| `POST /auth/login` com campos | **sim** | **500** |
+
+**Onde investigar**, em ordem: `DATABASE_CA_CERT` no Render (se preenchida com PEM errado ou
+incompleto, o TLS passa a exigir verificação contra um CA inválido e *toda* consulta falha);
+`DATABASE_SSL` (se estiver `disable`, o pooler da Supabase recusa a conexão); `DATABASE_URL`
+(host/porta/senha). O log do Render traz a linha `Consulta '...' falhou` com a mensagem do driver.
+
+Para separar app de banco, conecte direto com a mesma connection string — se o `psql`/driver
+conecta e o app não, a diferença está nas variáveis do Render, não no Postgres.
+
 ### "A API responde 500"
 
 O handler global registra tudo no Sentry (`agentanalisedegoverno.sentry.io`, projeto `pivo`).
