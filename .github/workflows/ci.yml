@@ -138,7 +138,7 @@ jobs:
   deploy:
     name: Deploy (Render)
     needs: [build, test, security]
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 traz o historico completo, necessario para o `merge-base --is-ancestor`

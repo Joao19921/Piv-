@@ -221,7 +221,7 @@ export async function fetchLaborProfiles(): Promise<LaborProfilesResponse> {
 export interface LaborEstimateParams {
   profileId?: string;
   monthlySalary: number;
-  factorK: number;
+  costsAndChargesPct: number;
   marginPct: number;
 }
 

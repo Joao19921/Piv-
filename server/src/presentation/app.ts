@@ -441,14 +441,14 @@ export function createApiRouter(): Router {
   });
 
   router.post("/labor/estimate", (req, res) => {
-    const { monthlySalary, factorK, marginPct, profileId } = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof monthlySalary !== "number" || typeof factorK !== "number" || typeof marginPct !== "number") {
-      res.status(400).json({ error: "monthlySalary, factorK e marginPct são obrigatórios e devem ser numéricos." });
+    const { monthlySalary, costsAndChargesPct, marginPct, profileId } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof monthlySalary !== "number" || typeof costsAndChargesPct !== "number" || typeof marginPct !== "number") {
+      res.status(400).json({ error: "monthlySalary, costsAndChargesPct e marginPct são obrigatórios e devem ser numéricos." });
       return;
     }
 
     const profile = typeof profileId === "string" ? getLaborProfile(profileId) : undefined;
-    res.json(computeLaborRate({ monthlySalary, factorK, marginPct, profile }));
+    res.json(computeLaborRate({ monthlySalary, costsAndChargesPct, marginPct, profile }));
   });
 
   router.post("/market-benchmark/search", async (req, res) => {

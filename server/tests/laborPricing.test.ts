@@ -7,44 +7,45 @@ import { insertUser, updateUserPassword } from "../src/infrastructure/repositori
 import { buildTestApp } from "./testApp";
 
 describe("computeLaborRate", () => {
-  it("calcula custo mensal, custo-hora e taxa sugerida (caso padrao da tela)", () => {
-    const result = computeLaborRate({ monthlySalary: 15500, factorK: 1.42, marginPct: 22 });
+  it("aplica custos, encargos e margem como percentuais adicionais", () => {
+    const result = computeLaborRate({ monthlySalary: 15500, costsAndChargesPct: 42, marginPct: 22 });
     expect(result.monthlyCost).toBeCloseTo(22010, 2);
     expect(result.billableHours).toBe(168);
     expect(result.hourlyCost).toBeCloseTo(22010 / 168, 6);
-    // taxa sugerida = custo-hora / (1 - margem) -- confere a formula de "preco pra cobrir a margem alvo"
-    expect(result.suggestedRate).toBeCloseTo(result.hourlyCost / 0.78, 6);
-    expect(result.suggestedRate).toBeCloseTo(167.96, 1);
+    expect(result.suggestedRate).toBeCloseTo(result.hourlyCost * 1.22, 6);
+    expect(result.suggestedRate).toBeCloseTo(159.83, 1);
   });
 
-  it("sem margem, a taxa sugerida e igual ao custo-hora", () => {
-    const result = computeLaborRate({ monthlySalary: 10000, factorK: 1.5, marginPct: 0 });
-    expect(result.hourlyCost).toBeCloseTo(result.suggestedRate, 6);
+  it("com custos e margem zerados, divide a remuneracao mensal por 168", () => {
+    const result = computeLaborRate({ monthlySalary: 10000, costsAndChargesPct: 0, marginPct: 0 });
+    expect(result.monthlyCost).toBe(10000);
+    expect(result.hourlyCost).toBeCloseTo(10000 / 168, 6);
+    expect(result.suggestedRate).toBeCloseTo(10000 / 168, 6);
   });
 
-  it("nunca deixa a taxa sugerida menor que o custo-hora (margem negativa e tratada como 0)", () => {
-    const result = computeLaborRate({ monthlySalary: 10000, factorK: 1.5, marginPct: -10 });
+  it("nunca deixa a taxa sugerida menor que o custo-hora (percentuais negativos sao tratados como 0)", () => {
+    const result = computeLaborRate({ monthlySalary: 10000, costsAndChargesPct: -50, marginPct: -10 });
     expect(result.suggestedRate).toBeCloseTo(result.hourlyCost, 6);
   });
 
-  it("limita a margem em 95% mesmo se o valor informado for maior", () => {
-    const a = computeLaborRate({ monthlySalary: 10000, factorK: 1.5, marginPct: 95 });
-    const b = computeLaborRate({ monthlySalary: 10000, factorK: 1.5, marginPct: 999 });
-    expect(a.suggestedRate).toBeCloseTo(b.suggestedRate, 6);
+  it("aceita percentuais acima de 100% sem distorcer a base de calculo", () => {
+    const result = computeLaborRate({ monthlySalary: 10000, costsAndChargesPct: 100, marginPct: 100 });
+    expect(result.monthlyCost).toBe(20000);
+    expect(result.suggestedRate).toBeCloseTo((20000 / 168) * 2, 6);
   });
 
-  it("salario ou fator K negativos sao tratados como 0, nao geram custo negativo", () => {
-    const result = computeLaborRate({ monthlySalary: -5000, factorK: 1.4, marginPct: 20 });
+  it("salario negativo e tratado como 0, sem gerar custo negativo", () => {
+    const result = computeLaborRate({ monthlySalary: -5000, costsAndChargesPct: 42, marginPct: 20 });
     expect(result.monthlyCost).toBe(0);
     expect(result.hourlyCost).toBe(0);
     expect(result.suggestedRate).toBe(0);
   });
 
-  it("dobrar o Fator K dobra o custo mensal e a taxa sugerida (proporcionalidade)", () => {
-    const base = computeLaborRate({ monthlySalary: 8000, factorK: 1.5, marginPct: 20 });
-    const doubled = computeLaborRate({ monthlySalary: 8000, factorK: 3, marginPct: 20 });
-    expect(doubled.monthlyCost).toBeCloseTo(base.monthlyCost * 2, 6);
-    expect(doubled.suggestedRate).toBeCloseTo(base.suggestedRate * 2, 6);
+  it("custos e encargos incidem sobre a remuneracao mensal", () => {
+    const base = computeLaborRate({ monthlySalary: 8000, costsAndChargesPct: 0, marginPct: 0 });
+    const withCosts = computeLaborRate({ monthlySalary: 8000, costsAndChargesPct: 50, marginPct: 0 });
+    expect(withCosts.monthlyCost).toBeCloseTo(base.monthlyCost * 1.5, 6);
+    expect(withCosts.suggestedRate).toBeCloseTo(base.suggestedRate * 1.5, 6);
   });
 });
 
@@ -71,10 +72,10 @@ describe("POST /labor/estimate", () => {
     const res = await request(app)
       .post("/api/v1/labor/estimate")
       .set("Cookie", laborCookie)
-      .send({ monthlySalary: 15500, factorK: 1.42, marginPct: 22 });
+      .send({ monthlySalary: 15500, costsAndChargesPct: 42, marginPct: 22 });
 
     expect(res.status).toBe(200);
-    const expected = computeLaborRate({ monthlySalary: 15500, factorK: 1.42, marginPct: 22 });
+    const expected = computeLaborRate({ monthlySalary: 15500, costsAndChargesPct: 42, marginPct: 22 });
     expect(res.body.monthlyCost).toBeCloseTo(expected.monthlyCost, 6);
     expect(res.body.hourlyCost).toBeCloseTo(expected.hourlyCost, 6);
     expect(res.body.suggestedRate).toBeCloseTo(expected.suggestedRate, 6);
@@ -85,7 +86,7 @@ describe("POST /labor/estimate", () => {
     const res = await request(app)
       .post("/api/v1/labor/estimate")
       .set("Cookie", laborCookie)
-      .send({ monthlySalary: "15.500", factorK: 1.42, marginPct: 22 });
+      .send({ monthlySalary: "15.500", costsAndChargesPct: 42, marginPct: 22 });
 
     expect(res.status).toBe(400);
   });

@@ -1,5 +1,5 @@
 /* Observatório Operacional: cockpit neo-editorial para transformar fontes dispersas em decisões de preço defensáveis. */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { hasPermission, SECTION_PATHS, useAuth, type AuthUser, type PermissionCode, type SectionId } from "@/App";
@@ -250,7 +250,7 @@ function Dashboard({
 
       <section className="mt-7">
         <div className="mb-4"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Próximas decisões</p><h2 className="mt-1 font-display text-xl font-semibold tracking-[-0.03em] text-[#333333]">Atalhos para o próximo cálculo</h2></div>
-        <div className="grid gap-4 md:grid-cols-3"><QuickAction number="01" title="Precificar mão de obra" description="CLT, PJ e Fator K em uma base comparável." icon={Users} onClick={() => onNavigate("labor")} /><QuickAction number="02" title="Simular infraestrutura" description="SKU, região e câmbio com rastreabilidade." icon={CloudCog} onClick={() => onNavigate("cloud")} /><QuickAction number="03" title="Explorar licenças" description="Catálogo SaaS por categoria e fornecedor." icon={KeyRound} onClick={() => onNavigate("licenses")} /></div>
+        <div className="grid gap-4 md:grid-cols-3"><QuickAction number="01" title="Precificar mão de obra" description="CLT, PJ, custos e encargos em uma base comparável." icon={Users} onClick={() => onNavigate("labor")} /><QuickAction number="02" title="Simular infraestrutura" description="SKU, região e câmbio com rastreabilidade." icon={CloudCog} onClick={() => onNavigate("cloud")} /><QuickAction number="03" title="Explorar licenças" description="Catálogo SaaS por categoria e fornecedor." icon={KeyRound} onClick={() => onNavigate("licenses")} /></div>
       </section>
     </>
   );
@@ -270,28 +270,24 @@ function LaborPricing() {
   const { data: historyData } = useMarketBenchmarkHistory();
   const benchmarkSearch = useMarketBenchmarkSearch();
   const profiles = catalogData?.profiles ?? [];
-  const [profileTitle, setProfileTitle] = useState("Desenvolvedor Backend");
-  const [employmentModel, setEmploymentModel] = useState<"CLT" | "PJ">("PJ");
-  const [monthlySalary, setMonthlySalary] = useState("15500");
-  const [factorK, setFactorK] = useState("1.42");
-  const [margin, setMargin] = useState("22");
-  const [benchmarkRole, setBenchmarkRole] = useState("Consultor SAP FI/CO senior");
-  const [benchmarkState, setBenchmarkState] = useState("SP");
-  const [benchmarkCity, setBenchmarkCity] = useState("São Paulo");
+  const [profileTitle, setProfileTitle] = useState("");
+  const [employmentModel, setEmploymentModel] = useState<"CLT" | "PJ">("CLT");
+  const [monthlySalary, setMonthlySalary] = useState("");
+  const [costsAndCharges, setCostsAndCharges] = useState("");
+  const [margin, setMargin] = useState("");
+  const [benchmarkRole, setBenchmarkRole] = useState("");
+  const [benchmarkState, setBenchmarkState] = useState("");
+  const [benchmarkCity, setBenchmarkCity] = useState("");
   const [benchmarkNotes, setBenchmarkNotes] = useState("");
-  const [benchmarkDismissed, setBenchmarkDismissed] = useState(false);
   const [appliedSource, setAppliedSource] = useState<MarketBenchmarkSalarySource | null>(null);
   const [appliedSourceGeneric, setAppliedSourceGeneric] = useState(false);
   const salary = parseLocaleNumber(monthlySalary);
-  const factor = parseLocaleNumber(factorK);
-  const { data: estimate, isFetching } = useLaborEstimate({ monthlySalary: salary, factorK: factor, marginPct: parseLocaleNumber(margin) });
+  const { data: estimate, isFetching } = useLaborEstimate({ monthlySalary: salary, costsAndChargesPct: parseLocaleNumber(costsAndCharges), marginPct: parseLocaleNumber(margin) });
   const monthlyCost = estimate?.monthlyCost ?? 0;
   const hourlyCost = estimate?.hourlyCost ?? 0;
   const suggestedRate = estimate?.suggestedRate ?? 0;
-  const sourceState = catalogData ? mapApiStatus(catalogData.source.status, catalogData.source.name) : "stale";
-  // benchmarkDismissed suprime o fallback pro histórico após "Limpar dados": sem isso, a última
-  // consulta salva no banco reapareceria sozinha mesmo com os campos em branco.
-  const benchmark = benchmarkDismissed ? undefined : (benchmarkSearch.data?.data ?? historyData?.entries[0]);
+  // Histórico permanece disponível, mas nunca é tratado como uma busca aberta nem preenche a tela.
+  const benchmark = benchmarkSearch.data?.data;
   const benchmarkServiceState = benchmarkSearch.data ? mapApiStatus(benchmarkSearch.data.status, benchmarkSearch.data.name) : "stale";
   const benchmarkHistory = historyData?.entries ?? [];
 
@@ -299,7 +295,7 @@ function LaborPricing() {
     setProfileTitle(profile.title);
     setEmploymentModel(profile.employmentModel);
     setMonthlySalary(String(profile.monthlyCompensation));
-    setFactorK(String(profile.factorK));
+    setCostsAndCharges(String((profile.factorK - 1) * 100));
     setAppliedSource(null);
     setAppliedSourceGeneric(false);
   };
@@ -310,7 +306,6 @@ function LaborPricing() {
       return;
     }
 
-    setBenchmarkDismissed(false);
     toast.promise(benchmarkSearch.mutateAsync({ role: benchmarkRole, state: benchmarkState, city: benchmarkCity, notes: benchmarkNotes }), {
       loading: "Buscando benchmark de mercado...",
       success: "Benchmark atualizado.",
@@ -320,18 +315,17 @@ function LaborPricing() {
 
   const handleClear = () => {
     setProfileTitle("");
-    setEmploymentModel("PJ");
+    setEmploymentModel("CLT");
     setMonthlySalary("");
-    setFactorK("");
+    setCostsAndCharges("");
     setMargin("");
     setBenchmarkRole("");
-    setBenchmarkState("SP");
+    setBenchmarkState("");
     setBenchmarkCity("");
     setBenchmarkNotes("");
     setAppliedSource(null);
     setAppliedSourceGeneric(false);
     benchmarkSearch.reset();
-    setBenchmarkDismissed(true);
     toast.success("Dados limpos. Comece uma nova busca quando quiser.");
   };
 
@@ -339,7 +333,7 @@ function LaborPricing() {
     setProfileTitle(role || source.profileTitle);
     setEmploymentModel(source.employmentModel);
     setMonthlySalary(String(source.monthlyCompensation));
-    setFactorK(String(source.factorK));
+    setCostsAndCharges(String((source.factorK - 1) * 100));
     setAppliedSource(source);
     setAppliedSourceGeneric(isGeneric);
   };
@@ -354,30 +348,17 @@ function LaborPricing() {
     );
   };
 
-  // Preenche o calculo automaticamente com a primeira fonte encontrada assim que uma busca de
-  // benchmark tem sucesso -- antes exigia clicar em "Aplicar" manualmente numa fonte da tabela.
-  // So faz isso quando o cargo teve correspondencia direta no catalogo (hasDirectMatch): aplicar
-  // sozinho uma referencia generica sem o usuario perceber e mais confuso do que util -- nesse
-  // caso o "Aplicar" manual continua disponivel, com o aviso deixando claro que nao e uma
-  // correspondencia direta.
-  useEffect(() => {
-    const result = benchmarkSearch.data?.data;
-    if (result?.sources?.length && result.hasDirectMatch !== false) {
-      fillFromBenchmarkSource(result.sources[0], result.roleSearched, false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [benchmarkSearch.data]);
-
   return <div>
-    <SectionHeading eyebrow="Módulo 02 · Laboratório" title="Mão de obra" description="Escolha um perfil profissional, revise remuneração, Fator K e margem para chegar na taxa-hora sugerida." action={<Button onClick={handleClear} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-transparent px-5 text-xs text-[#333333] hover:bg-white"><Eraser className="mr-2 h-4 w-4" /> Limpar dados</Button>} />
+    <SectionHeading eyebrow="Módulo 02 · Laboratório" title="Mão de obra" description="Comece com os campos em branco e informe remuneração, custos e encargos e margem para calcular a taxa-hora." action={<Button onClick={handleClear} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-transparent px-5 text-xs text-[#333333] hover:bg-white"><Eraser className="mr-2 h-4 w-4" /> Limpar dados</Button>} />
     <Card className="mb-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-5 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Benchmark de mercado</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Busca por cargo e localidade</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-[#658080]">Consulta o catálogo interno de perfis e retorna o salário CLT e/ou PJ correspondente ao cargo buscado, em valor bruto, sem margem, imposto ou ajuste regional nesta V1.</p></div><ServiceBadge state={benchmarkServiceState} /></div><div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px_180px]"><div><Label htmlFor="benchmark-role" className="text-xs font-semibold text-[#345555]">Cargo / perfil</Label><Input id="benchmark-role" value={benchmarkRole} onChange={(e) => setBenchmarkRole(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: Consultor SAP FI/CO senior, foco fiscal" /></div><div><Label htmlFor="benchmark-state" className="text-xs font-semibold text-[#345555]">Estado</Label><select id="benchmark-state" value={benchmarkState} onChange={(e) => setBenchmarkState(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20">{brazilStates.map(([uf, name]) => <option key={uf} value={uf}>{uf} - {name}</option>)}</select></div><div><Label htmlFor="benchmark-city" className="text-xs font-semibold text-[#345555]">Cidade</Label><Input id="benchmark-city" value={benchmarkCity} onChange={(e) => setBenchmarkCity(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="São Paulo" /></div></div><div className="mt-4"><Label htmlFor="benchmark-notes" className="text-xs font-semibold text-[#345555]">Observações</Label><Input id="benchmark-notes" value={benchmarkNotes} onChange={(e) => setBenchmarkNotes(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: espanhol, assessment de 3 a 5 meses, fiscal" /></div><div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"><Button onClick={handleBenchmarkSearch} disabled={benchmarkSearch.isPending} className="pressable rounded-full bg-[#F57F17] px-5 text-xs text-white hover:bg-[#D96D0C]"><Search className="mr-2 h-4 w-4" /> Buscar benchmark</Button><span className="text-[11px] text-[#879A9A]">Salário de mercado não é valor de venda. Use "Aplicar" numa fonte abaixo para levar o perfil ao cálculo.</span></div>{benchmark && <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_260px]"><div><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-[#333333]">{benchmark.roleSearched} - {benchmark.city}/{benchmark.state}</p><p className="font-display text-lg font-semibold text-[#C2660D]">{formatBRL(benchmark.suggestedMonthlyCompensation)}</p></div><p className="mb-4 text-xs leading-5 text-[#658080]">{benchmark.summary}</p>{benchmark.hasDirectMatch === false && <div className="mb-4 flex items-start gap-2 rounded-lg border border-[#E8CBA9] bg-[#FAEFE2] px-3 py-2.5 text-[11px] leading-5 text-[#956126]"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Sem correspondência direta no catálogo para esse cargo — as fontes abaixo são referências gerais de TI, não específicas dele. Nada foi aplicado automaticamente; use "Aplicar" numa delas se quiser usar mesmo assim.</span></div>}<div className="overflow-hidden rounded-xl border border-[#E5E0D6]"><table className="w-full text-left text-xs"><thead className="bg-[#E8E9E9] text-[10px] uppercase tracking-[0.14em] text-[#7B8F8F]"><tr><th className="px-3 py-2 font-semibold">Fonte</th><th className="px-3 py-2 font-semibold">Salário mensal</th><th className="px-3 py-2 font-semibold">Observação</th><th className="px-3 py-2 font-semibold" /></tr></thead><tbody>{benchmark.sources.length ? benchmark.sources.map((item) => <tr key={item.profileId} className="border-t border-[#E5E0D6] bg-white/50"><td className="px-3 py-3 font-semibold text-[#333333]">Salário {item.employmentModel}<span className="mt-0.5 block font-normal text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{item.profileTitle} - {item.seniority}</span></td><td className="px-3 py-3 font-mono text-[#2A675F]">{formatBRL(item.monthlyCompensation)}</td><td className="px-3 py-3 text-[#658080]">{item.observation}</td><td className="px-3 py-3 text-right"><button onClick={() => applyBenchmarkSource(item)} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Aplicar</button></td></tr>) : <tr><td colSpan={4} className="px-3 py-3 text-[#899A9A]">Nenhum perfil do catálogo corresponde a este cargo ainda.</td></tr>}</tbody></table></div></div><div className="rounded-xl border border-[#E5E0D6] bg-white/45 p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Histórico</p><div className="mt-3 space-y-2">{benchmarkHistory.length ? benchmarkHistory.slice(0, 4).map((entry) => <button key={entry.id} onClick={() => { setBenchmarkRole(entry.roleSearched); setBenchmarkState(entry.state ?? "SP"); setBenchmarkCity(entry.city); setBenchmarkNotes(entry.notes ?? ""); }} className="w-full rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3 text-left hover:border-[#F0C48A]"><p className="truncate text-xs font-semibold text-[#333333]">{entry.roleSearched}</p><p className="mt-1 text-[10px] text-[#879A9A]">{entry.city}/{entry.state ?? "BR"} - {formatRelativeTime(entry.generatedAt)}</p></button>) : <p className="text-xs text-[#879A9A]">Nenhuma consulta salva ainda.</p>}</div></div></div>}</Card>
+    {!benchmark && <Card className="mb-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Histórico</p><div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{benchmarkHistory.length ? benchmarkHistory.slice(0, 4).map((entry) => <button key={entry.id} onClick={() => { setBenchmarkRole(entry.roleSearched); setBenchmarkState(entry.state ?? ""); setBenchmarkCity(entry.city); setBenchmarkNotes(entry.notes ?? ""); }} className="rounded-lg border border-[#E5E0D6] bg-white/55 p-3 text-left hover:border-[#F0C48A]"><p className="truncate text-xs font-semibold text-[#333333]">{entry.roleSearched}</p><p className="mt-1 text-[10px] text-[#879A9A]">{entry.city}/{entry.state ?? "BR"} - {formatRelativeTime(entry.generatedAt)}</p></button>) : <p className="text-xs text-[#879A9A]">Nenhuma consulta salva ainda.</p>}</div></Card>}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
       <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Entrada de premissas</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Perfil e composição da taxa</h2></div><div className="rounded-lg bg-[#E8E9E9] p-2 text-[#5D7979]"><BriefcaseBusiness className="h-4 w-4" /></div></div>
         <div className="mb-6"><Label htmlFor="profile-title" className="text-xs font-semibold text-[#345555]">Perfil profissional</Label><div className="mt-2 flex gap-2"><Input id="profile-title" value={profileTitle} onChange={(e) => setProfileTitle(e.target.value)} className="h-11 flex-1 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: Consultor SAP FI/CO senior" /><div className="flex overflow-hidden rounded-md border border-[#D4D1CC]">{(["CLT", "PJ"] as const).map((model) => <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-11 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>{model}</button>)}</div></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Nome livre - preenchido pela busca de benchmark abaixo ou digitado manualmente</p></div>
         <div className="mb-6 grid gap-3 sm:grid-cols-3">{profiles.slice(0, 3).map((profile) => <button key={profile.id} onClick={() => applyQuickProfile(profile)} className={`rounded-xl border p-3 text-left transition-colors ${profileTitle === profile.title && employmentModel === profile.employmentModel ? "border-[#F57F17] bg-white" : "border-[#E5E0D6] bg-white/55 hover:border-[#F0C48A]"}`}><p className="text-[11px] font-semibold text-[#333333]">{profile.title}</p><p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{profile.seniority} - {profile.employmentModel}</p><p className="mt-3 font-display text-sm font-semibold text-[#C2660D]">{formatBRL(profile.monthlyCompensation)}</p></button>)}</div>
-        <div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="salary" className="text-xs font-semibold text-[#345555]">Remuneração mensal</Label><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-xs text-[#8A9797]">R$</span><Input id="salary" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" inputMode="numeric" /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Valor livre, editável a qualquer momento</p></div><div><Label htmlFor="factor" className="text-xs font-semibold text-[#345555]">Fator K</Label><div className="relative mt-2"><Input id="factor" value={factorK} onChange={(e) => setFactorK(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="decimal" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">x</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Encargos, benefícios, indiretos e risco contratual</p></div><div><Label htmlFor="margin" className="text-xs font-semibold text-[#345555]">Margem alvo</Label><div className="relative mt-2"><Input id="margin" value={margin} onChange={(e) => setMargin(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="numeric" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Aplicada sobre o custo total</p></div><div><Label className="text-xs font-semibold text-[#345555]">Fonte do benchmark</Label><div className="mt-2 flex h-10 w-full items-center justify-between rounded-md border border-[#D4D1CC] bg-white px-3 text-left text-sm text-[#333333]"><span className="truncate">{appliedSource ? `${appliedSource.employmentModel} · ${appliedSourceGeneric ? "referência genérica" : appliedSource.profileTitle}` : "CAGED / MTE - snapshot"}</span><ServiceBadge state={appliedSourceGeneric ? "warn" : appliedSource ? benchmarkServiceState : sourceState} /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">{appliedSource ? appliedSource.observation : (catalogData?.source.warning ?? "Consultando catálogo de perfis")}</p></div></div>
+        <div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="salary" className="text-xs font-semibold text-[#345555]">Remuneração mensal</Label><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-xs text-[#8A9797]">R$</span><Input id="salary" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" inputMode="numeric" /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Valor livre, editável a qualquer momento</p></div><div><Label htmlFor="costs-and-charges" className="text-xs font-semibold text-[#345555]">Custos e encargos</Label><div className="relative mt-2"><Input id="costs-and-charges" value={costsAndCharges} onChange={(e) => setCostsAndCharges(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="decimal" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Percentual adicional aplicado à remuneração mensal</p></div><div><Label htmlFor="margin" className="text-xs font-semibold text-[#345555]">Margem alvo</Label><div className="relative mt-2"><Input id="margin" value={margin} onChange={(e) => setMargin(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="numeric" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Percentual adicional aplicado sobre o custo-hora</p></div><div><Label className="text-xs font-semibold text-[#345555]">Fonte do benchmark</Label><div className="mt-2 flex h-10 w-full items-center justify-between rounded-md border border-[#D4D1CC] bg-white px-3 text-left text-sm text-[#333333]"><span className="truncate">{appliedSource ? `${appliedSource.employmentModel} · ${appliedSourceGeneric ? "referência genérica" : appliedSource.profileTitle}` : "Nenhuma referência aplicada"}</span><ServiceBadge state={appliedSourceGeneric ? "warn" : appliedSource ? benchmarkServiceState : "stale"} /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">{appliedSource ? appliedSource.observation : "A busca de benchmark não altera o cálculo até você aplicar uma fonte."}</p></div></div>
       </Card>
-      <Card className="overflow-hidden rounded-2xl border-[#0D5C5C] bg-[#0D5C5C] p-5 text-[#F7F2E8] shadow-paper sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Saída do modelo</p><h2 className="mt-1 font-display text-xl font-semibold">Taxa-hora sugerida</h2></div><div className="rounded-lg bg-[#F57F17] p-2 text-white"><Calculator className="h-4 w-4" /></div></div>{isFetching && !estimate ? <Skeleton className="mt-10 h-12 w-44 bg-white/10" /> : <div className="mt-10 font-display text-5xl font-semibold tracking-[-0.06em] text-white">{formatBRL(suggestedRate)}</div>}<p className="mt-2 text-xs leading-5 text-[#AFC7C7]">por hora faturável · {profileTitle || "perfil"} / {employmentModel}</p><div className="mt-9 space-y-3 border-t border-white/10 pt-5 text-xs"><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo mensal carregado</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(monthlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo-hora base</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(hourlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Horas faturáveis</span><strong className="font-medium text-[#F7F2E8]">{estimate?.billableHours ?? 168} h/mês</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Margem aplicada</span><strong className="font-medium text-[#F57F17]">{margin}%</strong></div></div><div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-5 text-[#B8CECE]"><span className="font-semibold text-white">Nota de integridade:</span> perfis vindos do endpoint /labor/profiles. A fonte CAGED real ainda está marcada como fallback até a ingestão ser ligada.</div></Card>
+      <Card className="overflow-hidden rounded-2xl border-[#0D5C5C] bg-[#0D5C5C] p-5 text-[#F7F2E8] shadow-paper sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Saída do modelo</p><h2 className="mt-1 font-display text-xl font-semibold">Taxa-hora sugerida</h2></div><div className="rounded-lg bg-[#F57F17] p-2 text-white"><Calculator className="h-4 w-4" /></div></div>{isFetching && !estimate ? <Skeleton className="mt-10 h-12 w-44 bg-white/10" /> : <div className="mt-10 font-display text-5xl font-semibold tracking-[-0.06em] text-white">{formatBRL(suggestedRate)}</div>}<p className="mt-2 text-xs leading-5 text-[#AFC7C7]">por hora faturável · {profileTitle || "perfil"} / {employmentModel}</p><div className="mt-9 space-y-3 border-t border-white/10 pt-5 text-xs"><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo mensal</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(monthlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo-hora base</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(hourlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custos e encargos aplicados</span><strong className="font-medium text-[#F7F2E8]">{parseLocaleNumber(costsAndCharges)}%</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Horas faturáveis</span><strong className="font-medium text-[#F7F2E8]">{estimate?.billableHours ?? 168} h/mês</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Margem aplicada</span><strong className="font-medium text-[#F57F17]">{parseLocaleNumber(margin)}%</strong></div></div><div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-5 text-[#B8CECE]"><span className="font-semibold text-white">Nota de integridade:</span> com custos e encargos e margem em 0%, a taxa-hora é a remuneração mensal dividida por 168.</div></Card>
     </div>
   </div>;
 }
