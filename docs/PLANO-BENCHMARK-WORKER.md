@@ -60,7 +60,7 @@ Referencias:
 
 **Saida:** este documento e a decisao de isolamento.
 
-### Fase 1 - Analise tecnica e de conformidade
+### Fase 1 - Analise tecnica e de conformidade (concluida com ressalvas)
 
 - Verificar API oficial, acesso autorizado e termos de Indeed, Glassdoor e InfoJobs.
 - Avaliar automacao de navegador, CAPTCHA, MFA, Google SSO, sessao e rate limits.
@@ -69,6 +69,8 @@ Referencias:
 - Documentar explicitamente as restricoes e os mecanismos permitidos.
 
 **Gate:** nenhuma automacao especifica sera implementada antes desta analise.
+
+Resultado detalhado: [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
 
 ### Fase 2 - Contrato e arquitetura do worker
 
