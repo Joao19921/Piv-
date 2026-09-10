@@ -113,3 +113,10 @@ temp/
 .webdev/
 
 .project-config.json
+
+# Python (benchmark-worker/)
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
