@@ -344,10 +344,33 @@ modelo, não o PDF: o PDF muda de nome a cada republicação).
 
 ### Ativar verificação de certificado do Postgres
 
-1. Supabase Dashboard → Project Settings → Database → SSL Configuration → **Download certificate**.
-2. Render → serviço `pivo` → Environment → nova variável `DATABASE_CA_CERT` com o conteúdo do
-   `.crt` (pode colar com `\n` literais).
-3. Save. A conexão passa a usar `rejectUnauthorized: true`.
+> **Atenção — isto já derrubou a produção (10/09/2026).** O certificado que a Supabase
+> disponibiliza para download valida a **conexão direta**, não o **pooler Supavisor**, que é o
+> que o app usa. Configurar `DATABASE_CA_CERT` com ele faz o handshake falhar com
+> `self-signed certificate in certificate chain`, e **toda** consulta passa a dar erro: o app
+> sobe, mas login e qualquer tela com dados respondem 500.
+>
+> Ligar essa variável transforma uma proteção opcional em ponto único de falha. Remover a
+> variável restaura a conexão na hora.
+
+Procedimento seguro:
+
+1. Obtenha o CA correspondente ao host que o app realmente usa — o do **pooler**, não o da
+   conexão direta. Se a Supabase não publicar um para o pooler, esta variável não é aplicável.
+2. **Valide localmente antes**, com a mesma connection string de produção, e só siga se o
+   resultado for `{ status: 'ok' }`:
+
+```bash
+DATABASE_CA_CERT="$(cat prod-ca.crt)" node --experimental-strip-types -e "
+  require('dotenv/config');
+  const { pingDatabase } = await import('./server/src/infrastructure/db/client.ts');
+  console.log(await pingDatabase());
+"
+```
+
+3. Só então cadastre no Render, e confirme em `/api/v1/healthz` que `db.status` segue `ok`.
+
+Se quebrar, o `reason` em `/healthz` aponta a variável culpada, não só o erro de TLS.
 
 O certificado **não** é versionado de propósito: o CA é rotacionado, e um `.crt` commitado vira
 bomba-relógio que derruba produção no dia da troca.
@@ -452,7 +475,7 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 1 | **Sem branch protection** exigindo os checks do CI | PRs com CI vermelho podem ser mergeados — já aconteceu: o merge do PR #7 quebrou o `master` | Settings → Branches → require status checks `build`, `test`, `security` |
 | 2 | **Auto-Deploy do Render possivelmente ligado** | Se estiver, o Render publica a cada push sem esperar o CI, e o gate vira alarme depois do fato | Render → Settings → Build & Deploy → Auto-Deploy: `No` |
 | 3 | **CSP em report-only** | Não bloqueia XSS ainda, só relata | Revisar violações e trocar `reportOnly: false` em `securityHeaders.ts` |
-| 4 | **`DATABASE_CA_CERT` não configurada** | Conexão com o banco é cifrada mas sem verificar identidade do servidor (MITM ativo) | Seção 5 acima |
+| 4 | **`DATABASE_CA_CERT` inaplicável hoje** | Conexão cifrada mas sem verificar identidade do servidor. Configurá-la com o CA da conexão direta **derruba a produção** (incidente de 10/09/2026): o pooler Supavisor apresenta outra cadeia | Obter um CA válido para o pooler; sem isso, manter desligada — ver Seção 5 |
 | 5 | **Validação de rota feita à mão** com `typeof` | `zod` já é dependência e é usado no cliente; validação manual é fácil de esquecer num campo novo | Migrar rotas para schemas zod |
 | 6 | **Sem checagem de senha vazada** | Política bloqueia senha óbvia, mas não senha real que já vazou | Integrar HaveIBeenPwned (range API, k-anonymity) |
 | 7 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |

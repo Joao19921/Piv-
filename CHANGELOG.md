@@ -2,6 +2,28 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-10 — Causa raiz do login quebrado: `DATABASE_CA_CERT` inválida para o pooler
+
+O `/healthz` novo entregou o diagnóstico na primeira chamada depois do deploy:
+
+```json
+{"db": {"status": "unreachable", "reason": "self-signed certificate in certificate chain"}}
+```
+
+**`DATABASE_CA_CERT` estava configurada no Render** com um certificado que não valida a cadeia do pooler. Com ela presente, o código liga `rejectUnauthorized: true`; o handshake TLS falha e **toda** consulta morre — o app sobe, rotas sem banco respondem, login e qualquer tela com dados dão 500.
+
+O motivo é uma ressalva que faltou na documentação que eu escrevi: o certificado que a Supabase disponibiliza para download valida a **conexão direta**, e o app conecta pelo **pooler Supavisor**, que apresenta outra cadeia. Quem configurou seguiu o runbook corretamente — o runbook é que estava incompleto.
+
+Mais grave que o erro pontual: eu transformei uma proteção **opcional** em **ponto único de falha**, sem guarda-corpo. Uma variável mal preenchida derruba a aplicação inteira, com uma mensagem de TLS que não aponta para a variável que a causou.
+
+**Correções:**
+
+- `pingDatabase` passa a traduzir o erro: quando há erro de certificado *e* `DATABASE_CA_CERT` está definida, o `reason` diz qual variável é a provável culpada e que removê-la restaura a conexão. Vale também para `DATABASE_SSL=disable` contra servidor que exige TLS.
+- A seção do runbook virou procedimento seguro, com o aviso em destaque e um passo de **validação local obrigatória** antes de cadastrar no Render.
+- A pendência 4 deixou de ser "não configurada" e passou a "inaplicável hoje", com a razão registrada.
+
+**Ação para restaurar o serviço:** remover `DATABASE_CA_CERT` do Render. Um clique.
+
 ## 2026-09-10 — Login quebrado em produção: a aplicação perdeu acesso ao banco
 
 Usuário relatou que o login parou. O diagnóstico separou app de banco em quatro chamadas:

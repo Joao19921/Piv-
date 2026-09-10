@@ -176,6 +176,34 @@ export interface DbHealth {
  * fora dele. Liveness (o processo esta de pe) e readiness (as dependencias respondem) sao
  * perguntas diferentes; aqui a segunda vira um campo, nao um status HTTP.
  */
+/**
+ * Traduz o erro do driver para algo que aponte a CAUSA, nao so o sintoma.
+ *
+ * Motivado por um incidente real: a producao ficou fora com
+ * "self-signed certificate in certificate chain" -- mensagem verdadeira e inutil, porque nao diz
+ * QUE configuracao a provocou. A causa era `DATABASE_CA_CERT` preenchida com um certificado que
+ * nao valida a cadeia apresentada pelo pooler Supavisor (o CA que a Supabase disponibiliza para
+ * download vale para a conexao DIRETA, nao para o pooler). Ligar essa variavel transforma uma
+ * protecao opcional em ponto unico de falha, entao ela precisa se identificar quando quebra.
+ */
+function explicarFalha(bruto: string): string {
+  const temCa = Boolean(process.env.DATABASE_CA_CERT?.trim());
+  const erroDeCertificado = /certificate|self.signed|unable to verify|CERT_/i.test(bruto);
+
+  if (temCa && erroDeCertificado) {
+    return (
+      `${bruto} — provavelmente DATABASE_CA_CERT: o certificado configurado nao valida a cadeia ` +
+      `apresentada pelo servidor. O CA que a Supabase disponibiliza para download vale para a ` +
+      `conexao direta, nao para o pooler Supavisor. Remover a variavel restaura a conexao ` +
+      `(cifrada, sem verificacao de identidade).`
+    );
+  }
+  if (process.env.DATABASE_SSL === "disable" && /SSL|ssl/.test(bruto)) {
+    return `${bruto} — DATABASE_SSL=disable, mas o servidor exige TLS. Remova a variavel.`;
+  }
+  return bruto;
+}
+
 export async function pingDatabase(timeoutMs = 3_000): Promise<DbHealth> {
   if (!isDatabaseConfigured) return { status: "not_configured" };
 
@@ -189,7 +217,8 @@ export async function pingDatabase(timeoutMs = 3_000): Promise<DbHealth> {
     ]);
     return { status: "ok", latencyMs: Date.now() - startedAt };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const bruto = err instanceof Error ? err.message : String(err);
+    const reason = explicarFalha(bruto);
     logger.error("Banco inacessivel na verificacao do /healthz", { reason, latencyMs: Date.now() - startedAt });
     return { status: "unreachable", latencyMs: Date.now() - startedAt, reason };
   }
