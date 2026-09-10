@@ -72,7 +72,7 @@ Referencias:
 
 Resultado detalhado: [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
 
-### Fase 2 - Contrato e arquitetura do worker
+### Fase 2 - Contrato e arquitetura do worker (concluida)
 
 - Escolher o runtime inicial (preferencia: Python).
 - Definir interfaces `Adapter`, `Extractor`, `Normalizer`, `Validator` e `Repository`.
@@ -82,6 +82,8 @@ Resultado detalhado: [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORM
 - Definir estrategia de execucao local, manual e agendada.
 
 **Saida:** estrutura inicial do projeto e contratos sem acesso real as plataformas.
+
+Resultado detalhado: [Fase 2 - Contrato e arquitetura do worker](FASE-2-ARQUITETURA-BENCHMARK-WORKER.md).
 
 ### Fase 3 - Modelo de dados isolado
 
