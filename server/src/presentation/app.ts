@@ -184,18 +184,25 @@ export function createApiRouter(): Router {
   router.get("/mod3/public-tenders", requirePermission("PUBLIC_TENDERS"), async (req, res) => {
     const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
     const uf = typeof req.query.uf === "string" ? req.query.uf.trim().toUpperCase() : undefined;
+    const startDate = typeof req.query.dataInicial === "string" ? req.query.dataInicial : undefined;
+    const endDate = typeof req.query.dataFinal === "string" ? req.query.dataFinal : undefined;
     if (term.length < 2 || term.length > 160) {
       res.status(400).json({ error: "term deve ter entre 2 e 160 caracteres." });
       return;
     }
-    const cacheKey = `${term.toLocaleLowerCase("pt-BR")}:${uf ?? ""}`;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if ((startDate && !datePattern.test(startDate)) || (endDate && !datePattern.test(endDate)) || (startDate && endDate && startDate > endDate)) {
+      res.status(400).json({ error: "Informe um intervalo de datas válido no formato AAAA-MM-DD." });
+      return;
+    }
+    const cacheKey = `${term.toLocaleLowerCase("pt-BR")}:${uf ?? ""}:${startDate ?? ""}:${endDate ?? ""}`;
     const cached = publicTenderCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       res.json({ term, count: cached.tenders.length, tenders: cached.tenders, cached: true });
       return;
     }
     try {
-      const tenders = await searchPncp(term, getModule3Config(), { uf, pageSize: 10 });
+      const tenders = await searchPncp(term, getModule3Config(), { uf, pageSize: 10, startDate, endDate });
       publicTenderCache.set(cacheKey, { expiresAt: Date.now() + 60_000, tenders });
       res.json({ term, count: tenders.length, tenders, cached: false });
     } catch (error) {

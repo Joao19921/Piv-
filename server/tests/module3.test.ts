@@ -23,6 +23,7 @@ describe("Módulo 3 isolado", () => {
     expect(url.searchParams.get("dataInicial")).toBe("20260812");
     expect(url.searchParams.get("codigoModalidadeContratacao")).toBe("6");
     expect(url.searchParams.get("tamanhoPagina")).toBe("10");
+    expect(buildPncpSearchUrl("software", new Date("2026-09-11T12:00:00Z"), { startDate: "2026-08-01", endDate: "2026-08-31" }).searchParams.get("dataInicial")).toBe("20260801");
     expect(buildPncpSearchUrl("software", new Date("2026-09-11T12:00:00Z"), { uf: "sp", pageSize: 10 }).search).toContain("uf=SP");
   });
 
