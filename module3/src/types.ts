@@ -13,4 +13,5 @@ export interface Module3Config {
   port: number;
   apiKey?: string;
   requestTimeoutMs: number;
+  maxRetries: number;
 }

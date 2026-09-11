@@ -6,5 +6,6 @@ export function getModule3Config(env: NodeJS.ProcessEnv = process.env): Module3C
     port: Number(env.MOD3_PORT ?? 3013),
     apiKey: env.MOD3_API_KEY,
     requestTimeoutMs: Number(env.MOD3_REQUEST_TIMEOUT_MS ?? 10_000),
+    maxRetries: Number(env.MOD3_MAX_RETRIES ?? 2),
   };
 }

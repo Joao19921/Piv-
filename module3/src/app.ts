@@ -32,7 +32,8 @@ export function createModule3App(config = getModule3Config()) {
     const term = validateTerm(req, res);
     if (!term) return;
     try {
-      const [pncp, comprasGov] = await Promise.all([searchPncp(term, config), searchComprasGov(term, config)]);
+      const uf = typeof req.query.uf === "string" ? req.query.uf.trim().toUpperCase() : undefined;
+      const [pncp, comprasGov] = await Promise.all([searchPncp(term, config, { uf }), searchComprasGov(term, config)]);
       const tenders: PublicTender[] = [...pncp, ...comprasGov];
       await saveSearch(term, tenders);
       res.json({ term, count: tenders.length, tenders });

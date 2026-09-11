@@ -5,26 +5,45 @@ function compactDate(date: Date): string {
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function buildPncpSearchUrl(term: string, now = new Date()): URL {
+export interface PncpSearchOptions {
+  uf?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export function buildPncpSearchUrl(term: string, now = new Date(), options: PncpSearchOptions = {}): URL {
   const start = new Date(now);
   start.setDate(start.getDate() - 30);
   const url = new URL("https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao");
   url.searchParams.set("dataInicial", compactDate(start));
   url.searchParams.set("dataFinal", compactDate(now));
-  url.searchParams.set("pagina", "1");
-  url.searchParams.set("tamanhoPagina", "100");
+  url.searchParams.set("pagina", String(options.page ?? 1));
+  url.searchParams.set("tamanhoPagina", String(options.pageSize ?? 100));
   url.searchParams.set("criterioBusca", term.trim());
+  if (options.uf) url.searchParams.set("uf", options.uf.trim().toUpperCase());
   return url;
 }
 
-async function getJson(url: URL, timeoutMs: number): Promise<unknown> {
-  const response = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(timeoutMs) });
-  if (!response.ok) throw new Error(`Fonte respondeu HTTP ${response.status}: ${url.hostname}`);
-  return response.json();
+async function getJson(url: URL, timeoutMs: number, maxRetries: number): Promise<unknown> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json", "User-Agent": "Pivo-Module3/1.0" },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (response.ok) return response.json();
+      if (response.status < 500 || attempt >= maxRetries) {
+        throw new Error(`Fonte respondeu HTTP ${response.status}: ${url.hostname}`);
+      }
+    } catch (error) {
+      if (attempt >= maxRetries) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  }
 }
 
-export async function searchPncp(term: string, config: Module3Config): Promise<PublicTender[]> {
-  const payload = (await getJson(buildPncpSearchUrl(term), config.requestTimeoutMs)) as { data?: Record<string, unknown>[] };
+export async function searchPncp(term: string, config: Module3Config, options: PncpSearchOptions = {}): Promise<PublicTender[]> {
+  const payload = (await getJson(buildPncpSearchUrl(term, new Date(), options), config.requestTimeoutMs, config.maxRetries)) as { data?: Record<string, unknown>[] };
   return (payload.data ?? []).map((item) => ({
     externalId: String(item.numeroControlePNCP ?? item.id ?? ""),
     source: "PNCP",
@@ -41,7 +60,7 @@ export async function searchComprasGov(term: string, config: Module3Config): Pro
   if (!base) return [];
   const url = new URL(base);
   url.searchParams.set("q", term.trim());
-  const payload = (await getJson(url, config.requestTimeoutMs)) as { data?: Record<string, unknown>[] };
+  const payload = (await getJson(url, config.requestTimeoutMs, config.maxRetries)) as { data?: Record<string, unknown>[] };
   return (payload.data ?? []).map((item) => ({
     externalId: String(item.id ?? item.numero ?? ""),
     source: "COMPRAS_GOV",
