@@ -16,6 +16,7 @@ import {
   Database,
   Download,
   Eraser,
+  FileSearch,
   KeyRound,
   LayoutDashboard,
   Lock,
@@ -52,6 +53,7 @@ import { downloadCsv } from "@/lib/csv";
 import { parseLocaleNumber } from "@/lib/number";
 import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, MarketBenchmarkSalarySource, QueryStat, SourceStatus } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
+import PublicTendersPage from "@/pages/PublicTendersPage";
 
 type ServiceState = "live" | "synced" | "warn" | "stale" | "offline";
 
@@ -65,6 +67,7 @@ const navigation = [
   { id: "licenses" as SectionId, label: "Licenças", short: "04", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
   { id: "admin-users" as SectionId, label: "Usuários", short: "05", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
   { id: "admin-benchmark-worker" as SectionId, label: "Benchmark worker", short: "06", icon: ClipboardList, requires: null as PermissionCode | null, adminOnly: true },
+  { id: "public-tenders" as SectionId, label: "Editais públicos", short: "07", icon: FileSearch, requires: null as PermissionCode | null, adminOnly: false },
 ];
 
 function visibleNavigationFor(user: AuthUser | null) {
@@ -179,7 +182,7 @@ function ServiceBadge({ state, label }: { state: ServiceState; label?: string })
   );
 }
 
-function SectionHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
+export function SectionHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
   return (
     <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
       <div>
@@ -492,6 +495,7 @@ export default function Home({ section }: { section: SectionId }) {
     if (section === "licenses") return <LicensesCatalog />;
     if (section === "admin-users") return <AdminUsersPage />;
     if (section === "admin-benchmark-worker") return <BenchmarkWorkerAdminPage />;
+    if (section === "public-tenders") return <PublicTendersPage />;
     if (section === "sources") return <SourcesView sources={sources} isLoading={sourcesLoading} onRefresh={refetchHealth} ingestion={healthData?.ingestion ?? []} database={healthData?.database} />;
     return <Dashboard onNavigate={navigate} sources={sources} sourcesLoading={sourcesLoading} />;
   };
