@@ -29,6 +29,7 @@ function buildPncpUrl(term: string, uf: string): URL {
   url.searchParams.set("pagina", "1");
   url.searchParams.set("tamanhoPagina", "100");
   url.searchParams.set("criterioBusca", term);
+  url.searchParams.set("codigoModalidadeContratacao", "6");
   if (uf) url.searchParams.set("uf", uf);
   return url;
 }

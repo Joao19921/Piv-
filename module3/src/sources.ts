@@ -20,6 +20,7 @@ export function buildPncpSearchUrl(term: string, now = new Date(), options: Pncp
   url.searchParams.set("pagina", String(options.page ?? 1));
   url.searchParams.set("tamanhoPagina", String(options.pageSize ?? 100));
   url.searchParams.set("criterioBusca", term.trim());
+  url.searchParams.set("codigoModalidadeContratacao", "6");
   if (options.uf) url.searchParams.set("uf", options.uf.trim().toUpperCase());
   return url;
 }
