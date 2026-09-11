@@ -22,7 +22,7 @@ const queryClient = new QueryClient({
   },
 });
 
-export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources" | "admin-users";
+export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources" | "admin-users" | "admin-benchmark-worker";
 export type PermissionCode = "LABOR" | "INFRA" | "LICENSES";
 
 /** Caminhos reais por secao — cada modulo tem URL propria (favoritar, compartilhar, voltar funcionam). */
@@ -33,6 +33,7 @@ export const SECTION_PATHS: Record<SectionId, string> = {
   licenses: "/licencas",
   sources: "/fontes",
   "admin-users": "/administracao/usuarios",
+  "admin-benchmark-worker": "/administracao/benchmark-worker",
 };
 
 function Router() {
@@ -44,6 +45,7 @@ function Router() {
       <Route path="/licencas" component={() => <Home section="licenses" />} />
       <Route path="/fontes" component={() => <Home section="sources" />} />
       <Route path="/administracao/usuarios" component={() => <Home section="admin-users" />} />
+      <Route path="/administracao/benchmark-worker" component={() => <Home section="admin-benchmark-worker" />} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

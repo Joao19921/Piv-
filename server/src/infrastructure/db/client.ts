@@ -40,7 +40,11 @@ export interface DbSslConfig {
  * Onde pegar: Supabase Dashboard > Project Settings > Database > SSL Configuration >
  * "Download certificate". Ver docs/RUNBOOK.md.
  */
+/** Desligado pelo fallback de `ensureDatabaseTls` quando o CA configurado nao valida a cadeia. */
+let caOverride = true;
+
 function certificateAuthority(): string | undefined {
+  if (!caOverride) return undefined;
   const pem = process.env.DATABASE_CA_CERT?.trim();
   if (!pem) return undefined;
   // Permite colar o PEM com "\n" literais, que e como ele sobrevive a um campo de env var de
@@ -152,5 +156,133 @@ export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();
     pool = null;
+  }
+}
+
+/** Como a conexao acabou ficando, depois da checagem de inicializacao. */
+export type TlsVerification = "verified" | "encrypted_only" | "fallback_after_failure" | "disabled";
+let tlsVerification: TlsVerification = "encrypted_only";
+export function getTlsVerification(): TlsVerification {
+  return tlsVerification;
+}
+
+function isCertificateError(message: string): boolean {
+  return /certificate|self.signed|unable to verify|CERT_|altname/i.test(message);
+}
+
+/**
+ * Decide o modo de TLS UMA vez, na subida do processo, e nunca deixa o app no ar sem banco por
+ * causa de um certificado que nao serve.
+ *
+ * Motivado por uma queda real (10/09/2026): `DATABASE_CA_CERT` foi preenchida com o CA da conexao
+ * direta da Supabase, que nao valida a cadeia do pooler Supavisor. Com ela, `rejectUnauthorized`
+ * fica true, o handshake falha e TODA consulta morre -- o app sobe, mas login e qualquer tela com
+ * dados respondem 500, e so quem tem acesso ao painel do provedor consegue corrigir.
+ *
+ * Um controle de seguranca que derruba producao quando mal configurado, sem alternativa, e um
+ * controle mal feito. Aqui ele degrada em vez de derrubar: se o CA nao valida, a conexao volta ao
+ * modo que o app sempre usou (cifrada, sem verificacao de identidade) e o fato fica gritando no
+ * log, no Sentry e no /healthz. Ninguem fica achando que tem protecao que nao tem -- que era o
+ * unico motivo real para preferir ficar fora do ar.
+ */
+export async function ensureDatabaseTls(): Promise<void> {
+  if (!isDatabaseConfigured) return;
+
+  if (process.env.DATABASE_SSL === "disable") {
+    tlsVerification = "disabled";
+    return;
+  }
+  if (!process.env.DATABASE_CA_CERT?.trim()) {
+    tlsVerification = "encrypted_only";
+    return;
+  }
+
+  try {
+    await getPool().query("select 1");
+    tlsVerification = "verified";
+    logger.info("Conexao com o Postgres verificando a identidade do servidor (DATABASE_CA_CERT em uso).");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!isCertificateError(message)) throw err;
+
+    // Derruba o pool montado com o CA e refaz sem verificacao.
+    await closePool();
+    caOverride = false;
+    tlsVerification = "fallback_after_failure";
+    logger.error(
+      "DATABASE_CA_CERT nao valida a cadeia do servidor; conexao seguiu SEM verificacao de identidade. " +
+        "A aplicacao continua no ar, mas a protecao contra MITM que essa variavel deveria dar NAO esta ativa. " +
+        "Remova a variavel (ou troque pelo CA correto do pooler) para tirar este aviso.",
+      { error: message },
+    );
+  }
+}
+
+export interface DbHealth {
+  /** "ok" | "unreachable" | "not_configured" */
+  status: "ok" | "unreachable" | "not_configured";
+  latencyMs?: number;
+  /** Motivo resumido da falha. Nunca contem credencial: so a mensagem do driver. */
+  reason?: string;
+}
+
+/**
+ * Prova de vida da conexao com o Postgres, para o /healthz.
+ *
+ * Existe por causa de um incidente real: a aplicacao em producao ficou sem conseguir falar com o
+ * banco -- toda rota que consultava dava 500, enquanto /healthz seguia respondendo 200 porque
+ * nao tocava o banco. O deploy passou verde com o app inutilizavel, e ninguem soube ate um
+ * usuario relatar que o login parou.
+ *
+ * Deliberadamente NAO derruba o /healthz: o Render usa esse endpoint como health check, e
+ * devolver erro faria o servico entrar em loop de restart justamente quando o problema esta
+ * fora dele. Liveness (o processo esta de pe) e readiness (as dependencias respondem) sao
+ * perguntas diferentes; aqui a segunda vira um campo, nao um status HTTP.
+ */
+/**
+ * Traduz o erro do driver para algo que aponte a CAUSA, nao so o sintoma.
+ *
+ * Motivado por um incidente real: a producao ficou fora com
+ * "self-signed certificate in certificate chain" -- mensagem verdadeira e inutil, porque nao diz
+ * QUE configuracao a provocou. A causa era `DATABASE_CA_CERT` preenchida com um certificado que
+ * nao valida a cadeia apresentada pelo pooler Supavisor (o CA que a Supabase disponibiliza para
+ * download vale para a conexao DIRETA, nao para o pooler). Ligar essa variavel transforma uma
+ * protecao opcional em ponto unico de falha, entao ela precisa se identificar quando quebra.
+ */
+function explicarFalha(bruto: string): string {
+  const temCa = Boolean(process.env.DATABASE_CA_CERT?.trim());
+  const erroDeCertificado = /certificate|self.signed|unable to verify|CERT_/i.test(bruto);
+
+  if (temCa && erroDeCertificado) {
+    return (
+      `${bruto} — provavelmente DATABASE_CA_CERT: o certificado configurado nao valida a cadeia ` +
+      `apresentada pelo servidor. O CA que a Supabase disponibiliza para download vale para a ` +
+      `conexao direta, nao para o pooler Supavisor. Remover a variavel restaura a conexao ` +
+      `(cifrada, sem verificacao de identidade).`
+    );
+  }
+  if (process.env.DATABASE_SSL === "disable" && /SSL|ssl/.test(bruto)) {
+    return `${bruto} — DATABASE_SSL=disable, mas o servidor exige TLS. Remova a variavel.`;
+  }
+  return bruto;
+}
+
+export async function pingDatabase(timeoutMs = 3_000): Promise<DbHealth> {
+  if (!isDatabaseConfigured) return { status: "not_configured" };
+
+  const startedAt = Date.now();
+  try {
+    // Promise.race em vez de statement_timeout: o custo aqui e o handshake/pool, nao a consulta,
+    // e um `select 1` pendurado nao segura recurso relevante.
+    await Promise.race([
+      getPool().query("select 1"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`sem resposta em ${timeoutMs}ms`)), timeoutMs)),
+    ]);
+    return { status: "ok", latencyMs: Date.now() - startedAt };
+  } catch (err) {
+    const bruto = err instanceof Error ? err.message : String(err);
+    const reason = explicarFalha(bruto);
+    logger.error("Banco inacessivel na verificacao do /healthz", { reason, latencyMs: Date.now() - startedAt });
+    return { status: "unreachable", latencyMs: Date.now() - startedAt, reason };
   }
 }

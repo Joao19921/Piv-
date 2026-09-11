@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from benchmark_worker.domain.models import (
     AdapterStatus,
@@ -83,10 +83,14 @@ class Validator(ABC):
 
 
 class Repository(ABC):
-    """Persistencia das observacoes e do historico de execucoes."""
+    """Persistencia do historico de execucoes e das observacoes que ele produziu.
 
-    @abstractmethod
-    def save_observations(self, observations: Iterable[SalaryObservation]) -> None: ...
+    Um unico metodo, nao dois: ``benchmark_results.run_id`` exige uma linha em
+    ``benchmark_runs`` que ainda nao existe enquanto uma fonte individual esta sendo
+    processada. Persistir tudo de uma vez, ao final, evita observacoes orfas se o
+    processo for interrompido no meio e deixa a gravacao de uma execucao inteira
+    atomica (ver PostgresRepository).
+    """
 
     @abstractmethod
     def save_run_summary(self, summary: RunSummary) -> None: ...

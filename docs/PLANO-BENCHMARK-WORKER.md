@@ -1,5 +1,9 @@
 # Plano Incremental - Benchmark Worker
 
+> Para regras de negócio, estado de conformidade e onde ficam credenciais/segredos,
+> ver o [Manual do Benchmark Worker](BENCHMARK-WORKER-MANUAL.md) -- este documento
+> aqui e' o historico fase a fase da decisao, nao a referencia operacional.
+
 ## Objetivo
 
 Criar um modulo independente para coletar, normalizar, validar e persistir referencias
@@ -100,7 +104,7 @@ alterar constraints das tabelas existentes.
 
 Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-BENCHMARK-WORKER.md).
 
-### Fase 4 - Nucleo executavel sem fontes reais
+### Fase 4 - Nucleo executavel sem fontes reais (concluida)
 
 - Criar o projeto `benchmark-worker/`.
 - Implementar configuracao por ambiente e `.env.example`.
@@ -109,8 +113,12 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 - Implementar validacao, deduplicacao e idempotencia.
 
 **Saida:** um job de teste consegue percorrer o pipeline sem navegador real.
+`PostgresRepository` persiste `benchmark_runs`/`benchmark_results` com upsert
+idempotente (`on conflict (source, source_reference, observed_at)`); `catalog.py` le
+`benchmark_profiles`/`benchmark_sources` do Postgres, unica fonte de verdade sobre
+quais fontes estao autorizadas.
 
-### Fase 5 - Normalizacao e testes
+### Fase 5 - Normalizacao e testes (concluida)
 
 - Cobrir cargos, senioridade, estados brasileiros, CLT/PJ, moeda e periodicidade.
 - Cobrir faixa minima/maxima, salario mensal/anual e dados desconhecidos.
@@ -118,6 +126,10 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 - Garantir que erro em uma fonte resulte em `PARTIAL`, sem impedir as demais.
 
 **Gate:** testes unitarios e de integracao do worker passam sem depender de login real.
+39 testes unitarios (`benchmark-worker/tests/`) cobrem normalizacao, validacao,
+retry/isolamento e agregacao de status; um teste de integracao
+(`test_integration_postgres.py`) roda contra o Postgres efemero do CI. Nenhum
+adapter real existe ainda -- browser/e2e fica para a Fase 6.
 
 ### Fase 6 - Adapters por fonte, somente quando autorizados
 
@@ -129,7 +141,7 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 
 **Saida:** cada fonte possui estado operacional claro e pode falhar isoladamente.
 
-### Fase 7 - Execucao agendada e manual
+### Fase 7 - Execucao agendada e manual (concluida parcialmente)
 
 - Configurar coleta automatica a cada 10 dias.
 - Criar jobs pendentes no banco para futuras solicitacoes administrativas.
@@ -140,6 +152,20 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 
 **Gate:** a escolha de infraestrutura deve considerar memoria, tempo de execucao,
 segredos, custo e limites de automacao de navegador.
+
+**Decisao de hospedagem:** GitHub Actions (`.github/workflows/benchmark-worker.yml`),
+nao Lambda nem Render. Motivo: hoje nenhuma fonte roda navegador de verdade (todas
+DISABLED, Fase 1) -- o worker so precisa de Python simples, sem Chromium. Lambda
+exigiria imagem de container so para viabilizar Playwright no futuro, sem necessidade
+agora; Render seria um servico pago adicional. GitHub Actions e' gratis no plano do
+repo, ja e' o padrao usado para `ingest-caged.yml` e reavaliar quando/se uma fonte
+real exigir automacao de navegador (nesse caso, Lambda com imagem de container ou um
+runner dedicado passam a fazer sentido, pelo custo de memoria/tempo de execucao).
+
+**Pendente:** `benchmark_jobs` (Fase 3) ainda nao e alimentada por ninguem -- a
+execucao agendada hoje varre todos os `benchmark_profiles` ativos diretamente, sem
+usar a tabela de jobs. Ela so passa a ser necessaria quando o admin (Fase 6/8) puder
+solicitar uma coleta pontual.
 
 ### Fase 8 - Operacao e integracao futura
 
@@ -177,6 +203,37 @@ Nesse caso, registrar neste documento:
 
 ## Proximo passo
 
-Executar somente a Fase 1, produzindo uma analise de conformidade das tres fontes.
-Nenhum adapter real, migration ou alteracao na aplicacao principal deve ser feito antes
-da aprovacao dessa analise.
+Fases 0 a 5 e 7 concluidas (entendimento, conformidade, arquitetura, modelo de dados,
+nucleo executavel, normalizacao/testes e agendamento). O worker roda a cada ~10 dias
+via GitHub Actions e sempre reporta `SUCCESS` sem observacoes, porque as tres fontes
+seguem `DISABLED` -- ver
+[Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
+
+Investigado em 2026-09-11 (ver
+[Manual, secao 3.1](BENCHMARK-WORKER-MANUAL.md#31-alternativas-legítimas-investigadas-2026-09-11)):
+nenhuma API/parceria oficial pronta para uso nas tres fontes, e a maioria dos
+guias salariais concorrentes e' paga/gated ou proibe reuso (Catho). Unico
+caminho legitimo hoje: **entrada manual assistida** a partir de relatorios
+publicos sem paywall (ex.: Robert Half) -- implementado (`manual_entry.py`,
+fonte `manual` na migration `0012`), documentado no Manual, secao 3.2.
+
+Falta:
+
+- **Fase 6** (bloqueada): nenhum adapter real pode ser implementado sem autorizacao
+  documentada de Indeed, Glassdoor ou InfoJobs. Sem isso, nao ha nada a acionar por
+  este item alem de aguardar uma decisao de negocio. Vale uma consulta a Indeed
+  Hiring Lab API, mas e' dado macro de tendencia, nao por cargo/senioridade --
+  provavelmente nao serve como substituto direto mesmo se aprovada.
+- ~~Fase 8~~ feito (2026-09-11), na parte aprovada: tela em
+  `/administracao/benchmark-worker` (so ADMIN) mostra fontes e as ultimas
+  execucoes, e permite registrar uma observacao manual pela UI (equivalente ao
+  `manual_entry.py` do worker, sem precisar de Python local) -- ver Manual,
+  secao 5.1. Nao criado: consumo de `benchmark_jobs` (segue sem uso -- so faria
+  sentido com uma fonte automatizada real, Fase 6) nem dashboards de metricas
+  alem da lista de execucoes.
+- ~~Popular `benchmark_profiles`~~ feito (migration `0013`): os mesmos 73
+  cargo+senioridade que `server/src/domain/services/catalogs.ts` (laborProfiles)
+  ja rastreia via CAGED/SISP, `state = null` (nacional, mesmo escopo do
+  catalogo de origem). Nao inventa combinacao nova nem habilita nenhuma fonte --
+  so da ao worker um alvo real para acompanhar quando `manual`/uma fonte
+  autorizada gravar algo.

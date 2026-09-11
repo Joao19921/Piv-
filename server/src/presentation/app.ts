@@ -13,7 +13,7 @@ import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
 import { getPendingSources } from "../infrastructure/collectors/staticFallbacks";
-import { isDatabaseConfigured } from "../infrastructure/db/client";
+import { getTlsVerification, isDatabaseConfigured, pingDatabase, type DbHealth } from "../infrastructure/db/client";
 import {
   deleteArchitecture,
   getArchitecture,
@@ -32,6 +32,7 @@ import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
 import { createAdminUsersRouter } from "./adminUsersRoutes";
 import { createAuthRouter } from "./authRoutes";
+import { createBenchmarkWorkerAdminRouter } from "./benchmarkWorkerAdminRoutes";
 import { requireAuth, requirePermission } from "./authMiddleware";
 
 /** Versão do package.json, lida uma vez no boot; usada só para exibir "v{versão}" no rodapé do app. */
@@ -127,6 +128,19 @@ function fromIngestionRun(name: string, run: IngestionRun | undefined) {
   };
 }
 
+const DB_HEALTH_TTL_MS = 15_000;
+let dbHealthCache: { at: number; value: DbHealth } | null = null;
+
+/** Estado do banco com cache curto: Render e UptimeRobot batem no /healthz o tempo todo, e sem
+ * isso cada checagem viraria uma consulta ao Postgres. */
+async function cachedDbHealth(): Promise<DbHealth> {
+  const agora = Date.now();
+  if (dbHealthCache && agora - dbHealthCache.at < DB_HEALTH_TTL_MS) return dbHealthCache.value;
+  const value = await pingDatabase();
+  dbHealthCache = { at: agora, value };
+  return value;
+}
+
 export function createApiRouter(): Router {
   const router = express.Router();
   router.use(express.json());
@@ -138,8 +152,22 @@ export function createApiRouter(): Router {
   // na hora, muito antes de o build terminar, então a primeira chamada acertava a instância
   // ANTIGA — que estava saudável — e o job passava sem ter verificado nada do que subiu.
   // `RENDER_GIT_COMMIT` é injetada pelo próprio Render; fora dele o campo vem "unknown".
-  router.get("/healthz", (_req, res) => {
-    res.json({ status: "ok", commit: process.env.RENDER_GIT_COMMIT ?? "unknown" });
+  //
+  // `db` reporta se o Postgres responde. Foi acrescentado depois de um incidente: a aplicacao
+  // ficou sem conseguir falar com o banco, toda rota que consultava dava 500, e /healthz seguiu
+  // respondendo 200 porque nao tocava o banco -- o deploy passou verde com o app inutilizavel e
+  // ninguem soube ate um usuario relatar que o login parou.
+  //
+  // O status HTTP continua 200 mesmo com o banco fora, de proposito: o Render usa este endpoint
+  // como health check, e devolver erro colocaria o servico em loop de restart justamente quando
+  // o problema esta fora dele. Liveness e readiness sao perguntas diferentes; a segunda vira um
+  // campo, nao um status.
+  router.get("/healthz", async (_req, res) => {
+    res.json({
+      status: "ok",
+      commit: process.env.RENDER_GIT_COMMIT ?? "unknown",
+      db: { ...(await cachedDbHealth()), tlsVerification: getTlsVerification() },
+    });
   });
 
   // Login por e-mail/senha (RBAC): rotas de sessão, sempre acessíveis sem estar autenticado.
@@ -499,6 +527,9 @@ export function createApiRouter(): Router {
 
   // Área administrativa (CRUD de usuários) — só ADMIN (checado dentro do próprio router).
   router.use(createAdminUsersRouter());
+
+  // Área administrativa do benchmark worker (fontes/execuções/registro manual) — só ADMIN.
+  router.use(createBenchmarkWorkerAdminRouter());
 
   return router;
 }

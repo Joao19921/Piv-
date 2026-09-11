@@ -7,7 +7,7 @@ import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-import { isDatabaseConfigured } from "./src/infrastructure/db/client";
+import { ensureDatabaseTls, isDatabaseConfigured } from "./src/infrastructure/db/client";
 import { logger } from "./src/infrastructure/observability/logger";
 import { attachUser } from "./src/presentation/authMiddleware";
 import { createApiRouter } from "./src/presentation/app";
@@ -28,6 +28,15 @@ async function startServer() {
   app.set("trust proxy", 1);
 
   applySecurityHeaders(app, { isProduction });
+
+  // Resolve o modo de TLS do banco antes de aceitar trafego: se DATABASE_CA_CERT nao validar a
+  // cadeia, a conexao cai para o modo sem verificacao (com aviso alto) em vez de deixar o app no
+  // ar sem banco -- ver ensureDatabaseTls. Nao lanca por certificado; so por falha inesperada.
+  await ensureDatabaseTls().catch((err) => {
+    logger.error("Falha ao inicializar a conexao com o banco", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   // Sem banco nao ha usuarios possiveis (RBAC e todo persistido no Postgres) -- app.use
   // condicional aqui evita atrasar toda requisicao com uma consulta que sempre falharia.

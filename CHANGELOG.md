@@ -2,6 +2,114 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-11 — Benchmark Worker: tela no admin (Fase 8, parcial)
+
+Nova área `/administracao/benchmark-worker` (só ADMIN): mostra o estado das fontes (indeed/glassdoor/infojobs desabilitadas, manual habilitada) e as últimas execuções, e permite registrar uma observação manual pela UI — mesmo efeito do `manual_entry.py` do worker Python, mas sem precisar de Python local, com campos estruturados (dropdowns) em vez de texto livre, então grava `confidence = 1.0` sempre (não há texto ambíguo para interpretar).
+
+Implementada no backend Express da aplicação (`benchmarkWorkerAdminRoutes.ts`, `benchmarkWorkerRepository.ts`), não no worker Python — que continua isolado, sem HTTP. É a aplicação (que deveria só "consumir dados") ganhando também uma forma de alimentar uma observação manual. Grava `benchmark_runs`+`benchmark_results` numa transação só, e cada gravação vira um evento em `audit_logs`.
+
+Não implementado: disparo de coleta automatizada pelo admin (sem sentido hoje, sem adapter real habilitado) nem consumo de `benchmark_jobs`, que segue sem leitor.
+
+Achado no caminho: `server/tests/marketBenchmark.test.ts` já usava o prefixo de e-mail `benchmark-%@test.pivo.internal` para usuários de teste. Meu primeiro teste novo usou o mesmo prefixo — o `afterAll` de um arquivo apagou os usuários (e invalidou a sessão) do outro quando os dois rodaram em paralelo. Renomeado para `bmworker-%` antes de commitar.
+
+## 2026-09-11 — Benchmark Worker: `benchmark_profiles` populada
+
+Migration `0013`: os mesmos 73 cargo+senioridade que `catalogs.ts` (`laborProfiles`) já rastreia via CAGED/SISP, `state = null` (nacional — o catálogo de origem também não segmenta por UF). Antes disso a tabela ficava vazia e toda execução agendada terminava em "nenhum perfil ativo" — correto, mas sem cobertura real nenhuma. Não inventa combinação nova, não habilita nenhuma fonte: `indeed`/`glassdoor`/`infojobs` continuam `disabled`. Idempotente (`on conflict do nothing`), respeita `active` se alguém desativar um perfil manualmente depois.
+
+## 2026-09-11 — Benchmark Worker: entrada manual assistida, em vez de scraping do front
+
+Pedido: acessar Indeed/Glassdoor/InfoJobs "pelo front" com uma conta Google dedicada. Recusei — não é diferente do scraping já descartado na Fase 1: os termos de uso proíbem automação independente de qual conta faz o acesso, e as três usam CAPTCHA/verificação de sessão que este projeto não vai contornar.
+
+Levantamento do que existe de legítimo (docs/BENCHMARK-WORKER-MANUAL.md, seção 3.1): nenhuma API/parceria pronta para uso nas três. Da concorrência, a maioria é gated (Michael Page, Hays — cadastro obrigatório) ou proíbe reuso explicitamente (Catho: "termos proíbem copiar, armazenar, capturar ou exportar conteúdo"). Achado aproveitável: **Robert Half publica um guia salarial de TI público, sem cadastro, por percentil e cidade**.
+
+Implementei o caminho que isso permite: uma pessoa lê o número num relatório público e registra — `benchmark_worker.manual_entry`, fonte nova `manual` (migration `0012`, `benchmark_sources.status = 'enabled'` porque não é automação, não passa pelo gate da Fase 1). Mesma normalização/validação/deduplicação do resto do worker. Acessível via CLI (`cli.py manual-entry`) ou pela aba Actions do GitHub (`workflow_dispatch` com os campos do registro), sem precisar de Python local.
+
+`--reference` continua obrigatório: é a auditoria de qual relatório foi consultado. A regra vale também para o que não pode ser citado aqui — Catho (proibido) e qualquer PDF obtido só para contornar um formulário de lead-gen (Michael Page, Hays) têm o mesmo problema de autorização do scraping, disfarçado.
+
+## 2026-09-10 — Benchmark Worker: núcleo executável, normalização e agendamento (Fases 4, 5 e 7)
+
+Duas branches (`docs/benchmark-worker-fase-2`, `-fase-3`) tinham sido mescladas em `main`, não em `master` — e `main` nunca foi de fato o branch de deploy: alguém começou uma migração do Render para lá e não terminou. O smoke test do PR #21 falhou por isso (o Render nunca publicou o commit, porque não olha para `main`), não por um bug da Fase 3. Trouxe as duas para `master` via merge normal, preservando os commits do incidente de TLS acima.
+
+Com a base isolada (Fase 2: contratos; Fase 3: `benchmark_sources/profiles/jobs/runs/results`, aditiva) já trazida, completei o que faltava para o worker rodar de ponta a ponta com as três fontes ainda `DISABLED` (Fase 1 concluiu que nenhuma tem scraping autorizado — nada mudou nisso):
+
+- **Correção de design**: o runner deixava `AdapterDisabledError` estourar e virar `FAILED` — com as três fontes desligadas, toda execução pareceria um incidente. `RunStatus.DISABLED` passou a ser checado *antes* do fetch (como o contrato já prometia) e é ignorado no cálculo do status geral: hoje toda execução reporta `SUCCESS` sem observações, corretamente.
+- **Repository único**: `save_observations` separado de `save_run_summary` deixaria `benchmark_results.run_id` (NOT NULL) órfão — a linha de execução ainda não existiria quando a primeira fonte terminasse. Um só método persiste a execução inteira, atomicamente.
+- **Normalização** (`normalization/`): parsing de texto salarial livre (BR "10.000,50" vs US "10,000.50", detecção de moeda/periodicidade sem nunca converter anual→mensal), senioridade e regime (CLT/PJ) por vocabulário controlado — nunca inventa, reduz confiança quando não reconhece.
+- **Persistência real** (`infrastructure/`): `PostgresRepository` (upsert idempotente por `source + source_reference + observed_at`) e `catalog.py`, que lê `benchmark_sources`/`benchmark_profiles` do Postgres — o banco é a única fonte de verdade sobre quais fontes estão autorizadas.
+- **39 testes unitários** + um de integração contra Postgres efêmero (`.github/workflows/benchmark-worker.yml`, job novo).
+- **Agendamento**: GitHub Actions, a cada ~10 dias ou manual (`workflow_dispatch`) — não Lambda nem Render. Nenhuma fonte roda navegador de verdade hoje, então não há motivo para pagar por uma imagem de container só para viabilizar Playwright que ainda não é usado; reavaliar se/quando uma fonte for autorizada.
+
+Falta: Fase 6 (adapters reais, bloqueada por autorização de negócio) e Fase 8 (tela no admin — único ponto que tocaria `client/`, ainda não aprovado).
+
+## 2026-09-10 — TLS do banco degrada em vez de derrubar a aplicação
+
+Correção do desenho que causou a queda, não só do sintoma.
+
+`DATABASE_CA_CERT` continuava configurada no Render com um certificado que não valida a cadeia do pooler, e eu não tenho acesso ao painel para removê-la. Mas o problema de fundo era meu: **um controle de segurança que derruba a produção quando mal configurado, sem alternativa, é um controle mal feito.**
+
+O modo de TLS passa a ser resolvido **uma vez, na subida do processo** (`ensureDatabaseTls`), antes de aceitar tráfego. Se o CA configurado não validar a cadeia, a conexão volta ao modo que o app sempre usou — cifrada, sem verificação de identidade — e o fato fica gritando no log, no Sentry e no `/healthz` (`tlsVerification: "fallback_after_failure"`).
+
+A troca é deliberada: o único motivo real para preferir ficar fora do ar seria alguém acreditar que tem proteção contra MITM sem ter. Como o estado fica visível em três lugares, esse risco não se sustenta — e ficar fora do ar, sim, é dano certo.
+
+Verificado com um CA inválido contra o banco de produção:
+
+```
+antes  : encrypted_only
+depois : fallback_after_failure
+[ERROR] DATABASE_CA_CERT nao valida a cadeia do servidor; conexao seguiu SEM
+        verificacao de identidade. A aplicacao continua no ar (...)
+healthz: {"status":"ok","latencyMs":133}
+```
+
+Com isso a produção se recupera no próximo deploy, sem depender de alguém mexer no Render — embora remover a variável continue sendo o certo, para tirar o aviso.
+
+## 2026-09-10 — Causa raiz do login quebrado: `DATABASE_CA_CERT` inválida para o pooler
+
+O `/healthz` novo entregou o diagnóstico na primeira chamada depois do deploy:
+
+```json
+{"db": {"status": "unreachable", "reason": "self-signed certificate in certificate chain"}}
+```
+
+**`DATABASE_CA_CERT` estava configurada no Render** com um certificado que não valida a cadeia do pooler. Com ela presente, o código liga `rejectUnauthorized: true`; o handshake TLS falha e **toda** consulta morre — o app sobe, rotas sem banco respondem, login e qualquer tela com dados dão 500.
+
+O motivo é uma ressalva que faltou na documentação que eu escrevi: o certificado que a Supabase disponibiliza para download valida a **conexão direta**, e o app conecta pelo **pooler Supavisor**, que apresenta outra cadeia. Quem configurou seguiu o runbook corretamente — o runbook é que estava incompleto.
+
+Mais grave que o erro pontual: eu transformei uma proteção **opcional** em **ponto único de falha**, sem guarda-corpo. Uma variável mal preenchida derruba a aplicação inteira, com uma mensagem de TLS que não aponta para a variável que a causou.
+
+**Correções:**
+
+- `pingDatabase` passa a traduzir o erro: quando há erro de certificado *e* `DATABASE_CA_CERT` está definida, o `reason` diz qual variável é a provável culpada e que removê-la restaura a conexão. Vale também para `DATABASE_SSL=disable` contra servidor que exige TLS.
+- A seção do runbook virou procedimento seguro, com o aviso em destaque e um passo de **validação local obrigatória** antes de cadastrar no Render.
+- A pendência 4 deixou de ser "não configurada" e passou a "inaplicável hoje", com a razão registrada.
+
+**Ação para restaurar o serviço:** remover `DATABASE_CA_CERT` do Render. Um clique.
+
+## 2026-09-10 — Login quebrado em produção: a aplicação perdeu acesso ao banco
+
+Usuário relatou que o login parou. O diagnóstico separou app de banco em quatro chamadas:
+
+| Rota | Toca banco? | Produção |
+| :--- | :--- | :--- |
+| `GET /auth/session` sem cookie | não | 200 |
+| `POST /auth/login` sem campos | não (valida antes) | 400 |
+| `POST /auth/login` com campos | **sim** | **500** |
+| `POST /auth/logout` | não | 200 |
+
+**A aplicação em produção não está conseguindo falar com o Postgres.** Não é o código: o mesmo commit, o mesmo bundle de produção e o mesmo banco respondem 401 corretamente em ambiente local, e a conexão direta ao Postgres daqui leva 246 ms com o usuário intacto (ACTIVE, hash presente, sem bloqueio). A diferença está nas variáveis de ambiente do Render — `DATABASE_CA_CERT` preenchida com PEM inválido faz o TLS exigir verificação contra um CA que não confere e derruba *toda* consulta; `DATABASE_SSL=disable` faz o pooler da Supabase recusar a conexão.
+
+### O que este commit conserta
+
+Não a causa, que depende do painel do Render — mas **o motivo de ninguém ter sabido**. O smoke test que eu construí validava `/healthz`, e `/healthz` não tocava o banco: o deploy passou verde com a aplicação inutilizável, e o problema só apareceu quando um usuário reclamou. Publicar não é o mesmo que funcionar, e essa distinção estava faltando na única etapa que existia para garanti-la.
+
+`/healthz` passa a devolver `db: { status, latencyMs, reason }`, com cache de 15s (Render e UptimeRobot batem nele o tempo todo). O **status HTTP continua 200** mesmo com o banco fora, deliberadamente: o Render usa esse endpoint como health check, e devolver erro colocaria o serviço em loop de restart justamente quando o problema está fora dele. Liveness e readiness são perguntas diferentes; a segunda virou campo, não status. O smoke test do CI lê esse campo e **falha o deploy** quando o banco está inacessível, apontando as três variáveis a conferir.
+
+### Como isso chegou em produção
+
+O PR #17 foi mergeado com o check `Typecheck + build` vermelho — aquele que eu havia comentado explicitamente para não mergear. Com o job `build` falhando, o `deploy` do CI foi **pulado**; a versão subiu mesmo assim pelo **Auto-Deploy do Render**, que publica direto do push sem esperar o CI.
+
+São as pendências 1 e 2 do runbook — branch protection e Auto-Deploy — agora com consequência concreta em vez de hipótese. O gate funcionou: marcou vermelho. O que faltou foi ele ter autoridade para barrar.
+
 ## 2026-09-09 — Schema do cliente rejeitava a resposta nova, e roadmap atualizado
 
 Fui atualizar o roadmap, conferi se a tela consumia os campos novos, e encontrei coisa pior: **o schema zod do cliente rejeitava a resposta que o servidor passou a devolver.**

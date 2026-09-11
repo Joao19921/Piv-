@@ -3,7 +3,7 @@ name = "benchmark-worker"
 version = "0.1.0"
 description = "Worker independente para coleta, normalizacao e persistencia de referencias salariais de mercado"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["psycopg[binary]>=3.1,<4"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

@@ -344,10 +344,33 @@ modelo, não o PDF: o PDF muda de nome a cada republicação).
 
 ### Ativar verificação de certificado do Postgres
 
-1. Supabase Dashboard → Project Settings → Database → SSL Configuration → **Download certificate**.
-2. Render → serviço `pivo` → Environment → nova variável `DATABASE_CA_CERT` com o conteúdo do
-   `.crt` (pode colar com `\n` literais).
-3. Save. A conexão passa a usar `rejectUnauthorized: true`.
+> **Atenção — isto já derrubou a produção (10/09/2026).** O certificado que a Supabase
+> disponibiliza para download valida a **conexão direta**, não o **pooler Supavisor**, que é o
+> que o app usa. Configurar `DATABASE_CA_CERT` com ele faz o handshake falhar com
+> `self-signed certificate in certificate chain`, e **toda** consulta passa a dar erro: o app
+> sobe, mas login e qualquer tela com dados respondem 500.
+>
+> Ligar essa variável transforma uma proteção opcional em ponto único de falha. Remover a
+> variável restaura a conexão na hora.
+
+Procedimento seguro:
+
+1. Obtenha o CA correspondente ao host que o app realmente usa — o do **pooler**, não o da
+   conexão direta. Se a Supabase não publicar um para o pooler, esta variável não é aplicável.
+2. **Valide localmente antes**, com a mesma connection string de produção, e só siga se o
+   resultado for `{ status: 'ok' }`:
+
+```bash
+DATABASE_CA_CERT="$(cat prod-ca.crt)" node --experimental-strip-types -e "
+  require('dotenv/config');
+  const { pingDatabase } = await import('./server/src/infrastructure/db/client.ts');
+  console.log(await pingDatabase());
+"
+```
+
+3. Só então cadastre no Render, e confirme em `/api/v1/healthz` que `db.status` segue `ok`.
+
+Se quebrar, o `reason` em `/healthz` aponta a variável culpada, não só o erro de TLS.
 
 O certificado **não** é versionado de propósito: o CA é rotacionado, e um `.crt` commitado vira
 bomba-relógio que derruba produção no dia da troca.
@@ -388,6 +411,35 @@ update users set failed_login_attempts = 0, locked_until = null where email = '.
 > O contador em memória também precisa zerar. Ele expira em 15 min sozinho; um restart do
 > serviço também limpa.
 
+### "O login parou" / "toda tela dá erro, mas o app abre"
+
+**Primeira coisa a olhar**, porque distingue as duas causas em uma chamada:
+
+```bash
+curl -s https://pivo-i8m3.onrender.com/api/v1/healthz
+```
+
+- `"db":{"status":"ok"}` — o banco responde; o problema é outro.
+- `"db":{"status":"unreachable", "reason": "..."}` — **é isto**. A aplicação subiu mas não fala
+  com o Postgres. Toda rota que consulta responde 500 (login inclusive), enquanto as que não
+  consultam seguem normais — foi exatamente esse o padrão do incidente de 10/09/2026.
+
+Confirmando pelo comportamento das rotas:
+
+| Rota | Toca banco? | Se o banco caiu |
+| :--- | :--- | :--- |
+| `GET /auth/session` sem cookie | não | 200 |
+| `POST /auth/login` sem campos | não | 400 |
+| `POST /auth/login` com campos | **sim** | **500** |
+
+**Onde investigar**, em ordem: `DATABASE_CA_CERT` no Render (se preenchida com PEM errado ou
+incompleto, o TLS passa a exigir verificação contra um CA inválido e *toda* consulta falha);
+`DATABASE_SSL` (se estiver `disable`, o pooler da Supabase recusa a conexão); `DATABASE_URL`
+(host/porta/senha). O log do Render traz a linha `Consulta '...' falhou` com a mensagem do driver.
+
+Para separar app de banco, conecte direto com a mesma connection string — se o `psql`/driver
+conecta e o app não, a diferença está nas variáveis do Render, não no Postgres.
+
 ### "A API responde 500"
 
 O handler global registra tudo no Sentry (`agentanalisedegoverno.sentry.io`, projeto `pivo`).
@@ -420,25 +472,25 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 
 | # | Pendência | Impacto | Caminho |
 | :--- | :--- | :--- | :--- |
-| 1 | **Sem branch protection** exigindo os checks do CI | PRs com CI vermelho podem ser mergeados — já aconteceu: o merge do PR #7 quebrou o `master` | Settings → Branches → require status checks `build`, `test`, `security` |
-| 2 | **Auto-Deploy do Render possivelmente ligado** | Se estiver, o Render publica a cada push sem esperar o CI, e o gate vira alarme depois do fato | Render → Settings → Build & Deploy → Auto-Deploy: `No` |
-| 3 | **CSP em report-only** | Não bloqueia XSS ainda, só relata | Revisar violações e trocar `reportOnly: false` em `securityHeaders.ts` |
-| 4 | **`DATABASE_CA_CERT` não configurada** | Conexão com o banco é cifrada mas sem verificar identidade do servidor (MITM ativo) | Seção 5 acima |
-| 5 | **Validação de rota feita à mão** com `typeof` | `zod` já é dependência e é usado no cliente; validação manual é fácil de esquecer num campo novo | Migrar rotas para schemas zod |
-| 6 | **Sem checagem de senha vazada** | Política bloqueia senha óbvia, mas não senha real que já vazou | Integrar HaveIBeenPwned (range API, k-anonymity) |
-| 7 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |
-| 8 | **Deploy da Lambda é manual**, de máquina de dev, sem IaC | Sem revisão, sem estado, sem drift detection | Terraform/SAM + job no CI |
-| 9 | **Sem teste no cliente** (0 arquivos) | Regressão de UI só aparece em produção | Vitest + Testing Library |
-| 10 | **A suíte depende de APIs externas ao vivo** | Testes que batem em `/system-health` chamam BACEN/Azure/PNCP de verdade; latência do runner já quebrou o build sem nada errado no código | Injetar/stubar os coletores; hoje mitigado só com `testTimeout: 30s` |
-| 11 | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
-| 12 | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
-| 13 | **Portaria de infraestrutura pode estar superada** | A SGD/MGI nº 5.921/2026 atualizou a nº 1.070/2023; o catálogo ainda usa os valores da nº 6.055/2025 | Conferir o anexo novo e atualizar `catalogs.ts`, depois `pnpm run ingest:sisp` |
-| 14 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
+| 1 | **Auto-Deploy do Render possivelmente ligado** | Se estiver, o Render publica a cada push sem esperar o CI, e o gate vira alarme depois do fato | Render → Settings → Build & Deploy → Auto-Deploy: `No` |
+| 2 | **CSP em report-only** | Não bloqueia XSS ainda, só relata | Revisar violações e trocar `reportOnly: false` em `securityHeaders.ts` |
+| 3 | **`DATABASE_CA_CERT` inaplicável hoje** | Conexão cifrada mas sem verificar identidade do servidor. Configurá-la com o CA da conexão direta **derruba a produção** (incidente de 10/09/2026): o pooler Supavisor apresenta outra cadeia | Obter um CA válido para o pooler; sem isso, manter desligada — ver Seção 5 |
+| 4 | **Validação de rota feita à mão** com `typeof` | `zod` já é dependência e é usado no cliente; validação manual é fácil de esquecer num campo novo | Migrar rotas para schemas zod |
+| 5 | **Sem checagem de senha vazada** | Política bloqueia senha óbvia, mas não senha real que já vazou | Integrar HaveIBeenPwned (range API, k-anonymity) |
+| 6 | **Sem retenção/anonimização** de `market_benchmark_searches.notes` | Campo livre onde se cola nome de cliente; LGPD | Definir política de retenção e job de expurgo |
+| 7 | **Deploy da Lambda é manual**, de máquina de dev, sem IaC | Sem revisão, sem estado, sem drift detection | Terraform/SAM + job no CI |
+| 8 | **Sem teste no cliente** (0 arquivos) | Regressão de UI só aparece em produção | Vitest + Testing Library |
+| 9 | **A suíte depende de APIs externas ao vivo** | Testes que batem em `/system-health` chamam BACEN/Azure/PNCP de verdade; latência do runner já quebrou o build sem nada errado no código | Injetar/stubar os coletores; hoje mitigado só com `testTimeout: 30s` |
+| 10 | **40+ componentes shadcn órfãos** em `client/src/components/ui/` | Arrastam dependências (embla-carousel, cmdk, vaul, input-otp…) que geram PR de atualização indefinidamente e ampliam superfície | Remover os não usados — já feito para `resizable`, `chart` e `calendar` |
+| 11 | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
+| 12 | **Portaria de infraestrutura pode estar superada** | A SGD/MGI nº 5.921/2026 atualizou a nº 1.070/2023; o catálogo ainda usa os valores da nº 6.055/2025 | Conferir o anexo novo e atualizar `catalogs.ts`, depois `pnpm run ingest:sisp` |
+| 13 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
+| 14 | **Secret `BENCHMARK_WORKER_DATABASE_URL` ausente no GitHub** | O worker Python (`benchmark-worker/`) não roda: `run` (agendado a cada ~10 dias) e `manual-entry` via Actions falham cedo com erro explícito, de propósito. A tela do admin em `/administracao/benchmark-worker` **não depende disso** — usa o `DATABASE_URL` da própria aplicação | Criar uma connection string própria do worker (privilégio mínimo, só tabelas `benchmark_*`) e configurar como Secret — ver docs/BENCHMARK-WORKER-MANUAL.md, seção 4 |
 
 ### Resolvidas nesta frente de trabalho
 
-Mantidas aqui porque o **motivo** de cada uma continua valendo como referência — três das quatro
-só apareceram depois de causar dano real.
+Mantidas aqui porque o **motivo** de cada uma continua valendo como referência — a maioria só
+apareceu depois de causar dano real.
 
 | O que era | Como fechou |
 | :--- | :--- |
@@ -446,14 +498,7 @@ só apareceram depois de causar dano real.
 | **Secret `DATABASE_URL` ausente no GitHub** — a ingestão mensal não tinha onde gravar | Configurado; ingestão gravando |
 | **`catalogs.ts` usava `cbo` como agrupamento, não como CBO** — `2124-05` carregava dez cargos distintos; o join do CAGED daria salário de desenvolvedor ao designer de UX | 66 dos 73 perfis com o CBO corrigido contra a classificação oficial; os 36 cargos que a CBO 2002 não prevê ficaram com `cbo: null`, sem código inventado |
 | **CAGED nunca havia sido ingerido** — o catálogo declarava `benchmarkSource: "CAGED/MTE"` sobre números que nunca vieram do CAGED | Pipeline mensal em produção: 4,4 M linhas processadas, 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
-
---- | :--- | :--- |
-| 1b | **Migration em produção é passo manual** | Resolvido em 2026-09-09: o job `deploy` aplica as pendentes antes de publicar, e falha aborta o deploy | — |
-| 4b | **Secret `DATABASE_URL` ausente no GitHub** | Configurado em 2026-09-09; ingestão gravando | — |
-| 4c | **`catalogs.ts` usa `cbo` como agrupamento** | Resolvido em 2026-09-09: 66 dos 73 perfis tiveram o CBO corrigido; cargos sem ocupação na CBO 2002 ficaram com `cbo: null` | — |
-| 11 | **CAGED nunca foi ingerido de verdade** | Resolvido em 2026-09-09: pipeline validado contra a competência 202607 (4,4 M linhas, 14.405 admissões, 81 recortes) e ligado em `/labor/profiles` | Concluído: 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
-
----
+| **Sem branch protection** exigindo os checks do CI — já aconteceu: o merge do PR #7 quebrou o `master` | Resolvido em 2026-09-11: `master` ganhou os mesmos checks obrigatórios (`Typecheck + build`, `Testes automatizados`, `Segurança`), `enforce_admins` e bloqueio de force-push/deleção que uma tentativa anterior (incompleta) de migrar o deploy para uma branch `main` havia configurado só lá. A branch `main` — nunca observada pelo Render, órfã desde essa tentativa — foi removida junto com o PR aberto contra ela (#20), que não trazia nada que `master` já não tivesse |
 
 ## 8. Enriquecimento de dados: o que foi feito e o que falta
 

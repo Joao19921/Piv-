@@ -24,7 +24,8 @@ export type AuditAction =
   | "USER_CREATED"
   | "USER_UPDATED"
   | "USER_ACTIVATED"
-  | "USER_DEACTIVATED";
+  | "USER_DEACTIVATED"
+  | "BENCHMARK_MANUAL_OBSERVATION_CREATED";
 
 export interface AuditEvent {
   action: AuditAction;
