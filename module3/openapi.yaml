@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: Módulo 3 - Dados Públicos de TI
+  version: 1.0.0
+  description: Microsserviço isolado para consultas públicas de licitações, perfis e equipamentos.
+servers:
+  - url: https://api.exemplo.com
+paths:
+  /healthz:
+    get:
+      responses:
+        '200': { description: Serviço disponível }
+  /v1/mod3/public-tenders:
+    get:
+      parameters:
+        - { name: term, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 160 } }
+        - { name: x-api-key, in: header, required: false, schema: { type: string } }
+      responses:
+        '200': { description: Resultados normalizados de PNCP e Compras.gov.br }
+        '400': { description: Termo inválido }
+        '502': { description: Fonte pública indisponível }
+  /v1/mod3/profiles:
+    get:
+      responses:
+        '200': { description: Perfis IT Talents persistidos }
+  /v1/mod3/equipment:
+    get:
+      responses:
+        '200': { description: Equipamentos e insumos persistidos }

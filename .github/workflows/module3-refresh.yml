@@ -1,0 +1,34 @@
+name: Módulo 3 - atualização de dados públicos
+
+on:
+  schedule:
+    - cron: '17 3 */10 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: module3-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Atualizar banco exclusivo do Módulo 3
+        env:
+          MOD3_DATABASE_URL: ${{ secrets.MOD3_DATABASE_URL }}
+          MOD3_COMPRAS_GOV_API_URL: ${{ vars.MOD3_COMPRAS_GOV_API_URL }}
+          MOD3_TERMS: ${{ vars.MOD3_TERMS }}
+        run: |
+          test -n "$MOD3_DATABASE_URL"
+          corepack pnpm tsx module3/src/worker.ts

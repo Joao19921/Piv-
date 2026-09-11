@@ -1,0 +1,49 @@
+CREATE TABLE IF NOT EXISTS mod3_buscas (
+  id BIGSERIAL PRIMARY KEY,
+  termo TEXT NOT NULL,
+  fontes TEXT[] NOT NULL DEFAULT '{}',
+  quantidade_resultados INTEGER NOT NULL DEFAULT 0,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mod3_licitacoes (
+  id BIGSERIAL PRIMARY KEY,
+  external_id TEXT NOT NULL,
+  fonte TEXT NOT NULL,
+  objeto TEXT NOT NULL,
+  uf CHAR(2),
+  data_licitacao DATE,
+  url_origem TEXT,
+  payload JSONB NOT NULL DEFAULT '{}',
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (external_id, fonte)
+);
+
+CREATE INDEX IF NOT EXISTS mod3_licitacoes_busca_idx ON mod3_licitacoes (objeto, uf, data_licitacao);
+
+CREATE TABLE IF NOT EXISTS mod3_perfis_talents (
+  id BIGSERIAL PRIMARY KEY,
+  licitacao_id BIGINT REFERENCES mod3_licitacoes(id) ON DELETE CASCADE,
+  perfil TEXT NOT NULL,
+  senioridade TEXT,
+  unidade_medicao TEXT,
+  valor_hora NUMERIC(14, 2),
+  payload JSONB NOT NULL DEFAULT '{}',
+  UNIQUE (licitacao_id, perfil, senioridade)
+);
+
+CREATE INDEX IF NOT EXISTS mod3_perfis_busca_idx ON mod3_perfis_talents (perfil, senioridade, valor_hora);
+
+CREATE TABLE IF NOT EXISTS mod3_equipamentos (
+  id BIGSERIAL PRIMARY KEY,
+  licitacao_id BIGINT REFERENCES mod3_licitacoes(id) ON DELETE CASCADE,
+  descricao TEXT NOT NULL,
+  categoria TEXT,
+  unidade TEXT,
+  valor_unitario NUMERIC(14, 2),
+  payload JSONB NOT NULL DEFAULT '{}',
+  UNIQUE (licitacao_id, descricao)
+);
+
+CREATE INDEX IF NOT EXISTS mod3_equipamentos_busca_idx ON mod3_equipamentos (descricao, categoria, valor_unitario);
