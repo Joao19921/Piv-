@@ -199,6 +199,34 @@ Validator.validate → Repository.save_run_summary` (uma vez, ao final, para tod
 execução — ver comentário em `domain/contracts.py` sobre por que não é por
 observação individual).
 
+## 5.1 Tela no admin (Fase 8, parcial)
+
+`/administracao/benchmark-worker` (menu "Benchmark worker", só `role = ADMIN`,
+mesmo gate de `/administracao/usuarios`). Implementada **em TypeScript, no backend
+Express da aplicação** — não no worker Python, que continua isolado e sem HTTP. É a
+aplicação (que só deveria "consumir dados", ver seção 1) ganhando também uma forma
+de *alimentar* uma observação manual, sem depender do worker rodar.
+
+- **Leitura**: `GET /api/v1/admin/benchmark-worker/sources` (estado de cada fonte) e
+  `GET /api/v1/admin/benchmark-worker/runs` (últimas 20 execuções, qualquer origem —
+  manual pela UI, manual pelo CLI/GitHub Actions, ou agendada).
+- **Escrita**: `POST /api/v1/admin/benchmark-worker/manual-entry` — mesmo efeito que
+  `manual_entry.py`, mas com campos estruturados (dropdowns de UF/senioridade/regime,
+  números para salário) em vez de texto livre: por isso não reaproveita o parser de
+  `salary_text.py` e sempre grava `confidence = 1.0` — quem preenche o formulário já
+  escolheu cada valor explicitamente, não há texto ambíguo para interpretar.
+- Grava `benchmark_runs` + `benchmark_results` na mesma transação
+  (`benchmarkWorkerRepository.ts`, `withTransaction`) — mesmo motivo do
+  `PostgresRepository` do worker (seção 3, contracts.py): uma linha de execução nunca
+  fica sem os resultados que a originaram.
+- Toda gravação registra um evento em `audit_logs`
+  (`BENCHMARK_MANUAL_OBSERVATION_CREATED`), mesmo padrão de
+  `adminUsersRoutes.ts`.
+
+**Não implementado nesta fase** (fora do que foi aprovado): disparo de coleta
+automatizada pelo admin — não faria sentido hoje, já que não há adapter real
+habilitado; e consumo de `benchmark_jobs`, que segue sem nenhum leitor.
+
 ## 6. Banco de dados
 
 Migration `server/db/migrations/0011_benchmark_worker_schema.sql`, aditiva, sem

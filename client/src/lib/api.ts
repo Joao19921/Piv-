@@ -494,3 +494,63 @@ export async function deactivateUserRequest(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
   if (!res.ok) await parseErrorOrThrow(res, "Falha ao desativar usuário.");
 }
+
+// --- Administração do Benchmark Worker (fontes/execuções/registro manual) --------------
+
+const benchmarkSourceSchema = z.object({
+  name: z.string(),
+  status: z.enum(["enabled", "disabled"]),
+  disabled_reason: z.string().nullable(),
+  updated_at: z.string(),
+});
+export type BenchmarkSource = z.infer<typeof benchmarkSourceSchema>;
+
+const benchmarkRunSchema = z.object({
+  id: z.number(),
+  status: z.enum(["success", "partial", "failed"]),
+  triggered_by: z.enum(["manual", "scheduled"]),
+  source_summary: z.array(
+    z.object({ source: z.string(), status: z.string(), observations: z.number(), error_summary: z.string().nullable() }),
+  ),
+  started_at: z.string(),
+  finished_at: z.string(),
+});
+export type BenchmarkRun = z.infer<typeof benchmarkRunSchema>;
+
+const benchmarkSourcesResponseSchema = z.object({ sources: z.array(benchmarkSourceSchema) });
+const benchmarkRunsResponseSchema = z.object({ runs: z.array(benchmarkRunSchema) });
+
+export async function fetchBenchmarkSources(): Promise<BenchmarkSource[]> {
+  const res = await fetch(`${API_BASE}/admin/benchmark-worker/sources`);
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao carregar as fontes do benchmark worker.");
+  return benchmarkSourcesResponseSchema.parse(await res.json()).sources;
+}
+
+export async function fetchBenchmarkRuns(): Promise<BenchmarkRun[]> {
+  const res = await fetch(`${API_BASE}/admin/benchmark-worker/runs?limit=20`);
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao carregar o histórico de execuções.");
+  return benchmarkRunsResponseSchema.parse(await res.json()).runs;
+}
+
+export interface ManualObservationParams {
+  roleTitle: string;
+  seniority: string | null;
+  state: string | null;
+  regime: "clt" | "pj" | "unknown";
+  salaryMin: number;
+  salaryMax: number;
+  currency: "brl" | "usd";
+  periodicity: "monthly" | "annual";
+  observedAt: string;
+  sourceReference: string;
+}
+
+export async function createManualObservation(params: ManualObservationParams): Promise<{ runId: number }> {
+  const res = await fetch(`${API_BASE}/admin/benchmark-worker/manual-entry`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao registrar a observação.");
+  return z.object({ ok: z.boolean(), runId: z.number() }).parse(await res.json());
+}

@@ -224,9 +224,13 @@ Falta:
   este item alem de aguardar uma decisao de negocio. Vale uma consulta a Indeed
   Hiring Lab API, mas e' dado macro de tendencia, nao por cargo/senioridade --
   provavelmente nao serve como substituto direto mesmo se aprovada.
-- **Fase 8** (nao iniciada): tela no admin para visualizar fontes/execucoes/erros e
-  para o administrador solicitar uma coleta pontual (usaria `benchmark_jobs`, ainda
-  sem consumidor). Unica etapa que tocaria `client/` -- ainda nao aprovada.
+- ~~Fase 8~~ feito (2026-09-11), na parte aprovada: tela em
+  `/administracao/benchmark-worker` (so ADMIN) mostra fontes e as ultimas
+  execucoes, e permite registrar uma observacao manual pela UI (equivalente ao
+  `manual_entry.py` do worker, sem precisar de Python local) -- ver Manual,
+  secao 5.1. Nao criado: consumo de `benchmark_jobs` (segue sem uso -- so faria
+  sentido com uma fonte automatizada real, Fase 6) nem dashboards de metricas
+  alem da lista de execucoes.
 - ~~Popular `benchmark_profiles`~~ feito (migration `0013`): os mesmos 73
   cargo+senioridade que `server/src/domain/services/catalogs.ts` (laborProfiles)
   ja rastreia via CAGED/SISP, `state = null` (nacional, mesmo escopo do

@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-11 — Benchmark Worker: tela no admin (Fase 8, parcial)
+
+Nova área `/administracao/benchmark-worker` (só ADMIN): mostra o estado das fontes (indeed/glassdoor/infojobs desabilitadas, manual habilitada) e as últimas execuções, e permite registrar uma observação manual pela UI — mesmo efeito do `manual_entry.py` do worker Python, mas sem precisar de Python local, com campos estruturados (dropdowns) em vez de texto livre, então grava `confidence = 1.0` sempre (não há texto ambíguo para interpretar).
+
+Implementada no backend Express da aplicação (`benchmarkWorkerAdminRoutes.ts`, `benchmarkWorkerRepository.ts`), não no worker Python — que continua isolado, sem HTTP. É a aplicação (que deveria só "consumir dados") ganhando também uma forma de alimentar uma observação manual. Grava `benchmark_runs`+`benchmark_results` numa transação só, e cada gravação vira um evento em `audit_logs`.
+
+Não implementado: disparo de coleta automatizada pelo admin (sem sentido hoje, sem adapter real habilitado) nem consumo de `benchmark_jobs`, que segue sem leitor.
+
+Achado no caminho: `server/tests/marketBenchmark.test.ts` já usava o prefixo de e-mail `benchmark-%@test.pivo.internal` para usuários de teste. Meu primeiro teste novo usou o mesmo prefixo — o `afterAll` de um arquivo apagou os usuários (e invalidou a sessão) do outro quando os dois rodaram em paralelo. Renomeado para `bmworker-%` antes de commitar.
+
 ## 2026-09-11 — Benchmark Worker: `benchmark_profiles` populada
 
 Migration `0013`: os mesmos 73 cargo+senioridade que `catalogs.ts` (`laborProfiles`) já rastreia via CAGED/SISP, `state = null` (nacional — o catálogo de origem também não segmenta por UF). Antes disso a tabela ficava vazia e toda execução agendada terminava em "nenhum perfil ativo" — correto, mas sem cobertura real nenhuma. Não inventa combinação nova, não habilita nenhuma fonte: `indeed`/`glassdoor`/`infojobs` continuam `disabled`. Idempotente (`on conflict do nothing`), respeita `active` se alguém desativar um perfil manualmente depois.

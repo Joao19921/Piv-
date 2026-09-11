@@ -32,6 +32,7 @@ import { getQueryStats } from "../infrastructure/observability/queryStats";
 import type { ResilienceResult } from "../infrastructure/resilience/resilienceManager";
 import { createAdminUsersRouter } from "./adminUsersRoutes";
 import { createAuthRouter } from "./authRoutes";
+import { createBenchmarkWorkerAdminRouter } from "./benchmarkWorkerAdminRoutes";
 import { requireAuth, requirePermission } from "./authMiddleware";
 
 /** Versão do package.json, lida uma vez no boot; usada só para exibir "v{versão}" no rodapé do app. */
@@ -526,6 +527,9 @@ export function createApiRouter(): Router {
 
   // Área administrativa (CRUD de usuários) — só ADMIN (checado dentro do próprio router).
   router.use(createAdminUsersRouter());
+
+  // Área administrativa do benchmark worker (fontes/execuções/registro manual) — só ADMIN.
+  router.use(createBenchmarkWorkerAdminRouter());
 
   return router;
 }
