@@ -21,6 +21,8 @@ const MODULE3_API_URL = (import.meta.env.VITE_MODULE3_API_URL as string | undefi
 export default function PublicTendersPage() {
   const [term, setTerm] = useState("desenvolvimento de software");
   const [uf, setUf] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [results, setResults] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -30,11 +32,17 @@ export default function PublicTendersPage() {
       toast.error("Informe pelo menos 2 caracteres para buscar.");
       return;
     }
+    if ((startDate && !endDate) || (!startDate && endDate) || (startDate && endDate && startDate > endDate)) {
+      toast.error("Informe um intervalo de datas válido.");
+      return;
+    }
     setLoading(true);
     setSearched(true);
     try {
       const params = new URLSearchParams({ term: term.trim() });
       if (uf) params.set("uf", uf);
+      if (startDate) params.set("dataInicial", startDate);
+      if (endDate) params.set("dataFinal", endDate);
       const response = await fetch(`${MODULE3_API_URL}/public-tenders?${params}`);
       const body = (await response.json().catch(() => null)) as { tenders?: Tender[]; error?: string } | null;
       if (!response.ok) throw new Error(body?.error ?? "Não foi possível consultar o Módulo 3.");
@@ -59,9 +67,11 @@ export default function PublicTendersPage() {
           <div className="rounded-xl bg-[#E8E9E9] p-3 text-[#0D5C5C]"><FileSearch className="h-5 w-5" /></div>
           <div><h2 className="font-display text-lg font-semibold text-[#333333]">Buscar em fontes oficiais</h2><p className="text-xs text-[#788D8D]">PNCP e Compras.gov.br</p></div>
         </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_120px_auto]">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_100px_150px_150px_auto]">
           <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#819494]" /><Input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} className="h-11 rounded-xl border-[#D4D1CC] bg-white pl-10 text-sm" placeholder="Ex.: notebook i7, consultoria SAP" aria-label="Termo da busca" /></div>
           <Input value={uf} onChange={(event) => setUf(event.target.value.toUpperCase().slice(0, 2))} className="h-11 rounded-xl border-[#D4D1CC] bg-white text-sm uppercase" placeholder="UF" aria-label="Estado" maxLength={2} />
+          <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="h-11 rounded-xl border-[#D4D1CC] bg-white text-sm" aria-label="Data inicial" title="Data inicial" />
+          <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="h-11 rounded-xl border-[#D4D1CC] bg-white text-sm" aria-label="Data final" title="Data final" />
           <Button onClick={() => void search()} disabled={loading} className="h-11 rounded-xl bg-[#F57F17] px-5 text-xs font-semibold text-white hover:bg-[#D96D0C]">{loading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />} Buscar</Button>
         </div>
       </Card>

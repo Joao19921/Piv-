@@ -9,14 +9,16 @@ export interface PncpSearchOptions {
   uf?: string;
   page?: number;
   pageSize?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export function buildPncpSearchUrl(term: string, now = new Date(), options: PncpSearchOptions = {}): URL {
   const start = new Date(now);
   start.setDate(start.getDate() - 30);
   const url = new URL("https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao");
-  url.searchParams.set("dataInicial", compactDate(start));
-  url.searchParams.set("dataFinal", compactDate(now));
+  url.searchParams.set("dataInicial", options.startDate?.replaceAll("-", "") ?? compactDate(start));
+  url.searchParams.set("dataFinal", options.endDate?.replaceAll("-", "") ?? compactDate(now));
   url.searchParams.set("pagina", String(options.page ?? 1));
   url.searchParams.set("tamanhoPagina", String(options.pageSize ?? 10));
   url.searchParams.set("criterioBusca", term.trim());
