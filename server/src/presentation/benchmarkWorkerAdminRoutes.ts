@@ -8,7 +8,7 @@
 import express, { type Router } from "express";
 import { recordAuditEvent } from "../infrastructure/repositories/auditRepository";
 import { insertManualObservation, listBenchmarkSources, listRecentBenchmarkRuns } from "../infrastructure/repositories/benchmarkWorkerRepository";
-import { requireRole } from "./authMiddleware";
+import { requirePermission } from "./authMiddleware";
 
 // As mesmas 27 UFs da V1 (ver benchmark-worker/src/benchmark_worker/normalization/states.py)
 // -- mantidas em sincronia manualmente, os dois lados sao pequenos e estaveis.
@@ -23,7 +23,7 @@ function isFiniteNumber(value: unknown): value is number {
 
 export function createBenchmarkWorkerAdminRouter(): Router {
   const router = express.Router();
-  router.use(requireRole("ADMIN"));
+  router.use(requirePermission("BENCHMARK_WORKER"));
 
   router.get("/admin/benchmark-worker/sources", async (_req, res) => {
     const sources = await listBenchmarkSources();

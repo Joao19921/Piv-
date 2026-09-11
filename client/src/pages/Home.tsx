@@ -66,8 +66,8 @@ const navigation = [
   { id: "cloud" as SectionId, label: "Infra cloud", short: "03", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
   { id: "licenses" as SectionId, label: "Licenças", short: "04", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
   { id: "admin-users" as SectionId, label: "Usuários", short: "05", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
-  { id: "admin-benchmark-worker" as SectionId, label: "Benchmark worker", short: "06", icon: ClipboardList, requires: null as PermissionCode | null, adminOnly: true },
-  { id: "public-tenders" as SectionId, label: "Editais públicos", short: "07", icon: FileSearch, requires: null as PermissionCode | null, adminOnly: false },
+  { id: "admin-benchmark-worker" as SectionId, label: "Benchmark worker", short: "06", icon: ClipboardList, requires: "BENCHMARK_WORKER" as PermissionCode, adminOnly: false },
+  { id: "public-tenders" as SectionId, label: "Editais e referências de TI", short: "07", icon: FileSearch, requires: "PUBLIC_TENDERS" as PermissionCode, adminOnly: false },
 ];
 
 function visibleNavigationFor(user: AuthUser | null) {

@@ -23,7 +23,7 @@ const queryClient = new QueryClient({
 });
 
 export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources" | "public-tenders" | "admin-users" | "admin-benchmark-worker";
-export type PermissionCode = "LABOR" | "INFRA" | "LICENSES";
+export type PermissionCode = "LABOR" | "INFRA" | "LICENSES" | "BENCHMARK_WORKER" | "PUBLIC_TENDERS";
 
 /** Caminhos reais por secao — cada modulo tem URL propria (favoritar, compartilhar, voltar funcionam). */
 export const SECTION_PATHS: Record<SectionId, string> = {
