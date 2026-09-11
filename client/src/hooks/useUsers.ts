@@ -5,6 +5,7 @@ import {
   deactivateUserRequest,
   fetchUsers,
   updateUserRequest,
+  type ManagedUser,
   type SaveUserParams,
 } from "@/lib/api";
 
@@ -30,7 +31,10 @@ export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...params }: SaveUserParams & { id: string }) => updateUserRequest(id, params),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: LIST_KEY }),
+    onSuccess: (updatedUser) => {
+      queryClient.setQueryData<ManagedUser[]>(LIST_KEY, (users) => users?.map((user) => user.id === updatedUser.id ? updatedUser : user));
+      return queryClient.invalidateQueries({ queryKey: LIST_KEY });
+    },
   });
 }
 
