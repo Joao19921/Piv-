@@ -156,6 +156,11 @@ function ManualEntryCard() {
       toast.error("Informe a referência da fonte consultada (URL ou nome exato do relatório).");
       return;
     }
+    const allowedSourcePattern = /roberthalf\.com|salary\.com|mercer\.com|aon\.com|robert half|salary\.com|mercer|aon|total remuneration survey/i;
+    if (!allowedSourcePattern.test(sourceReference.trim())) {
+      toast.error("Fonte bloqueada: use uma referência pública autorizada e legítima (ex.: Robert Half, Salary.com, Mercer ou Aon). URLs genéricas ou lead-gen não são permitidas.");
+      return;
+    }
     if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
       toast.error("Informe valores de salário válidos.");
       return;
@@ -196,9 +201,9 @@ function ManualEntryCard() {
   return (
     <Card className="mt-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
       <h2 className="font-display text-lg font-semibold text-[#333333]">Registrar observação manual</h2>
-      <p className="mt-1 max-w-2xl text-xs leading-5 text-[#658080]">
-        Para um valor lido diretamente numa fonte pública legítima (ex.: guia salarial da Robert Half). Nunca cite aqui a
-        Catho (termos proíbem reuso) nem um relatório obtido só para contornar um formulário de lead-gen (Michael Page, Hays).
+      <p className="mt-1 max-w-3xl text-xs leading-5 text-[#658080]">
+        Use apenas fontes públicas e institucionalmente autorizadas para benchmark salarial, como Robert Half, Salary.com,
+        Mercer ou Aon. URLs genéricas, lead-gen ou páginas que exigem cadastro para liberar o dado não são permitidas.
       </p>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -259,7 +264,7 @@ function ManualEntryCard() {
           <Input type="date" value={observedAt} onChange={(e) => setObservedAt(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" />
         </div>
         <div className="sm:col-span-2 lg:col-span-3">
-          <Label className="text-xs font-semibold text-[#345555]">Referência da fonte (URL ou nome exato do relatório)</Label>
+          <Label className="text-xs font-semibold text-[#345555]">Referência da fonte (permitido: Robert Half, Salary.com, Mercer, Aon)</Label>
           <Input
             value={sourceReference}
             onChange={(e) => setSourceReference(e.target.value)}

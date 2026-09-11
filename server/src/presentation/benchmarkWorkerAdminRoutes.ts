@@ -6,6 +6,7 @@
  * qualquer automação contra Indeed/Glassdoor/InfoJobs.
  */
 import express, { type Router } from "express";
+import { isAllowedManualSourceReference } from "../domain/services/benchmarkSourceValidation";
 import { recordAuditEvent } from "../infrastructure/repositories/auditRepository";
 import { insertManualObservation, listBenchmarkSources, listRecentBenchmarkRuns } from "../infrastructure/repositories/benchmarkWorkerRepository";
 import { requirePermission } from "./authMiddleware";
@@ -47,6 +48,12 @@ export function createBenchmarkWorkerAdminRouter(): Router {
     }
     if (typeof sourceReference !== "string" || !sourceReference.trim()) {
       res.status(400).json({ error: "A referência da fonte (URL/relatório consultado) é obrigatória." });
+      return;
+    }
+    if (!isAllowedManualSourceReference(sourceReference)) {
+      res.status(400).json({
+        error: "Use uma fonte pública autorizada e legítima, como Robert Half, Salary.com ou outro material institucional reconhecido. URLs genéricas, lead-gen e sites não autorizados são bloqueados.",
+      });
       return;
     }
     if (state !== null && state !== undefined && (typeof state !== "string" || !BRAZILIAN_STATES.has(state))) {

@@ -63,12 +63,43 @@ describe("Administração do Benchmark Worker", () => {
     const res = await request(app)
       .post("/api/v1/admin/benchmark-worker/manual-entry")
       .set("Cookie", adminCookie)
-      .send({ roleTitle: "Analista de BI", regime: "clt", salaryMin: 20000, salaryMax: 10000, currency: "brl", periodicity: "monthly", observedAt: "2026-09-11", sourceReference: "vitest://caso-invalido" });
+      .send({ roleTitle: "Analista de BI", regime: "clt", salaryMin: 20000, salaryMax: 10000, currency: "brl", periodicity: "monthly", observedAt: "2026-09-11", sourceReference: "https://example.com/guia-salarial" });
     expect(res.status).toBe(400);
   });
 
+  it("rejeita urls arbitrarias e lead-gen fora da lista autorizada", async () => {
+    const res1 = await request(app)
+      .post("/api/v1/admin/benchmark-worker/manual-entry")
+      .set("Cookie", adminCookie)
+      .send({ roleTitle: "Analista de BI", regime: "clt", salaryMin: 10000, salaryMax: 15000, currency: "brl", periodicity: "monthly", observedAt: "2026-09-11", sourceReference: "https://example.com/guia-salarial" });
+    expect(res1.status).toBe(400);
+    expect(res1.body.error).toMatch(/fonte pública autorizada|autorizada/i);
+
+    const res2 = await request(app)
+      .post("/api/v1/admin/benchmark-worker/manual-entry")
+      .set("Cookie", adminCookie)
+      .send({ roleTitle: "Analista de BI", regime: "clt", salaryMin: 10000, salaryMax: 15000, currency: "brl", periodicity: "monthly", observedAt: "2026-09-11", sourceReference: "https://www.michaelpage.com.br/pt/job/analista-de-bi" });
+    expect(res2.status).toBe(400);
+  });
+
+  it("aceita apenas referencias publicas autorizadas do allowlist", async () => {
+    const res1 = await request(app)
+      .post("/api/v1/admin/benchmark-worker/manual-entry")
+      .set("Cookie", adminCookie)
+      .send({ roleTitle: "Analista de BI", regime: "clt", salaryMin: 10000, salaryMax: 15000, currency: "brl", periodicity: "monthly", observedAt: "2026-09-11", sourceReference: "https://www.roberthalf.com/br/pt/insights/guia-salarial/tecnologia" });
+    expect(res1.status).toBe(201);
+    createdRunIds.push(res1.body.runId);
+
+    const res2 = await request(app)
+      .post("/api/v1/admin/benchmark-worker/manual-entry")
+      .set("Cookie", adminCookie)
+      .send({ roleTitle: "Analista de BI", regime: "clt", salaryMin: 11000, salaryMax: 16000, currency: "brl", periodicity: "monthly", observedAt: "2026-09-11", sourceReference: "https://www.salary.com/research/salary?job=senior+data+analyst" });
+    expect(res2.status).toBe(201);
+    createdRunIds.push(res2.body.runId);
+  });
+
   it("registra uma observacao manual e ela aparece no historico de execucoes", async () => {
-    const reference = `vitest://guia-teste-${Date.now()}`;
+    const reference = "https://www.roberthalf.com/br/pt/insights/guia-salarial/tecnologia";
     const createRes = await request(app)
       .post("/api/v1/admin/benchmark-worker/manual-entry")
       .set("Cookie", adminCookie)
@@ -98,7 +129,7 @@ describe("Administração do Benchmark Worker", () => {
   });
 
   it("reenviar a mesma referencia/data atualiza a observacao em vez de duplicar (idempotencia)", async () => {
-    const reference = `vitest://idempotencia-${Date.now()}`;
+    const reference = "https://www.salary.com/research/salary?job=senior+data+analyst";
     const payload = {
       roleTitle: "Analista de BI",
       regime: "clt",
