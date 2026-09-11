@@ -430,7 +430,7 @@ export async function duplicateArchitectureRequest(id: string, name?: string): P
 
 // --- Administração de usuários (RBAC) ---------------------------------------------------
 
-const permissionCodeSchema = z.enum(["LABOR", "INFRA", "LICENSES"]);
+const permissionCodeSchema = z.enum(["LABOR", "INFRA", "LICENSES", "BENCHMARK_WORKER", "PUBLIC_TENDERS"]);
 export type PermissionCode = z.infer<typeof permissionCodeSchema>;
 
 const userSchema = z.object({

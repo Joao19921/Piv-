@@ -15,8 +15,10 @@ const PERMISSION_LABELS: Record<PermissionCode, string> = {
   LABOR: "Mão de obra",
   INFRA: "Infra cloud",
   LICENSES: "Licenças",
+  BENCHMARK_WORKER: "Benchmark worker",
+  PUBLIC_TENDERS: "Editais e referências de TI",
 };
-const ALL_PERMISSIONS: PermissionCode[] = ["LABOR", "INFRA", "LICENSES"];
+const ALL_PERMISSIONS: PermissionCode[] = ["LABOR", "INFRA", "LICENSES", "BENCHMARK_WORKER", "PUBLIC_TENDERS"];
 
 export default function AdminUsersPage() {
   const { data: users, isLoading } = useUsers();
@@ -69,6 +71,8 @@ export default function AdminUsersPage() {
                   <th className="px-4 py-3 font-semibold">Mão de obra</th>
                   <th className="px-4 py-3 font-semibold">Infra cloud</th>
                   <th className="px-4 py-3 font-semibold">Licenças</th>
+                  <th className="px-4 py-3 font-semibold">Benchmark worker</th>
+                  <th className="px-4 py-3 font-semibold">Editais e referências de TI</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Ações</th>
                 </tr>

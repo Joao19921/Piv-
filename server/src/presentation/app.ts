@@ -181,7 +181,7 @@ export function createApiRouter(): Router {
   // liberada pra qualquer autenticado; módulos abaixo somam a permissão específica.
   router.use(requireAuth);
 
-  router.get("/mod3/public-tenders", async (req, res) => {
+  router.get("/mod3/public-tenders", requirePermission("PUBLIC_TENDERS"), async (req, res) => {
     const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
     const uf = typeof req.query.uf === "string" ? req.query.uf.trim().toUpperCase() : undefined;
     if (term.length < 2 || term.length > 160) {
