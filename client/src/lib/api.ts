@@ -476,13 +476,14 @@ export async function createUser(params: SaveUserParams & { password: string; co
   return createUserResponseSchema.parse(await res.json());
 }
 
-export async function updateUserRequest(id: string, params: SaveUserParams): Promise<void> {
+export async function updateUserRequest(id: string, params: SaveUserParams): Promise<ManagedUser> {
   const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
   if (!res.ok) await parseErrorOrThrow(res, "Falha ao atualizar usuário.");
+  return z.object({ ok: z.literal(true), user: userSchema }).parse(await res.json()).user;
 }
 
 export async function activateUserRequest(id: string): Promise<void> {

@@ -40,6 +40,12 @@ export interface UpdateUserInput {
 
 async function replacePermissions(txQuery: TransactionQuery, userId: string, permissions: PermissionCode[]): Promise<void> {
   await txQuery("user_permissions.delete_by_user", `delete from user_permissions where user_id = $1`, [userId]);
+  const available = await txQuery<{ code: PermissionCode }>("permissions.list_requested", `select code from permissions where code = any($1::text[])`, [permissions]);
+  const availableCodes = new Set(available.map((row) => row.code));
+  const missing = permissions.filter((code) => !availableCodes.has(code));
+  if (missing.length > 0) {
+    throw new Error(`Permissões não cadastradas no banco: ${missing.join(", ")}. A migration de permissões precisa ser aplicada.`);
+  }
   // ADMIN nunca ganha linhas aqui (acesso total vem do role); so grava permissoes p/ USER.
   for (const code of permissions) {
     await txQuery(
@@ -118,7 +124,7 @@ export async function insertUser(input: CreateUserInput): Promise<string> {
   });
 }
 
-export async function updateUser(id: string, input: UpdateUserInput): Promise<void> {
+export async function updateUser(id: string, input: UpdateUserInput): Promise<UserWithPermissions> {
   await withTransaction(async (txQuery) => {
     await txQuery(
       "users.update",
@@ -127,6 +133,9 @@ export async function updateUser(id: string, input: UpdateUserInput): Promise<vo
     );
     await replacePermissions(txQuery, id, input.role === "USER" ? input.permissions : []);
   });
+  const updated = await findUserById(id);
+  if (!updated) throw new Error("Usuário não encontrado após atualização.");
+  return updated;
 }
 
 export async function setUserStatus(id: string, status: UserStatus): Promise<void> {

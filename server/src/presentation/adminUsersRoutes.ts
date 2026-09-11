@@ -131,7 +131,7 @@ export function createAdminUsersRouter(): Router {
       return;
     }
 
-    await updateUser(req.params.id, {
+    const updated = await updateUser(req.params.id, {
       name: name.trim(),
       email: normalizedEmail,
       role: role as Role,
@@ -144,7 +144,7 @@ export function createAdminUsersRouter(): Router {
       targetUserId: req.params.id,
       metadata: { email: normalizedEmail, role, status: resolvedStatus, permissions: resolvedPermissions },
     });
-    res.json({ ok: true });
+    res.json({ ok: true, user: toUserView(updated) });
   });
 
   router.post("/admin/users/:id/activate", async (req, res) => {
