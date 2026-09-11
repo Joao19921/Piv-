@@ -1,0 +1,7 @@
+ALTER TABLE permissions DROP CONSTRAINT IF EXISTS permissions_code_check;
+ALTER TABLE permissions ADD CONSTRAINT permissions_code_check CHECK (code IN ('LABOR', 'INFRA', 'LICENSES', 'BENCHMARK_WORKER', 'PUBLIC_TENDERS'));
+
+INSERT INTO permissions (code, name, description) VALUES
+  ('BENCHMARK_WORKER', 'Benchmark worker', 'Acesso ao painel operacional do benchmark worker'),
+  ('PUBLIC_TENDERS', 'Editais e referências de TI', 'Acesso à consulta pública de editais e referências de TI')
+ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description;
