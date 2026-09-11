@@ -12,6 +12,8 @@ import { calculateServicePrice } from "../domain/services/pricingEngine";
 import { getAzureUnitPrice } from "../infrastructure/collectors/azureCollector";
 import { getPtax } from "../infrastructure/collectors/bacenCollector";
 import { getPncpStatus } from "../infrastructure/collectors/pncpCollector";
+import { getModule3Config } from "../../../module3/src/config";
+import { searchPncp } from "../../../module3/src/sources";
 import { getPendingSources } from "../infrastructure/collectors/staticFallbacks";
 import { getTlsVerification, isDatabaseConfigured, pingDatabase, type DbHealth } from "../infrastructure/db/client";
 import {
@@ -45,6 +47,8 @@ const appVersion = (() => {
     return "0.0.0";
   }
 })();
+
+const publicTenderCache = new Map<string, { expiresAt: number; tenders: Awaited<ReturnType<typeof searchPncp>> }>();
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
   return {
@@ -176,6 +180,28 @@ export function createApiRouter(): Router {
   // Dali pra baixo, toda rota exige sessão válida (usuário ativo) — Visão Geral é a base
   // liberada pra qualquer autenticado; módulos abaixo somam a permissão específica.
   router.use(requireAuth);
+
+  router.get("/mod3/public-tenders", async (req, res) => {
+    const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
+    const uf = typeof req.query.uf === "string" ? req.query.uf.trim().toUpperCase() : undefined;
+    if (term.length < 2 || term.length > 160) {
+      res.status(400).json({ error: "term deve ter entre 2 e 160 caracteres." });
+      return;
+    }
+    const cacheKey = `${term.toLocaleLowerCase("pt-BR")}:${uf ?? ""}`;
+    const cached = publicTenderCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.json({ term, count: cached.tenders.length, tenders: cached.tenders, cached: true });
+      return;
+    }
+    try {
+      const tenders = await searchPncp(term, getModule3Config(), { uf, pageSize: 100 });
+      publicTenderCache.set(cacheKey, { expiresAt: Date.now() + 60_000, tenders });
+      res.json({ term, count: tenders.length, tenders, cached: false });
+    } catch (error) {
+      res.status(502).json({ error: "O PNCP está temporariamente indisponível ou limitou a consulta. Tente novamente em alguns segundos." });
+    }
+  });
 
   router.get("/system-health", async (_req, res) => {
     const [ptax, azure, pncp, ingestionRuns] = await Promise.all([

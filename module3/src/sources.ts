@@ -33,9 +33,14 @@ async function getJson(url: URL, timeoutMs: number, maxRetries: number): Promise
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (response.ok) return response.json();
-      if (response.status < 500 || attempt >= maxRetries) {
+      const transient = response.status === 429 || response.status >= 500;
+      if (!transient || attempt >= maxRetries) {
         throw new Error(`Fonte respondeu HTTP ${response.status}: ${url.hostname}`);
       }
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 250 * 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(delayMs, 5_000)));
+      continue;
     } catch (error) {
       if (attempt >= maxRetries) throw error;
     }
