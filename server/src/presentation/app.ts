@@ -195,7 +195,7 @@ export function createApiRouter(): Router {
       return;
     }
     try {
-      const tenders = await searchPncp(term, getModule3Config(), { uf, pageSize: 100 });
+      const tenders = await searchPncp(term, getModule3Config(), { uf, pageSize: 10 });
       publicTenderCache.set(cacheKey, { expiresAt: Date.now() + 60_000, tenders });
       res.json({ term, count: tenders.length, tenders, cached: false });
     } catch (error) {
