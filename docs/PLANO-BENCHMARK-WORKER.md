@@ -72,7 +72,7 @@ Referencias:
 
 Resultado detalhado: [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
 
-### Fase 2 - Contrato e arquitetura do worker
+### Fase 2 - Contrato e arquitetura do worker (concluida)
 
 - Escolher o runtime inicial (preferencia: Python).
 - Definir interfaces `Adapter`, `Extractor`, `Normalizer`, `Validator` e `Repository`.
@@ -83,7 +83,9 @@ Resultado detalhado: [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORM
 
 **Saida:** estrutura inicial do projeto e contratos sem acesso real as plataformas.
 
-### Fase 3 - Modelo de dados isolado
+Resultado detalhado: [Fase 2 - Contrato e arquitetura do worker](FASE-2-ARQUITETURA-BENCHMARK-WORKER.md).
+
+### Fase 3 - Modelo de dados isolado (concluida)
 
 - Criar somente migrations novas para tabelas do worker:
   `benchmark_sources`, `benchmark_profiles`, `benchmark_jobs`,
@@ -95,6 +97,8 @@ Resultado detalhado: [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORM
 
 **Gate:** migration aditiva, reversivel por nova migration quando necessario e sem
 alterar constraints das tabelas existentes.
+
+Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-BENCHMARK-WORKER.md).
 
 ### Fase 4 - Nucleo executavel sem fontes reais
 
@@ -173,6 +177,8 @@ Nesse caso, registrar neste documento:
 
 ## Proximo passo
 
-Executar somente a Fase 1, produzindo uma analise de conformidade das tres fontes.
-Nenhum adapter real, migration ou alteracao na aplicacao principal deve ser feito antes
-da aprovacao dessa analise.
+Fases 0 a 3 concluidas (entendimento, conformidade, arquitetura e modelo de dados).
+Prosseguir com a Fase 4 (nucleo executavel com adapters fake) e a Fase 7 (agendamento),
+mantendo os tres adapters de fonte real como `DISABLED` ate que Indeed, Glassdoor ou
+InfoJobs tenham acesso autorizado documentado -- ver
+[Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
