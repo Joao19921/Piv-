@@ -1,5 +1,9 @@
 # Plano Incremental - Benchmark Worker
 
+> Para regras de negócio, estado de conformidade e onde ficam credenciais/segredos,
+> ver o [Manual do Benchmark Worker](BENCHMARK-WORKER-MANUAL.md) -- este documento
+> aqui e' o historico fase a fase da decisao, nao a referencia operacional.
+
 ## Objetivo
 
 Criar um modulo independente para coletar, normalizar, validar e persistir referencias

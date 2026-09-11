@@ -5,6 +5,9 @@ salariais de mercado. Roda fora da aplicacao Pivo (Express/React) e alimenta
 o Supabase; o Pivo continua responsavel pela experiencia do usuario e pelo
 consumo dos dados.
 
+Regras de negócio, estado de conformidade das fontes e onde ficam
+credenciais/segredos: [Manual do Benchmark Worker](../docs/BENCHMARK-WORKER-MANUAL.md).
+
 Este projeto segue o plano incremental em
 [docs/PLANO-BENCHMARK-WORKER.md](../docs/PLANO-BENCHMARK-WORKER.md). Estado atual:
 Fases 0 a 5 e 7 concluidas -- nucleo executavel, persistencia em Postgres,
