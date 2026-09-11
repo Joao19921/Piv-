@@ -131,13 +131,27 @@ export function createAdminUsersRouter(): Router {
       return;
     }
 
-    const updated = await updateUser(req.params.id, {
-      name: name.trim(),
-      email: normalizedEmail,
-      role: role as Role,
-      status: resolvedStatus,
-      permissions: resolvedPermissions,
-    });
+    let updated: UserWithPermissions;
+    try {
+      updated = await updateUser(req.params.id, {
+        name: name.trim(),
+        email: normalizedEmail,
+        role: role as Role,
+        status: resolvedStatus,
+        permissions: resolvedPermissions,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Permissões não cadastradas")) {
+        res.status(409).json({ error: "O catálogo de permissões do banco está desatualizado. A migration de acesso precisa ser aplicada antes de salvar." });
+        return;
+      }
+      if (message.includes("Usuário não encontrado")) {
+        res.status(404).json({ error: "Este usuário não existe mais. Atualize a lista e tente novamente." });
+        return;
+      }
+      throw error;
+    }
     void recordAuditEvent({
       action: "USER_UPDATED",
       actorUserId: req.user!.id,
