@@ -44,16 +44,22 @@ def load_source_rows(dsn: str) -> list[SourceRow]:
 
 
 def build_adapters(source_rows: list[SourceRow]) -> list[Adapter]:
-    """Constroi um adapter por fonte cadastrada.
+    """Constroi um adapter por fonte automatizavel.
 
-    Hoje toda fonte esta DISABLED (Fase 1), entao todas viram `DisabledAdapter` com o
-    motivo vindo do banco -- unica fonte de verdade sobre por que cada uma esta
-    desligada. Quando uma fonte for autorizada (Fase 6), este e' o unico lugar que
-    precisa trocar o adapter concreto; o restante do pipeline nao muda.
+    Hoje toda fonte automatizavel (indeed/glassdoor/infojobs) esta DISABLED (Fase 1),
+    entao todas viram `DisabledAdapter` com o motivo vindo do banco -- unica fonte de
+    verdade sobre por que cada uma esta desligada. Quando uma fonte for autorizada
+    (Fase 6), este e' o unico lugar que precisa trocar o adapter concreto; o restante
+    do pipeline nao muda.
+
+    `SourceName.MANUAL` nunca passa por aqui: nao ha fetch nem adapter para entrada
+    manual, ela grava direto via `benchmark_worker.manual_entry` (ver esse modulo).
     """
 
     adapters: list[Adapter] = []
     for row in source_rows:
+        if row.name is SourceName.MANUAL:
+            continue
         if row.status is AdapterStatus.DISABLED:
             adapters.append(DisabledAdapter(row.name, row.disabled_reason or "sem motivo registrado"))
         else:

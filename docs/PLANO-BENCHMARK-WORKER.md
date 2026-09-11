@@ -209,11 +209,21 @@ via GitHub Actions e sempre reporta `SUCCESS` sem observacoes, porque as tres fo
 seguem `DISABLED` -- ver
 [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
 
+Investigado em 2026-09-11 (ver
+[Manual, secao 3.1](BENCHMARK-WORKER-MANUAL.md#31-alternativas-legítimas-investigadas-2026-09-11)):
+nenhuma API/parceria oficial pronta para uso nas tres fontes, e a maioria dos
+guias salariais concorrentes e' paga/gated ou proibe reuso (Catho). Unico
+caminho legitimo hoje: **entrada manual assistida** a partir de relatorios
+publicos sem paywall (ex.: Robert Half) -- implementado (`manual_entry.py`,
+fonte `manual` na migration `0012`), documentado no Manual, secao 3.2.
+
 Falta:
 
 - **Fase 6** (bloqueada): nenhum adapter real pode ser implementado sem autorizacao
   documentada de Indeed, Glassdoor ou InfoJobs. Sem isso, nao ha nada a acionar por
-  este item alem de aguardar uma decisao de negocio.
+  este item alem de aguardar uma decisao de negocio. Vale uma consulta a Indeed
+  Hiring Lab API, mas e' dado macro de tendencia, nao por cargo/senioridade --
+  provavelmente nao serve como substituto direto mesmo se aprovada.
 - **Fase 8** (nao iniciada): tela no admin para visualizar fontes/execucoes/erros e
   para o administrador solicitar uma coleta pontual (usaria `benchmark_jobs`, ainda
   sem consumidor). Unica etapa que tocaria `client/` -- ainda nao aprovada.

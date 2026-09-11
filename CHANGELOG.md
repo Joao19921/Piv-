@@ -2,6 +2,16 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-11 — Benchmark Worker: entrada manual assistida, em vez de scraping do front
+
+Pedido: acessar Indeed/Glassdoor/InfoJobs "pelo front" com uma conta Google dedicada. Recusei — não é diferente do scraping já descartado na Fase 1: os termos de uso proíbem automação independente de qual conta faz o acesso, e as três usam CAPTCHA/verificação de sessão que este projeto não vai contornar.
+
+Levantamento do que existe de legítimo (docs/BENCHMARK-WORKER-MANUAL.md, seção 3.1): nenhuma API/parceria pronta para uso nas três. Da concorrência, a maioria é gated (Michael Page, Hays — cadastro obrigatório) ou proíbe reuso explicitamente (Catho: "termos proíbem copiar, armazenar, capturar ou exportar conteúdo"). Achado aproveitável: **Robert Half publica um guia salarial de TI público, sem cadastro, por percentil e cidade**.
+
+Implementei o caminho que isso permite: uma pessoa lê o número num relatório público e registra — `benchmark_worker.manual_entry`, fonte nova `manual` (migration `0012`, `benchmark_sources.status = 'enabled'` porque não é automação, não passa pelo gate da Fase 1). Mesma normalização/validação/deduplicação do resto do worker. Acessível via CLI (`cli.py manual-entry`) ou pela aba Actions do GitHub (`workflow_dispatch` com os campos do registro), sem precisar de Python local.
+
+`--reference` continua obrigatório: é a auditoria de qual relatório foi consultado. A regra vale também para o que não pode ser citado aqui — Catho (proibido) e qualquer PDF obtido só para contornar um formulário de lead-gen (Michael Page, Hays) têm o mesmo problema de autorização do scraping, disfarçado.
+
 ## 2026-09-10 — Benchmark Worker: núcleo executável, normalização e agendamento (Fases 4, 5 e 7)
 
 Duas branches (`docs/benchmark-worker-fase-2`, `-fase-3`) tinham sido mescladas em `main`, não em `master` — e `main` nunca foi de fato o branch de deploy: alguém começou uma migração do Render para lá e não terminou. O smoke test do PR #21 falhou por isso (o Render nunca publicou o commit, porque não olha para `main`), não por um bug da Fase 3. Trouxe as duas para `master` via merge normal, preservando os commits do incidente de TLS acima.

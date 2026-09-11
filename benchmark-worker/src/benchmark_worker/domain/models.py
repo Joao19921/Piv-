@@ -17,6 +17,9 @@ class SourceName(str, Enum):
     INDEED = "indeed"
     GLASSDOOR = "glassdoor"
     INFOJOBS = "infojobs"
+    # Registro feito por uma pessoa a partir de uma fonte publica legitima (ex.: guia
+    # salarial publico), nao por automacao -- ver benchmark_worker.manual_entry.
+    MANUAL = "manual"
 
 
 class AdapterStatus(str, Enum):

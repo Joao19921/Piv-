@@ -103,6 +103,64 @@ presumido. Se isso acontecer para uma fonte específica:
    `config.py`/no adapter novo — nunca commitada, nunca logada (ver
    `logging_utils.redact`).
 
+## 3.1 Alternativas legítimas investigadas (2026-09-11)
+
+Levantamento do que existe hoje, para não reabrir a mesma pergunta depois:
+
+**Relatórios públicos agregados** (dado de cargo/senioridade/região, não de vaga
+individual — categoria diferente de scraping):
+
+| Fonte | Situação | Uso possível hoje |
+|---|---|---|
+| Robert Half (Guia Salarial, seção Tecnologia) | Público, **sem cadastro**, por percentil e cidade, atualizado para 2026 | Sim, como **referência manual** (ver 3.2) — sem licença explícita de reuso em massa, então citação pontual, não replicação do guia inteiro |
+| Michael Page | Exige cadastro com e-mail corporativo (lead-gen) para liberar o PDF | Não automatizar — preencher o formulário só para extrair dado é o mesmo problema de autorização do scraping, disfarçado |
+| Hays | PDF aparentemente gated, mesma lógica | Não automatizar |
+| Catho | Termos de uso **proíbem explicitamente** copiar/armazenar/exportar conteúdo do site | Não usar como fonte, nem manualmente |
+| Glassdoor | ToS: uso pessoal/não-comercial, salvo acordo separado; sem relatório agregado público para o Brasil identificado | Não aplicável |
+| LinkedIn Salary Insights | Não disponível para o Brasil | Não aplicável |
+| InfoJobs | Só ferramenta de consulta por vaga própria, não um guia publicado | Não aplicável |
+
+**APIs/parcerias oficiais:**
+
+- **Indeed Hiring Lab API** (`hiring-lab-api@indeed.com`, `docs.indeed.com/hiring-lab-api`): dados macro de tendência salarial (não por cargo/senioridade), acesso por aplicação/aprovação, cobertura do Brasil não confirmada. Vale uma consulta, mas mesmo aprovado provavelmente não substitui o benchmark por cargo que este módulo quer — é dado de tendência agregada de mercado, não de vaga/perfil.
+- **Glassdoor Partner API**: fechada para novos solicitantes desde 2022, e nunca teve endpoint de salário.
+- **InfoJobs**: nenhum programa de API documentado.
+
+Nenhuma automação contra Indeed/Glassdoor/InfoJobs é viável hoje por essas vias —
+a conclusão da Fase 1 continua de pé.
+
+## 3.2 Entrada manual assistida — o caminho legítimo disponível agora
+
+Em vez de um robô lendo a tela, **uma pessoa lê uma fonte pública legítima** (hoje,
+na prática, o guia da Robert Half) **e registra o número** — a mesma
+normalização/validação/deduplicação do resto do worker, sem nenhuma automação
+contra uma plataforma de terceiros. Implementado em `manual_entry.py`, fonte
+`benchmark_sources.name = 'manual'` (migration `0012`, `status = 'enabled'` — não
+é um mecanismo de automação, então não passa pelo gate da Fase 1).
+
+**Linha de comando** (localmente, com `BENCHMARK_WORKER_DATABASE_URL` configurado):
+
+```
+python -m benchmark_worker.cli manual-entry \
+  --role "Analista de BI" \
+  --seniority "Senior" \
+  --state SP \
+  --regime CLT \
+  --salary "R$ 10.000 - R$ 15.000 por mes" \
+  --reference "https://www.roberthalf.com/br/pt/insights/guia-salarial/tecnologia" \
+  --observed-at 2026-09-11
+```
+
+**Pela aba Actions do GitHub** (sem precisar de Python local): workflow
+"Benchmark Worker" → "Run workflow" → preencher os campos `manual_role`,
+`manual_reference`, `manual_salary` (os demais são opcionais). Deixar `manual_role`
+vazio dispara a coleta agendada normal em vez de um registro manual.
+
+**Regra de uso**: `--reference` é obrigatório e é a auditoria — sempre a URL/nome
+exato da página ou relatório consultado. Nunca citar aqui uma fonte da lista acima
+marcada como "Não usar" (Catho) ou obtida contornando um formulário de lead-gen
+(Michael Page, Hays).
+
 ## 4. Onde credenciais e segredos ficam (padrão já em uso no projeto)
 
 | Segredo | Ambiente local | CI / execução agendada |
@@ -147,7 +205,8 @@ Migration `server/db/migrations/0011_benchmark_worker_schema.sql`, aditiva, sem
 alterar nenhuma tabela existente do Pivô:
 
 - `benchmark_sources` — catálogo de fontes e status de autorização (a tabela
-  citada acima).
+  citada acima). `indeed`/`glassdoor`/`infojobs` ficam `disabled`; `manual`
+  (migration `0012`) fica `enabled` — não é automação, ver 3.2.
 - `benchmark_profiles` — combinações cargo/senioridade/UF a monitorar. **Vazia
   hoje** — ainda não populada (ver pendências).
 - `benchmark_jobs` — solicitações de coleta pontual, pensada para o admin (Fase
@@ -167,10 +226,11 @@ cd benchmark-worker
 python -m venv .venv
 . .venv/Scripts/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-python -m pytest                 # 39 testes unitários, sem banco necessário
+python -m pytest                 # testes unitários, sem banco necessário
 
 cp .env.example .env             # preencher BENCHMARK_WORKER_DATABASE_URL localmente
-python -m benchmark_worker.cli   # roda de verdade contra o Postgres apontado
+python -m benchmark_worker.cli run             # coleta agendada/em lote
+python -m benchmark_worker.cli manual-entry ... # registro manual (ver 3.2)
 ```
 
 ## 8. Agendamento

@@ -37,12 +37,16 @@ def _dsn() -> str:
     return os.environ["BENCHMARK_WORKER_DATABASE_URL"]
 
 
-def test_seed_de_fontes_vem_desabilitado():
+def test_seed_de_fontes_automatizaveis_vem_desabilitado():
     rows = load_source_rows(_dsn())
-    names = {row.name.value for row in rows}
-    assert names == {"indeed", "glassdoor", "infojobs"}
-    assert all(row.status.value == "disabled" for row in rows)
-    assert all(row.disabled_reason for row in rows)
+    by_name = {row.name.value: row for row in rows}
+    assert by_name.keys() == {"indeed", "glassdoor", "infojobs", "manual"}
+    for automated_source in ("indeed", "glassdoor", "infojobs"):
+        assert by_name[automated_source].status.value == "disabled"
+        assert by_name[automated_source].disabled_reason
+    # "manual" nao e' automacao -- fica habilitada e sem motivo de desabilitacao.
+    assert by_name["manual"].status.value == "enabled"
+    assert by_name["manual"].disabled_reason is None
 
 
 def test_persistencia_e_idempotente():
