@@ -300,6 +300,7 @@ Direção de **produto**. A dívida de engenharia e operação vive em
 | **Mapeamento de CBO corrigido** | 66 dos 73 perfis; cargos que a CBO 2002 não prevê ficaram sem código, em vez de receber um "próximo" |
 | **Preço ao vivo Azure** | Storage, SQL, Load Balancer e Functions via Azure Retail Prices API |
 | ~~Persistir propostas em Postgres~~ | Decisão de produto: não haverá módulo de propostas. A única persistência por nome é a arquitetura de cloud salva |
+| **Benchmark Worker** (Fases 0–5, 7 e 8 parcial) | Projeto Python independente (`benchmark-worker/`), isolado da aplicação, com scheduler próprio (GitHub Actions, a cada ~10 dias). Indeed/Glassdoor/InfoJobs seguem sem automação autorizada (ver "Avaliado e descartado"); a via legítima hoje é registro manual a partir de fonte pública (ex.: guia salarial da Robert Half), pela CLI do worker ou pela tela `/administracao/benchmark-worker`. Ver [docs/BENCHMARK-WORKER-MANUAL.md](docs/BENCHMARK-WORKER-MANUAL.md) |
 
 ### Próximo, em ordem de valor
 
