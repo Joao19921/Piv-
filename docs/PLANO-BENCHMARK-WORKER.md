@@ -227,5 +227,9 @@ Falta:
 - **Fase 8** (nao iniciada): tela no admin para visualizar fontes/execucoes/erros e
   para o administrador solicitar uma coleta pontual (usaria `benchmark_jobs`, ainda
   sem consumidor). Unica etapa que tocaria `client/` -- ainda nao aprovada.
-- Popular `benchmark_profiles` com os cargos/senioridades/UFs a monitorar (hoje
-  vazia); o worker so processa perfis marcados `active`.
+- ~~Popular `benchmark_profiles`~~ feito (migration `0013`): os mesmos 73
+  cargo+senioridade que `server/src/domain/services/catalogs.ts` (laborProfiles)
+  ja rastreia via CAGED/SISP, `state = null` (nacional, mesmo escopo do
+  catalogo de origem). Nao inventa combinacao nova nem habilita nenhuma fonte --
+  so da ao worker um alvo real para acompanhar quando `manual`/uma fonte
+  autorizada gravar algo.

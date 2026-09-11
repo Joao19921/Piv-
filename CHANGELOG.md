@@ -2,6 +2,10 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-11 — Benchmark Worker: `benchmark_profiles` populada
+
+Migration `0013`: os mesmos 73 cargo+senioridade que `catalogs.ts` (`laborProfiles`) já rastreia via CAGED/SISP, `state = null` (nacional — o catálogo de origem também não segmenta por UF). Antes disso a tabela ficava vazia e toda execução agendada terminava em "nenhum perfil ativo" — correto, mas sem cobertura real nenhuma. Não inventa combinação nova, não habilita nenhuma fonte: `indeed`/`glassdoor`/`infojobs` continuam `disabled`. Idempotente (`on conflict do nothing`), respeita `active` se alguém desativar um perfil manualmente depois.
+
 ## 2026-09-11 — Benchmark Worker: entrada manual assistida, em vez de scraping do front
 
 Pedido: acessar Indeed/Glassdoor/InfoJobs "pelo front" com uma conta Google dedicada. Recusei — não é diferente do scraping já descartado na Fase 1: os termos de uso proíbem automação independente de qual conta faz o acesso, e as três usam CAPTCHA/verificação de sessão que este projeto não vai contornar.

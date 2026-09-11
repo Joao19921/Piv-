@@ -207,8 +207,11 @@ alterar nenhuma tabela existente do Pivô:
 - `benchmark_sources` — catálogo de fontes e status de autorização (a tabela
   citada acima). `indeed`/`glassdoor`/`infojobs` ficam `disabled`; `manual`
   (migration `0012`) fica `enabled` — não é automação, ver 3.2.
-- `benchmark_profiles` — combinações cargo/senioridade/UF a monitorar. **Vazia
-  hoje** — ainda não populada (ver pendências).
+- `benchmark_profiles` — combinações cargo/senioridade/UF a monitorar. Populada
+  (migration `0013`) com os mesmos 73 cargo+senioridade que
+  `server/src/domain/services/catalogs.ts` (`laborProfiles`) já rastreia via
+  CAGED/SISP — `state = null` (nacional), mesmo escopo do catálogo de origem.
+  Não inventa combinação nova nem habilita nenhuma fonte.
 - `benchmark_jobs` — solicitações de coleta pontual, pensada para o admin (Fase
   6/8). **Sem consumidor ainda** — a execução agendada varre `benchmark_profiles`
   diretamente.
