@@ -2,6 +2,21 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-10 — Benchmark Worker: núcleo executável, normalização e agendamento (Fases 4, 5 e 7)
+
+Duas branches (`docs/benchmark-worker-fase-2`, `-fase-3`) tinham sido mescladas em `main`, não em `master` — e `main` nunca foi de fato o branch de deploy: alguém começou uma migração do Render para lá e não terminou. O smoke test do PR #21 falhou por isso (o Render nunca publicou o commit, porque não olha para `main`), não por um bug da Fase 3. Trouxe as duas para `master` via merge normal, preservando os commits do incidente de TLS acima.
+
+Com a base isolada (Fase 2: contratos; Fase 3: `benchmark_sources/profiles/jobs/runs/results`, aditiva) já trazida, completei o que faltava para o worker rodar de ponta a ponta com as três fontes ainda `DISABLED` (Fase 1 concluiu que nenhuma tem scraping autorizado — nada mudou nisso):
+
+- **Correção de design**: o runner deixava `AdapterDisabledError` estourar e virar `FAILED` — com as três fontes desligadas, toda execução pareceria um incidente. `RunStatus.DISABLED` passou a ser checado *antes* do fetch (como o contrato já prometia) e é ignorado no cálculo do status geral: hoje toda execução reporta `SUCCESS` sem observações, corretamente.
+- **Repository único**: `save_observations` separado de `save_run_summary` deixaria `benchmark_results.run_id` (NOT NULL) órfão — a linha de execução ainda não existiria quando a primeira fonte terminasse. Um só método persiste a execução inteira, atomicamente.
+- **Normalização** (`normalization/`): parsing de texto salarial livre (BR "10.000,50" vs US "10,000.50", detecção de moeda/periodicidade sem nunca converter anual→mensal), senioridade e regime (CLT/PJ) por vocabulário controlado — nunca inventa, reduz confiança quando não reconhece.
+- **Persistência real** (`infrastructure/`): `PostgresRepository` (upsert idempotente por `source + source_reference + observed_at`) e `catalog.py`, que lê `benchmark_sources`/`benchmark_profiles` do Postgres — o banco é a única fonte de verdade sobre quais fontes estão autorizadas.
+- **39 testes unitários** + um de integração contra Postgres efêmero (`.github/workflows/benchmark-worker.yml`, job novo).
+- **Agendamento**: GitHub Actions, a cada ~10 dias ou manual (`workflow_dispatch`) — não Lambda nem Render. Nenhuma fonte roda navegador de verdade hoje, então não há motivo para pagar por uma imagem de container só para viabilizar Playwright que ainda não é usado; reavaliar se/quando uma fonte for autorizada.
+
+Falta: Fase 6 (adapters reais, bloqueada por autorização de negócio) e Fase 8 (tela no admin — único ponto que tocaria `client/`, ainda não aprovado).
+
 ## 2026-09-10 — TLS do banco degrada em vez de derrubar a aplicação
 
 Correção do desenho que causou a queda, não só do sintoma.

@@ -100,7 +100,7 @@ alterar constraints das tabelas existentes.
 
 Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-BENCHMARK-WORKER.md).
 
-### Fase 4 - Nucleo executavel sem fontes reais
+### Fase 4 - Nucleo executavel sem fontes reais (concluida)
 
 - Criar o projeto `benchmark-worker/`.
 - Implementar configuracao por ambiente e `.env.example`.
@@ -109,8 +109,12 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 - Implementar validacao, deduplicacao e idempotencia.
 
 **Saida:** um job de teste consegue percorrer o pipeline sem navegador real.
+`PostgresRepository` persiste `benchmark_runs`/`benchmark_results` com upsert
+idempotente (`on conflict (source, source_reference, observed_at)`); `catalog.py` le
+`benchmark_profiles`/`benchmark_sources` do Postgres, unica fonte de verdade sobre
+quais fontes estao autorizadas.
 
-### Fase 5 - Normalizacao e testes
+### Fase 5 - Normalizacao e testes (concluida)
 
 - Cobrir cargos, senioridade, estados brasileiros, CLT/PJ, moeda e periodicidade.
 - Cobrir faixa minima/maxima, salario mensal/anual e dados desconhecidos.
@@ -118,6 +122,10 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 - Garantir que erro em uma fonte resulte em `PARTIAL`, sem impedir as demais.
 
 **Gate:** testes unitarios e de integracao do worker passam sem depender de login real.
+39 testes unitarios (`benchmark-worker/tests/`) cobrem normalizacao, validacao,
+retry/isolamento e agregacao de status; um teste de integracao
+(`test_integration_postgres.py`) roda contra o Postgres efemero do CI. Nenhum
+adapter real existe ainda -- browser/e2e fica para a Fase 6.
 
 ### Fase 6 - Adapters por fonte, somente quando autorizados
 
@@ -129,7 +137,7 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 
 **Saida:** cada fonte possui estado operacional claro e pode falhar isoladamente.
 
-### Fase 7 - Execucao agendada e manual
+### Fase 7 - Execucao agendada e manual (concluida parcialmente)
 
 - Configurar coleta automatica a cada 10 dias.
 - Criar jobs pendentes no banco para futuras solicitacoes administrativas.
@@ -140,6 +148,20 @@ Resultado detalhado: [Fase 3 - Modelo de dados isolado](FASE-3-MODELO-DE-DADOS-B
 
 **Gate:** a escolha de infraestrutura deve considerar memoria, tempo de execucao,
 segredos, custo e limites de automacao de navegador.
+
+**Decisao de hospedagem:** GitHub Actions (`.github/workflows/benchmark-worker.yml`),
+nao Lambda nem Render. Motivo: hoje nenhuma fonte roda navegador de verdade (todas
+DISABLED, Fase 1) -- o worker so precisa de Python simples, sem Chromium. Lambda
+exigiria imagem de container so para viabilizar Playwright no futuro, sem necessidade
+agora; Render seria um servico pago adicional. GitHub Actions e' gratis no plano do
+repo, ja e' o padrao usado para `ingest-caged.yml` e reavaliar quando/se uma fonte
+real exigir automacao de navegador (nesse caso, Lambda com imagem de container ou um
+runner dedicado passam a fazer sentido, pelo custo de memoria/tempo de execucao).
+
+**Pendente:** `benchmark_jobs` (Fase 3) ainda nao e alimentada por ninguem -- a
+execucao agendada hoje varre todos os `benchmark_profiles` ativos diretamente, sem
+usar a tabela de jobs. Ela so passa a ser necessaria quando o admin (Fase 6/8) puder
+solicitar uma coleta pontual.
 
 ### Fase 8 - Operacao e integracao futura
 
@@ -177,8 +199,19 @@ Nesse caso, registrar neste documento:
 
 ## Proximo passo
 
-Fases 0 a 3 concluidas (entendimento, conformidade, arquitetura e modelo de dados).
-Prosseguir com a Fase 4 (nucleo executavel com adapters fake) e a Fase 7 (agendamento),
-mantendo os tres adapters de fonte real como `DISABLED` ate que Indeed, Glassdoor ou
-InfoJobs tenham acesso autorizado documentado -- ver
+Fases 0 a 5 e 7 concluidas (entendimento, conformidade, arquitetura, modelo de dados,
+nucleo executavel, normalizacao/testes e agendamento). O worker roda a cada ~10 dias
+via GitHub Actions e sempre reporta `SUCCESS` sem observacoes, porque as tres fontes
+seguem `DISABLED` -- ver
 [Fase 1 - Analise tecnica e de conformidade](FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md).
+
+Falta:
+
+- **Fase 6** (bloqueada): nenhum adapter real pode ser implementado sem autorizacao
+  documentada de Indeed, Glassdoor ou InfoJobs. Sem isso, nao ha nada a acionar por
+  este item alem de aguardar uma decisao de negocio.
+- **Fase 8** (nao iniciada): tela no admin para visualizar fontes/execucoes/erros e
+  para o administrador solicitar uma coleta pontual (usaria `benchmark_jobs`, ainda
+  sem consumidor). Unica etapa que tocaria `client/` -- ainda nao aprovada.
+- Popular `benchmark_profiles` com os cargos/senioridades/UFs a monitorar (hoje
+  vazia); o worker so processa perfis marcados `active`.

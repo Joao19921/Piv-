@@ -1,0 +1,121 @@
+name: Benchmark Worker
+
+# Worker Python isolado (docs/PLANO-BENCHMARK-WORKER.md) -- roda fora do processo do
+# Express e nao compartilha runtime com a aplicacao principal. Este workflow so
+# testa/executa o worker; a aplicacao Pivo continua com seu proprio deploy (ci.yml),
+# que nao depende deste em nada.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "benchmark-worker/**"
+      - ".github/workflows/benchmark-worker.yml"
+  pull_request:
+    paths:
+      - "benchmark-worker/**"
+      - ".github/workflows/benchmark-worker.yml"
+  schedule:
+    # Aproximacao de "a cada 10 dias" com cron de calendario (dias 1, 11 e 21 do mes):
+    # nao e exatamente 10 dias uniformes (o intervalo dias 21->1 varia com o mes), mas e
+    # a forma usual de expressar isso sem um agendador externo -- mesma logica de
+    # aproximacao usada em ingest-caged.yml para "todo dia 5".
+    - cron: "0 6 1,11,21 * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Testes (unitarios)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+        working-directory: benchmark-worker
+      - run: python -m pytest -v
+        working-directory: benchmark-worker
+
+  test-integration:
+    name: Testes (Postgres efemero)
+    runs-on: ubuntu-latest
+    # Mesmo container efemero do job "test" em ci.yml: some junto com o job, nunca aponta
+    # para a Supabase real.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pivo
+          POSTGRES_PASSWORD: pivo
+          POSTGRES_DB: pivo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pivo -d pivo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Aplicar as migrations do Pivo (inclui o schema do worker, 0011)
+        env:
+          DATABASE_URL: postgresql://pivo:pivo@localhost:5432/pivo_test
+          DATABASE_SSL: disable
+        run: pnpm run migrate
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+        working-directory: benchmark-worker
+
+      - name: Rodar os testes de integracao
+        env:
+          BENCHMARK_WORKER_DATABASE_URL: postgresql://pivo:pivo@localhost:5432/pivo_test
+        run: python -m pytest -v tests/test_integration_postgres.py
+        working-directory: benchmark-worker
+
+  run:
+    name: Executar coleta
+    needs: [test, test-integration]
+    # So dispara de verdade no agendamento ou por acionamento manual -- push/PR so
+    # precisam validar o codigo (jobs acima), nunca gravar no banco de producao.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+        working-directory: benchmark-worker
+
+      - name: Coletar
+        env:
+          BENCHMARK_WORKER_DATABASE_URL: ${{ secrets.BENCHMARK_WORKER_DATABASE_URL }}
+          BENCHMARK_WORKER_RUN_MODE: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+        run: |
+          if [ -z "$BENCHMARK_WORKER_DATABASE_URL" ]; then
+            echo "::error::Secret BENCHMARK_WORKER_DATABASE_URL nao configurado (Settings > Secrets and variables > Actions)."
+            echo "Deve ser uma connection string propria do worker, com acesso restrito as tabelas benchmark_* (ver a migration 0011 e docs/FASE-1-CONFORMIDADE-BENCHMARK-WORKER.md)."
+            exit 1
+          fi
+          python -m benchmark_worker.cli
+        working-directory: benchmark-worker

@@ -46,6 +46,9 @@ class RunStatus(str, Enum):
     SUCCESS = "success"
     PARTIAL = "partial"
     FAILED = "failed"
+    # Fonte sem mecanismo autorizado (ver Fase 1) -- distinto de FAILED: nao e um erro de
+    # execucao, e um estado de conformidade esperado enquanto a fonte nao for liberada.
+    DISABLED = "disabled"
 
 
 @dataclass(frozen=True)
@@ -61,7 +64,7 @@ class SalaryObservation:
     source_reference: str
     role_title: str
     seniority: str
-    state: str  # UF
+    state: str | None  # UF; None quando a fonte nao permitiu localizar com seguranca
     regime: EmploymentRegime
     salary_min: float | None
     salary_max: float | None
@@ -88,12 +91,17 @@ class RunSummary:
 
     started_at: datetime
     finished_at: datetime
+    triggered_by: str  # "manual" | "scheduled" -- ver config.RunMode
     results: tuple[SourceRunResult, ...]
 
     @property
     def status(self) -> RunStatus:
-        statuses = {result.status for result in self.results}
-        if statuses == {RunStatus.SUCCESS}:
+        # DISABLED fica de fora da conta: uma fonte sem autorizacao (Fase 1) nao e uma
+        # falha de execucao, e nenhuma execucao real foi tentada nela. Uma rodada com as
+        # tres fontes DISABLED (o estado atual) deve reportar SUCCESS, nao FAILED --
+        # senao toda execucao agendada soaria como incidente sem nenhum ter ocorrido.
+        statuses = {result.status for result in self.results if result.status != RunStatus.DISABLED}
+        if not statuses or statuses == {RunStatus.SUCCESS}:
             return RunStatus.SUCCESS
         if RunStatus.SUCCESS in statuses or RunStatus.PARTIAL in statuses:
             return RunStatus.PARTIAL
