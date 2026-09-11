@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
 
 # Principio do menor privilegio: nenhum job abaixo escreve no repositorio.
@@ -138,9 +138,7 @@ jobs:
   deploy:
     name: Deploy (Render)
     needs: [build, test, security]
-    # O Render ainda esta vinculado a master. Enquanto a migracao do vinculo nao e feita no
-    # painel do provedor, main e espelhada em master para publicar exatamente o mesmo commit.
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 traz o historico completo, necessario para o `merge-base --is-ancestor`
