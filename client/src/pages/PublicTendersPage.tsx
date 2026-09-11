@@ -16,45 +16,7 @@ interface Tender {
   url?: string;
 }
 
-const MODULE3_API_URL = (import.meta.env.VITE_MODULE3_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
-
-function buildPncpUrl(term: string, uf: string): URL {
-  const end = new Date();
-  const start = new Date(end);
-  start.setDate(start.getDate() - 30);
-  const compact = (date: Date) => `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-  const url = new URL("https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao");
-  url.searchParams.set("dataInicial", compact(start));
-  url.searchParams.set("dataFinal", compact(end));
-  url.searchParams.set("pagina", "1");
-  url.searchParams.set("tamanhoPagina", "100");
-  url.searchParams.set("criterioBusca", term);
-  if (uf) url.searchParams.set("uf", uf);
-  return url;
-}
-
-async function fetchPncpDirect(term: string, uf: string): Promise<Tender[]> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const response = await fetch(buildPncpUrl(term, uf), { headers: { Accept: "application/json" } });
-      if (!response.ok) throw new Error(`PNCP respondeu HTTP ${response.status}.`);
-      const body = (await response.json()) as { data?: Record<string, unknown>[] };
-      return (body.data ?? []).map((item) => ({
-        externalId: String(item.numeroControlePNCP ?? item.id ?? ""),
-        source: "PNCP",
-        object: String(item.objetoCompra ?? item.objeto ?? term),
-        state: typeof item.uf === "string" ? item.uf : undefined,
-        tenderDate: typeof item.dataPublicacaoPncp === "string" ? item.dataPublicacaoPncp : undefined,
-        url: typeof item.linkSistemaOrigem === "string" ? item.linkSistemaOrigem : undefined,
-      })).filter((item) => item.externalId);
-    } catch (error) {
-      lastError = error;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * 2 ** attempt));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Falha ao consultar o PNCP.");
-}
+const MODULE3_API_URL = (import.meta.env.VITE_MODULE3_API_URL as string | undefined)?.replace(/\/$/, "") ?? "/api/v1/mod3";
 
 export default function PublicTendersPage() {
   const [term, setTerm] = useState("desenvolvimento de software");
@@ -73,14 +35,10 @@ export default function PublicTendersPage() {
     try {
       const params = new URLSearchParams({ term: term.trim() });
       if (uf) params.set("uf", uf);
-      if (MODULE3_API_URL) {
-        const response = await fetch(`${MODULE3_API_URL}/v1/mod3/public-tenders?${params}`);
-        const body = (await response.json().catch(() => null)) as { tenders?: Tender[]; error?: string } | null;
-        if (!response.ok) throw new Error(body?.error ?? "Não foi possível consultar o Módulo 3.");
-        setResults(body?.tenders ?? []);
-      } else {
-        setResults(await fetchPncpDirect(term.trim(), uf));
-      }
+      const response = await fetch(`${MODULE3_API_URL}/public-tenders?${params}`);
+      const body = (await response.json().catch(() => null)) as { tenders?: Tender[]; error?: string } | null;
+      if (!response.ok) throw new Error(body?.error ?? "Não foi possível consultar o Módulo 3.");
+      setResults(body?.tenders ?? []);
     } catch (error) {
       setResults([]);
       toast.error(error instanceof Error ? error.message : "Falha na consulta pública.");
