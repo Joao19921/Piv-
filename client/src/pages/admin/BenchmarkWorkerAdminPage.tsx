@@ -437,11 +437,11 @@ function ManualEntryCard({ prefill, onPrefillConsumed }: { prefill: PrefillTarge
         </div>
         <div>
           <Label className="text-xs font-semibold text-[#345555]">Salário mínimo</Label>
-          <Input type="number" min="0" value={salaryMin} onChange={(e) => setSalaryMin(e.target.value)} placeholder="10000" className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" />
+          <Input type="number" min="0" value={salaryMin} onChange={(e) => setSalaryMin(e.target.value)} placeholder="Ex.: 10000" className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" />
         </div>
         <div>
           <Label className="text-xs font-semibold text-[#345555]">Salário máximo</Label>
-          <Input type="number" min="0" value={salaryMax} onChange={(e) => setSalaryMax(e.target.value)} placeholder="15000" className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" />
+          <Input type="number" min="0" value={salaryMax} onChange={(e) => setSalaryMax(e.target.value)} placeholder="Ex.: 15000" className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" />
         </div>
         <div>
           <Label className="text-xs font-semibold text-[#345555]">Moeda</Label>
