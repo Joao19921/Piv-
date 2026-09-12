@@ -15,7 +15,7 @@ import {
   useOpenSourceTriggers,
   useRoleLookup,
 } from "@/hooks/useBenchmarkWorker";
-import type { BenchmarkRun, OpenSourceTrigger } from "@/lib/api";
+import type { BenchmarkRun, GovernmentProfileResult, OpenSourceTrigger } from "@/lib/api";
 
 // Mesmas 27 UFs da V1 (benchmark-worker/src/benchmark_worker/normalization/states.py) --
 // mantidas em sincronia manualmente com o backend, os dois lados sao pequenos e estaveis.
@@ -40,6 +40,51 @@ function formatBRL(value: number): string {
 
 function daysSince(iso: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+}
+
+const SENIORITY_ORDER = ["Júnior", "Pleno", "Sênior", "Especialista"];
+
+interface GovernmentMatrixRow {
+  seniority: string;
+  clt: GovernmentProfileResult | null;
+  pj: GovernmentProfileResult | null;
+}
+
+interface GovernmentMatrixGroup {
+  title: string;
+  rows: GovernmentMatrixRow[];
+}
+
+/** Agrupa os perfis casados por título e monta uma linha por senioridade, com CLT e PJ lado a
+ * lado -- a maioria dos cargos do catálogo só tem um dos dois regimes cadastrado (a Portaria SISP
+ * referencia serviço contratado, não os dois regimes do mesmo cargo), então a célula sem dado
+ * mostra "—" em vez de inventar ou esconder a ausência. */
+function buildGovernmentMatrix(profiles: GovernmentProfileResult[]): GovernmentMatrixGroup[] {
+  const byTitle = new Map<string, Map<string, { clt: GovernmentProfileResult | null; pj: GovernmentProfileResult | null }>>();
+  for (const profile of profiles) {
+    if (!byTitle.has(profile.title)) byTitle.set(profile.title, new Map());
+    const bySeniority = byTitle.get(profile.title)!;
+    if (!bySeniority.has(profile.seniority)) bySeniority.set(profile.seniority, { clt: null, pj: null });
+    const cell = bySeniority.get(profile.seniority)!;
+    if (profile.employmentModel === "CLT") cell.clt = profile;
+    else cell.pj = profile;
+  }
+  return [...byTitle.entries()].map(([title, bySeniority]) => ({
+    title,
+    rows: SENIORITY_ORDER.filter((seniority) => bySeniority.has(seniority)).map((seniority) => ({ seniority, ...bySeniority.get(seniority)! })),
+  }));
+}
+
+function GovernmentMatrixCell({ profile }: { profile: GovernmentProfileResult | null }) {
+  if (!profile) return <span className="text-[#C7C2B8]">—</span>;
+  return (
+    <div>
+      <span className="font-mono text-[#2A675F]">{formatBRL(profile.monthlyCompensation)}</span>
+      <span className="block text-[9px] uppercase tracking-[0.08em] text-[#899A9A]">
+        {profile.sourceStatus === "OPERATIONAL" ? profile.observed?.source ?? "observado" : "estimativa"}
+      </span>
+    </div>
+  );
 }
 
 interface PrefillTarget {
@@ -209,18 +254,30 @@ function RoleLookupSection() {
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-[#E5E0D6] bg-white/55 p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Pesquisa na base pública do governo</p>
-              <p className="mt-1 text-[11px] leading-5 text-[#899A9A]">CAGED/SISP — 100% automatizada, sem entrada manual.</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#899A9A]">CAGED/SISP — 100% automatizada, sem entrada manual. Valor mensal por senioridade e regime.</p>
               {result.government.length ? (
-                <div className="mt-3 space-y-2">
-                  {result.government.map((profile) => (
-                    <div key={`${profile.id}-${profile.employmentModel}`} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-[#333333]">{profile.title} · {profile.seniority} · {profile.employmentModel}</p>
-                        <span className="font-display text-sm font-semibold text-[#C2660D]">{formatBRL(profile.monthlyCompensation)}</span>
-                      </div>
-                      <p className="mt-1 text-[10px] text-[#899A9A]">
-                        {profile.sourceStatus === "OPERATIONAL" ? `${profile.observed?.source} — dado observado` : "Estimativa do catálogo (sem observação real)"}
-                      </p>
+                <div className="mt-3 space-y-3">
+                  {buildGovernmentMatrix(result.government).map((group) => (
+                    <div key={group.title} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                      <p className="text-xs font-semibold text-[#333333]">{group.title}</p>
+                      <table className="mt-2 w-full text-left text-[11px]">
+                        <thead>
+                          <tr className="text-[#899A9A]">
+                            <th className="pb-1 font-medium">Senioridade</th>
+                            <th className="pb-1 font-medium">CLT</th>
+                            <th className="pb-1 font-medium">PJ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row) => (
+                            <tr key={row.seniority} className="border-t border-[#E5E0D6]">
+                              <td className="py-1.5 pr-2 font-semibold text-[#345555]">{row.seniority}</td>
+                              <td className="py-1.5 pr-2"><GovernmentMatrixCell profile={row.clt} /></td>
+                              <td className="py-1.5"><GovernmentMatrixCell profile={row.pj} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   ))}
                 </div>
