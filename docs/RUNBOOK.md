@@ -485,7 +485,6 @@ Ordenadas por risco. Cada uma tem causa e caminho de saída registrados.
 | 11 | **`pnpm` declarado duas vezes com versões divergentes** | devDependency `^10.15.1` vs `packageManager` `10.4.1` — duas fontes de verdade para a mesma ferramenta, já discordando entre si | Remover a devDependency e deixar só `packageManager` + corepack (exige corepack disponível nas máquinas do time) |
 | 12 | **Portaria de infraestrutura pode estar superada** | A SGD/MGI nº 5.921/2026 atualizou a nº 1.070/2023; o catálogo ainda usa os valores da nº 6.055/2025 | Conferir o anexo novo e atualizar `catalogs.ts`, depois `pnpm run ingest:sisp` |
 | 13 | **1 vulnerabilidade high aceita** (`path-to-regexp` via express 4) | Exige rota com padrão dinâmico controlado pelo atacante; todas as rotas são estáticas | Migrar para express 5 |
-| 14 | **Secret `BENCHMARK_WORKER_DATABASE_URL` ausente no GitHub** | O worker Python (`benchmark-worker/`) não roda: `run` (agendado a cada ~10 dias) e `manual-entry` via Actions falham cedo com erro explícito, de propósito. A tela do admin em `/administracao/benchmark-worker` **não depende disso** — usa o `DATABASE_URL` da própria aplicação | Criar uma connection string própria do worker (privilégio mínimo, só tabelas `benchmark_*`) e configurar como Secret — ver docs/BENCHMARK-WORKER-MANUAL.md, seção 4 |
 
 ### Resolvidas nesta frente de trabalho
 

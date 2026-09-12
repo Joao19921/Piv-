@@ -1,8 +1,8 @@
 export type Role = "ADMIN" | "USER";
 export type UserStatus = "ACTIVE" | "INACTIVE";
-export type PermissionCode = "LABOR" | "INFRA" | "LICENSES" | "BENCHMARK_WORKER" | "PUBLIC_TENDERS";
+export type PermissionCode = "LABOR" | "INFRA" | "LICENSES" | "PUBLIC_TENDERS";
 
-export const PERMISSION_CODES: PermissionCode[] = ["LABOR", "INFRA", "LICENSES", "BENCHMARK_WORKER", "PUBLIC_TENDERS"];
+export const PERMISSION_CODES: PermissionCode[] = ["LABOR", "INFRA", "LICENSES", "PUBLIC_TENDERS"];
 
 export interface AuthenticatedUser {
   id: string;

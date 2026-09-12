@@ -15,10 +15,9 @@ const PERMISSION_LABELS: Record<PermissionCode, string> = {
   LABOR: "Mão de obra",
   INFRA: "Infra cloud",
   LICENSES: "Licenças",
-  BENCHMARK_WORKER: "Benchmark worker",
   PUBLIC_TENDERS: "Editais e referências de TI",
 };
-const ALL_PERMISSIONS: PermissionCode[] = ["LABOR", "INFRA", "LICENSES", "BENCHMARK_WORKER", "PUBLIC_TENDERS"];
+const ALL_PERMISSIONS: PermissionCode[] = ["LABOR", "INFRA", "LICENSES", "PUBLIC_TENDERS"];
 
 export default function AdminUsersPage() {
   const { data: users, isLoading } = useUsers();
