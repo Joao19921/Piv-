@@ -39,6 +39,88 @@ export async function listRecentBenchmarkRuns(limit: number): Promise<BenchmarkR
   );
 }
 
+export interface BenchmarkOpenSourceRow {
+  name: string;
+  label: string;
+  url: string;
+  updated_at: string;
+}
+
+/** Catalogo das fontes abertas aprovadas (migration 0014) -- unica fonte de verdade para o
+ * dropdown "Fonte" do registro manual. Nunca aceitar URL digitada livremente no lugar disso. */
+export async function listOpenSources(): Promise<BenchmarkOpenSourceRow[]> {
+  return query<BenchmarkOpenSourceRow>(
+    "benchmark_worker.list_open_sources",
+    "select name, label, url, updated_at from benchmark_open_sources order by label",
+  );
+}
+
+export async function getOpenSourceByName(name: string): Promise<BenchmarkOpenSourceRow | undefined> {
+  const [row] = await query<BenchmarkOpenSourceRow>(
+    "benchmark_worker.get_open_source",
+    "select name, label, url, updated_at from benchmark_open_sources where name = $1",
+    [name],
+  );
+  return row;
+}
+
+export interface OpenBenchmarkResultRow {
+  id: number;
+  role_title: string;
+  seniority: string | null;
+  state: string | null;
+  regime: "clt" | "pj" | "unknown";
+  salary_min: string;
+  salary_max: string;
+  currency: "brl" | "usd" | "unknown";
+  periodicity: "monthly" | "annual" | "unknown";
+  observed_at: string;
+  collected_at: string;
+  open_source: string | null;
+  open_source_label: string | null;
+  open_source_url: string | null;
+}
+
+/** Observacoes da base aberta (source='manual') cujo cargo bate com `roleQuery` (substring,
+ * sem diferenciar caixa/acento fica a cargo do chamador normalizar antes). */
+export async function searchOpenBenchmarkResults(roleQuery: string, state: string | null): Promise<OpenBenchmarkResultRow[]> {
+  return query<OpenBenchmarkResultRow>(
+    "benchmark_worker.search_open_results",
+    `select br.id, br.role_title, br.seniority, br.state, br.regime, br.salary_min, br.salary_max,
+            br.currency, br.periodicity, br.observed_at::text, br.collected_at::text,
+            br.open_source, os.label as open_source_label, os.url as open_source_url
+       from benchmark_results br
+       left join benchmark_open_sources os on os.name = br.open_source
+      where br.source = 'manual'
+        and br.role_title ilike $1
+        and ($2::text is null or br.state is null or br.state = $2)
+      order by br.observed_at desc`,
+    [`%${roleQuery}%`, state],
+  );
+}
+
+export interface OpenSourceTriggerRow {
+  job_id: number;
+  profile_id: number;
+  role_title: string;
+  seniority: string | null;
+  state: string | null;
+  requested_at: string;
+}
+
+/** Gatilhos pendentes de reavaliacao da base aberta (ver server/scripts/refreshOpenBenchmarkTriggers.ts
+ * -- nunca criado por scraping, so por um cron que compara datas dentro do proprio Postgres). */
+export async function listOpenSourceTriggers(): Promise<OpenSourceTriggerRow[]> {
+  return query<OpenSourceTriggerRow>(
+    "benchmark_worker.list_open_source_triggers",
+    `select j.id as job_id, j.profile_id, p.role_title, p.seniority, p.state, j.requested_at::text
+       from benchmark_jobs j
+       join benchmark_profiles p on p.id = j.profile_id
+      where j.source = 'manual' and j.status = 'pending'
+      order by j.requested_at asc`,
+  );
+}
+
 export interface ManualObservationInput {
   roleTitle: string;
   seniority: string | null;
@@ -49,6 +131,7 @@ export interface ManualObservationInput {
   currency: "brl" | "usd";
   periodicity: "monthly" | "annual";
   observedAt: string;
+  openSource: string;
   sourceReference: string;
 }
 
@@ -78,10 +161,11 @@ export async function insertManualObservation(input: ManualObservationInput): Pr
     await txQuery(
       "benchmark_worker.insert_manual_result",
       `insert into benchmark_results
-         (run_id, source, source_reference, role_title, seniority, state, regime,
+         (run_id, source, source_reference, open_source, role_title, seniority, state, regime,
           salary_min, salary_max, currency, periodicity, observed_at, confidence, collected_at)
-       values ($1, 'manual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1.0, $12)
+       values ($1, 'manual', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 1.0, $13)
        on conflict (source, source_reference, observed_at) do update set
+         open_source = excluded.open_source,
          role_title = excluded.role_title,
          seniority = excluded.seniority,
          state = excluded.state,
@@ -95,6 +179,7 @@ export async function insertManualObservation(input: ManualObservationInput): Pr
       [
         runRow.id,
         input.sourceReference,
+        input.openSource,
         input.roleTitle,
         input.seniority,
         input.state,
@@ -106,6 +191,22 @@ export async function insertManualObservation(input: ManualObservationInput): Pr
         input.observedAt,
         now,
       ],
+    );
+
+    // Fecha o gatilho de reavaliacao (se houver) para o mesmo cargo+senioridade+UF: alguem
+    // acabou de reavaliar de verdade, entao a pendencia deixa de fazer sentido. `is not
+    // distinct from` trata null=null como igual (perfil nacional / sem senioridade informada).
+    await txQuery(
+      "benchmark_worker.close_open_source_trigger",
+      `update benchmark_jobs set status = 'done', finished_at = $1
+         where source = 'manual' and status = 'pending'
+           and profile_id in (
+             select id from benchmark_profiles
+              where role_title = $2
+                and seniority is not distinct from $3
+                and state is not distinct from $4
+           )`,
+      [now, input.roleTitle, input.seniority, input.state],
     );
 
     return { runId: runRow.id };

@@ -533,6 +533,88 @@ export async function fetchBenchmarkRuns(): Promise<BenchmarkRun[]> {
   return benchmarkRunsResponseSchema.parse(await res.json()).runs;
 }
 
+// --- Base aberta: catálogo de fontes, gatilhos de reavaliação e busca por cargo -----------
+
+const benchmarkOpenSourceSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  url: z.string(),
+  updated_at: z.string(),
+});
+export type BenchmarkOpenSource = z.infer<typeof benchmarkOpenSourceSchema>;
+
+const openSourceTriggerSchema = z.object({
+  job_id: z.number(),
+  profile_id: z.number(),
+  role_title: z.string(),
+  seniority: z.string().nullable(),
+  state: z.string().nullable(),
+  requested_at: z.string(),
+});
+export type OpenSourceTrigger = z.infer<typeof openSourceTriggerSchema>;
+
+const governmentProfileSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  seniority: z.string(),
+  employmentModel: z.enum(["CLT", "PJ"]),
+  monthlyCompensation: z.number(),
+  sourceStatus: z.enum(["OPERATIONAL", "FALLBACK_STALE"]),
+  benchmarkSource: z.string(),
+  observed: z
+    .object({ source: z.enum(["CAGED", "SISP"]), sourceUrl: z.string(), competencia: z.string(), uf: z.string().nullable() })
+    .nullable()
+    .optional(),
+});
+export type GovernmentProfileResult = z.infer<typeof governmentProfileSchema>;
+
+const openResultSchema = z.object({
+  id: z.number(),
+  role_title: z.string(),
+  seniority: z.string().nullable(),
+  state: z.string().nullable(),
+  regime: z.enum(["clt", "pj", "unknown"]),
+  salary_min: z.string(),
+  salary_max: z.string(),
+  currency: z.enum(["brl", "usd", "unknown"]),
+  periodicity: z.enum(["monthly", "annual", "unknown"]),
+  observed_at: z.string(),
+  open_source: z.string().nullable(),
+  open_source_label: z.string().nullable(),
+  open_source_url: z.string().nullable(),
+});
+export type OpenBenchmarkResult = z.infer<typeof openResultSchema>;
+
+const roleLookupResponseSchema = z.object({
+  role: z.string(),
+  state: z.string().nullable(),
+  government: z.array(governmentProfileSchema),
+  openResults: z.array(openResultSchema),
+  average: z.number().nullable(),
+  points: z.array(z.object({ base: z.enum(["governo", "aberta"]), label: z.string(), value: z.number() })),
+});
+export type RoleLookupResult = z.infer<typeof roleLookupResponseSchema>;
+
+export async function fetchOpenSources(): Promise<BenchmarkOpenSource[]> {
+  const res = await fetch(`${API_BASE}/admin/benchmark-worker/open-sources`);
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao carregar o catálogo de fontes abertas.");
+  return z.object({ openSources: z.array(benchmarkOpenSourceSchema) }).parse(await res.json()).openSources;
+}
+
+export async function fetchOpenSourceTriggers(): Promise<OpenSourceTrigger[]> {
+  const res = await fetch(`${API_BASE}/admin/benchmark-worker/open-source-triggers`);
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao carregar as pendências de reavaliação.");
+  return z.object({ triggers: z.array(openSourceTriggerSchema) }).parse(await res.json()).triggers;
+}
+
+export async function fetchRoleLookup(role: string, state: string | null): Promise<RoleLookupResult> {
+  const params = new URLSearchParams({ role });
+  if (state) params.set("state", state);
+  const res = await fetch(`${API_BASE}/admin/benchmark-worker/role-lookup?${params.toString()}`);
+  if (!res.ok) await parseErrorOrThrow(res, "Falha ao consultar o cargo.");
+  return roleLookupResponseSchema.parse(await res.json());
+}
+
 export interface ManualObservationParams {
   roleTitle: string;
   seniority: string | null;
@@ -543,7 +625,7 @@ export interface ManualObservationParams {
   currency: "brl" | "usd";
   periodicity: "monthly" | "annual";
   observedAt: string;
-  sourceReference: string;
+  openSource: string;
 }
 
 export async function createManualObservation(params: ManualObservationParams): Promise<{ runId: number }> {
