@@ -2,7 +2,7 @@
 
 Pivo e uma aplicacao full-stack para precificacao de projetos de TI. A solucao consolida custos de mao de obra, infraestrutura cloud, cambio, licencas SaaS e benchmark salarial em uma interface unica, sempre mostrando a origem e o estado de confiabilidade de cada dado.
 
-O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o plano incremental do Benchmark Worker independente esta em [docs/PLANO-BENCHMARK-WORKER.md](docs/PLANO-BENCHMARK-WORKER.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md); o documento operacional (o que esta no ar, como opera e o que fazer quando quebra) esta em [docs/RUNBOOK.md](docs/RUNBOOK.md).
+O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md); o documento operacional (o que esta no ar, como opera e o que fazer quando quebra) esta em [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## O Que Existe Hoje
 
