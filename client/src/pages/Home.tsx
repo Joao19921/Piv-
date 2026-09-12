@@ -10,7 +10,6 @@ import {
   Calculator,
   ChevronRight,
   CircleDollarSign,
-  ClipboardList,
   Cloud,
   CloudCog,
   Database,
@@ -37,7 +36,6 @@ import {
 import { PivoMark } from "@/components/PivoMark";
 import { useTheme } from "@/contexts/ThemeContext";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
-import BenchmarkWorkerAdminPage from "@/pages/admin/BenchmarkWorkerAdminPage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -66,8 +64,7 @@ const navigation = [
   { id: "cloud" as SectionId, label: "Infra cloud", short: "03", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
   { id: "licenses" as SectionId, label: "Licenças", short: "04", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
   { id: "admin-users" as SectionId, label: "Usuários", short: "05", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
-  { id: "admin-benchmark-worker" as SectionId, label: "Benchmark worker", short: "06", icon: ClipboardList, requires: "BENCHMARK_WORKER" as PermissionCode, adminOnly: false },
-  { id: "public-tenders" as SectionId, label: "Editais e referências de TI", short: "07", icon: FileSearch, requires: "PUBLIC_TENDERS" as PermissionCode, adminOnly: false },
+  { id: "public-tenders" as SectionId, label: "Editais e referências de TI", short: "06", icon: FileSearch, requires: "PUBLIC_TENDERS" as PermissionCode, adminOnly: false },
 ];
 
 function visibleNavigationFor(user: AuthUser | null) {
@@ -494,7 +491,6 @@ export default function Home({ section }: { section: SectionId }) {
     if (section === "cloud") return <CloudArchitect />;
     if (section === "licenses") return <LicensesCatalog />;
     if (section === "admin-users") return <AdminUsersPage />;
-    if (section === "admin-benchmark-worker") return <BenchmarkWorkerAdminPage />;
     if (section === "public-tenders") return <PublicTendersPage />;
     if (section === "sources") return <SourcesView sources={sources} isLoading={sourcesLoading} onRefresh={refetchHealth} ingestion={healthData?.ingestion ?? []} database={healthData?.database} />;
     return <Dashboard onNavigate={navigate} sources={sources} sourcesLoading={sourcesLoading} />;

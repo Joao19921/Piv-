@@ -21,7 +21,6 @@ describe("authorization", () => {
     expect(hasPermission(admin, "LABOR")).toBe(true);
     expect(hasPermission(admin, "INFRA")).toBe(true);
     expect(hasPermission(admin, "LICENSES")).toBe(true);
-    expect(hasPermission(admin, "BENCHMARK_WORKER")).toBe(true);
     expect(hasPermission(admin, "PUBLIC_TENDERS")).toBe(true);
   });
 
@@ -30,7 +29,6 @@ describe("authorization", () => {
     expect(hasPermission(user, "LABOR")).toBe(false);
     expect(hasPermission(user, "INFRA")).toBe(false);
     expect(hasPermission(user, "LICENSES")).toBe(false);
-    expect(hasPermission(user, "BENCHMARK_WORKER")).toBe(false);
     expect(hasPermission(user, "PUBLIC_TENDERS")).toBe(false);
   });
 
@@ -41,9 +39,8 @@ describe("authorization", () => {
     expect(hasPermission(user, "LICENSES")).toBe(false);
   });
 
-  it("USER pode receber acesso independente aos novos modulos", () => {
-    const user = makeUser({ permissions: ["BENCHMARK_WORKER", "PUBLIC_TENDERS"] });
-    expect(hasPermission(user, "BENCHMARK_WORKER")).toBe(true);
+  it("USER pode receber acesso independente ao novo modulo", () => {
+    const user = makeUser({ permissions: ["PUBLIC_TENDERS"] });
     expect(hasPermission(user, "PUBLIC_TENDERS")).toBe(true);
     expect(hasPermission(user, "LABOR")).toBe(false);
   });

@@ -2,7 +2,7 @@
 
 Pivo e uma aplicacao full-stack para precificacao de projetos de TI. A solucao consolida custos de mao de obra, infraestrutura cloud, cambio, licencas SaaS e benchmark salarial em uma interface unica, sempre mostrando a origem e o estado de confiabilidade de cada dado.
 
-O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o plano incremental do Benchmark Worker independente esta em [docs/PLANO-BENCHMARK-WORKER.md](docs/PLANO-BENCHMARK-WORKER.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md); o documento operacional (o que esta no ar, como opera e o que fazer quando quebra) esta em [docs/RUNBOOK.md](docs/RUNBOOK.md).
+O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. A visao original do PRD esta preservada em [docs/PRD-original.md](docs/PRD-original.md); a arquitetura implementada esta em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); o historico de mudancas de engenharia/infraestrutura esta em [CHANGELOG.md](CHANGELOG.md); o documento operacional (o que esta no ar, como opera e o que fazer quando quebra) esta em [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## O Que Existe Hoje
 
@@ -300,7 +300,7 @@ Direção de **produto**. A dívida de engenharia e operação vive em
 | **Mapeamento de CBO corrigido** | 66 dos 73 perfis; cargos que a CBO 2002 não prevê ficaram sem código, em vez de receber um "próximo" |
 | **Preço ao vivo Azure** | Storage, SQL, Load Balancer e Functions via Azure Retail Prices API |
 | ~~Persistir propostas em Postgres~~ | Decisão de produto: não haverá módulo de propostas. A única persistência por nome é a arquitetura de cloud salva |
-| **Benchmark Worker** (Fases 0–5, 7 e 8 parcial) | Projeto Python independente (`benchmark-worker/`), isolado da aplicação, com scheduler próprio (GitHub Actions, a cada ~10 dias). Indeed/Glassdoor/InfoJobs seguem sem automação autorizada (ver "Avaliado e descartado"); a via legítima hoje é registro manual a partir de fonte pública (ex.: guia salarial da Robert Half), pela CLI do worker ou pela tela `/administracao/benchmark-worker`. Ver [docs/BENCHMARK-WORKER-MANUAL.md](docs/BENCHMARK-WORKER-MANUAL.md) |
+| ~~Benchmark Worker~~ | Decisão de produto (2026-09-12): removido por completo (worker Python, tela `/administracao/benchmark-worker`, schema `benchmark_*`). Indeed/Glassdoor/InfoJobs nunca saíram de `DISABLED` por falta de autorização, e a única via legítima que restava (registro manual de guia público) foi descontinuada — automatizar a coleta violaria o ToS dessas fontes, e o produto decidiu não sustentar o fluxo manual. Ver `CHANGELOG.md` |
 
 ### Próximo, em ordem de valor
 

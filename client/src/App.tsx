@@ -22,8 +22,8 @@ const queryClient = new QueryClient({
   },
 });
 
-export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources" | "public-tenders" | "admin-users" | "admin-benchmark-worker";
-export type PermissionCode = "LABOR" | "INFRA" | "LICENSES" | "BENCHMARK_WORKER" | "PUBLIC_TENDERS";
+export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources" | "public-tenders" | "admin-users";
+export type PermissionCode = "LABOR" | "INFRA" | "LICENSES" | "PUBLIC_TENDERS";
 
 /** Caminhos reais por secao — cada modulo tem URL propria (favoritar, compartilhar, voltar funcionam). */
 export const SECTION_PATHS: Record<SectionId, string> = {
@@ -34,7 +34,6 @@ export const SECTION_PATHS: Record<SectionId, string> = {
   sources: "/fontes",
   "public-tenders": "/editais-publicos",
   "admin-users": "/administracao/usuarios",
-  "admin-benchmark-worker": "/administracao/benchmark-worker",
 };
 
 function Router() {
@@ -47,7 +46,6 @@ function Router() {
       <Route path="/fontes" component={() => <Home section="sources" />} />
       <Route path="/editais-publicos" component={() => <Home section="public-tenders" />} />
       <Route path="/administracao/usuarios" component={() => <Home section="admin-users" />} />
-      <Route path="/administracao/benchmark-worker" component={() => <Home section="admin-benchmark-worker" />} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

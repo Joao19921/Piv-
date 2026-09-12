@@ -2,6 +2,27 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-12 — Benchmark Worker: módulo removido por completo
+
+Decisão de produto: remove o módulo inteiro (código + banco). Indeed/Glassdoor/InfoJobs nunca
+saíram de `DISABLED` (Fase 1: nenhuma automação autorizada), e a única via legítima que restava
+— registro manual de um valor lido num guia público de terceiro (Robert Half) — foi
+descontinuada em duas etapas: primeiro a UI/API de registro manual (2026-09-12, mesmo dia),
+depois o restante do módulo, já sem nenhum consumidor.
+
+Removido: projeto Python `benchmark-worker/` inteiro, workflow `.github/workflows/
+benchmark-worker.yml`, tela `/administracao/benchmark-worker` e suas rotas
+(`benchmarkWorkerAdminRoutes.ts`, `benchmarkWorkerRepository.ts`), a permissão
+`BENCHMARK_WORKER`, e as tabelas `benchmark_sources/profiles/jobs/runs/results/open_sources`
+(migration `0017`, que reverte as migrations `0011`, `0012`, `0013` e `0016` — mantidas no
+repositório como registro histórico, nunca editadas). Os documentos de fase
+(`BENCHMARK-WORKER-MANUAL.md`, `PLANO-BENCHMARK-WORKER.md`, `FASE-1/2/3-...md`) saem junto, já
+que descreviam um módulo que deixou de existir.
+
+Nada do resto da aplicação depende disso: `laborBenchmark.ts`/`marketBenchmark.ts` (Mão de
+obra, CAGED/SISP) e o módulo `public-tenders` (PNCP) são features completamente separadas, não
+tocadas por esta remoção.
+
 ## 2026-09-11 — Benchmark Worker: tela no admin (Fase 8, parcial)
 
 Nova área `/administracao/benchmark-worker` (só ADMIN): mostra o estado das fontes (indeed/glassdoor/infojobs desabilitadas, manual habilitada) e as últimas execuções, e permite registrar uma observação manual pela UI — mesmo efeito do `manual_entry.py` do worker Python, mas sem precisar de Python local, com campos estruturados (dropdowns) em vez de texto livre, então grava `confidence = 1.0` sempre (não há texto ambíguo para interpretar).

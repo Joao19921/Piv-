@@ -114,7 +114,7 @@ temp/
 
 .project-config.json
 
-# Python (benchmark-worker/)
+# Python (module3/)
 __pycache__/
 *.pyc
 .venv/
