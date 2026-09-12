@@ -1,0 +1,61 @@
+name: Gatilhos de reavaliação — base aberta (Benchmark Worker)
+
+# A cada ~10 dias, cria um lembrete (benchmark_jobs, source='manual', status='pending') para
+# cada perfil ativo cuja observação manual da base aberta (Robert Half, ver
+# docs/BENCHMARK-WORKER-MANUAL.md) esta ausente ou tem mais de 10 dias.
+#
+# NAO acessa nenhum site de terceiro: server/scripts/refreshOpenBenchmarkTriggers.ts so lê e
+# escreve no proprio Postgres. O ToS da Robert Half proibe scraping/automacao de coleta
+# (clausula 5g, roberthalf.com/br/pt/termos-de-uso) -- a atualizacao do valor continua sendo
+# manual, feita por um admin em /administracao/benchmark-worker depois de ver o lembrete.
+
+on:
+  schedule:
+    - cron: "0 9 */10 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Só lista o que seria criado, sem gravar no banco"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-open-source-triggers
+  cancel-in-progress: false
+
+jobs:
+  refresh-triggers:
+    name: Criar gatilhos pendentes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Criar gatilhos de reavaliação
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL não configurado (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="--dry-run"; fi
+
+          pnpm run benchmark:refresh-open-source-triggers -- $ARGS

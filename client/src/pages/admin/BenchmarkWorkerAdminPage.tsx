@@ -1,14 +1,21 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, ClipboardList, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, Clock3, ExternalLink, Landmark, Search, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBenchmarkRuns, useBenchmarkSources, useCreateManualObservation } from "@/hooks/useBenchmarkWorker";
-import type { BenchmarkRun } from "@/lib/api";
+import {
+  useBenchmarkRuns,
+  useBenchmarkSources,
+  useCreateManualObservation,
+  useOpenSources,
+  useOpenSourceTriggers,
+  useRoleLookup,
+} from "@/hooks/useBenchmarkWorker";
+import type { BenchmarkRun, OpenSourceTrigger } from "@/lib/api";
 
 // Mesmas 27 UFs da V1 (benchmark-worker/src/benchmark_worker/normalization/states.py) --
 // mantidas em sincronia manualmente com o backend, os dois lados sao pequenos e estaveis.
@@ -27,7 +34,23 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatBRL(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+}
+
+function daysSince(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+}
+
+interface PrefillTarget {
+  roleTitle: string;
+  seniority: string;
+  state: string;
+}
+
 export default function BenchmarkWorkerAdminPage() {
+  const [prefill, setPrefill] = useState<PrefillTarget | null>(null);
+
   return (
     <div>
       <div className="mb-7">
@@ -36,9 +59,10 @@ export default function BenchmarkWorkerAdminPage() {
         </div>
         <h1 className="font-display text-3xl font-semibold tracking-[-0.04em] text-[#333333] sm:text-[40px]">Benchmark worker</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#658080]">
-          Coleta de referências salariais de mercado (cargo/senioridade/UF), independente da aplicação. Indeed, Glassdoor e
-          InfoJobs seguem sem automação autorizada — o único jeito de alimentar dados aqui hoje é o registro manual abaixo, a
-          partir de uma fonte pública legítima (ex.: guia salarial de TI da Robert Half, sem cadastro).
+          Coleta de referências salariais de mercado (cargo/senioridade/UF), independente da aplicação. Mesmo conceito da seção
+          Mão de obra: duas pesquisas de mercado, uma na <strong>base pública do governo</strong> (CAGED/SISP, automatizada) e
+          outra em <strong>base aberta</strong> — hoje só a Robert Half atende aos critérios de uso (pública, sem cadastro, sem
+          restrição de reuso identificada nos termos); Salary.com, Mercer e Aon foram avaliadas e descartadas.
         </p>
       </div>
 
@@ -47,7 +71,12 @@ export default function BenchmarkWorkerAdminPage() {
         <RunsCard />
       </div>
 
-      <ManualEntryCard />
+      <RoleLookupSection />
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(300px,.9fr)]">
+        <ManualEntryCard prefill={prefill} onPrefillConsumed={() => setPrefill(null)} />
+        <OpenSourceTriggersCard onSelect={setPrefill} />
+      </div>
     </div>
   );
 }
@@ -131,18 +160,193 @@ function RunsCard() {
   );
 }
 
-function ManualEntryCard() {
-  const [roleTitle, setRoleTitle] = useState("");
-  const [seniority, setSeniority] = useState("");
-  const [state, setState] = useState("");
+function RoleLookupSection() {
+  const [roleInput, setRoleInput] = useState("");
+  const [stateInput, setStateInput] = useState("");
+  const [searched, setSearched] = useState<{ role: string; state: string | null } | null>(null);
+  const lookup = useRoleLookup(searched?.role ?? "", searched?.state ?? null);
+
+  const handleSearch = () => {
+    if (!roleInput.trim()) {
+      toast.error("Informe o cargo para consultar.");
+      return;
+    }
+    setSearched({ role: roleInput.trim(), state: stateInput || null });
+  };
+
+  const result = lookup.data;
+
+  return (
+    <Card className="mt-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Pesquisa salarial</p>
+      <h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Consultar por cargo</h2>
+      <p className="mt-1 max-w-2xl text-xs leading-5 text-[#658080]">
+        Digite um cargo e veja a visão de cada base: o que já está automatizado (governo) e o que foi registrado manualmente
+        (base aberta), lado a lado, com a média dos pontos reais encontrados nas duas.
+      </p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_auto]">
+        <Input
+          value={roleInput}
+          onChange={(e) => setRoleInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          placeholder="ex: Analista de BI"
+          className="h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]"
+        />
+        <select value={stateInput} onChange={(e) => setStateInput(e.target.value)} className="h-10 rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20">
+          <option value="">Nacional</option>
+          {BRAZILIAN_STATES.map(([uf, name]) => <option key={uf} value={uf}>{uf} - {name}</option>)}
+        </select>
+        <Button onClick={handleSearch} disabled={lookup.isFetching} className="pressable h-10 rounded-full bg-[#F57F17] px-5 text-xs font-semibold text-white hover:bg-[#D96D0C]">
+          <Search className="mr-2 h-4 w-4" /> Buscar
+        </Button>
+      </div>
+
+      {lookup.isFetching && <div className="mt-5 space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>}
+
+      {result && !lookup.isFetching && (
+        <div className="mt-5">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-[#E5E0D6] bg-white/55 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Pesquisa na base pública do governo</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#899A9A]">CAGED/SISP — 100% automatizada, sem entrada manual.</p>
+              {result.government.length ? (
+                <div className="mt-3 space-y-2">
+                  {result.government.map((profile) => (
+                    <div key={`${profile.id}-${profile.employmentModel}`} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-[#333333]">{profile.title} · {profile.seniority} · {profile.employmentModel}</p>
+                        <span className="font-display text-sm font-semibold text-[#C2660D]">{formatBRL(profile.monthlyCompensation)}</span>
+                      </div>
+                      <p className="mt-1 text-[10px] text-[#899A9A]">
+                        {profile.sourceStatus === "OPERATIONAL" ? `${profile.observed?.source} — dado observado` : "Estimativa do catálogo (sem observação real)"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-[#899A9A]">Nenhum perfil do catálogo corresponde a este cargo.</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-[#E5E0D6] bg-white/55 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Pesquisa em base aberta</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#899A9A]">Registrado manualmente a partir de guias públicos (ex.: Robert Half).</p>
+              {result.openResults.length ? (
+                <div className="mt-3 space-y-2">
+                  {result.openResults.map((item) => (
+                    <div key={item.id} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-[#333333]">{item.role_title}{item.seniority ? ` · ${item.seniority}` : ""}{item.state ? ` · ${item.state}` : ""}</p>
+                        <span className="font-display text-sm font-semibold text-[#C2660D]">{formatBRL(Number(item.salary_min))} - {formatBRL(Number(item.salary_max))}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[10px] text-[#899A9A]">
+                        <span>Observado em {new Date(item.observed_at).toLocaleDateString("pt-BR")}</span>
+                        {item.open_source_url && (
+                          <a href={item.open_source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#C2660D] hover:underline">
+                            {item.open_source_label ?? "Fonte"} <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-[#899A9A]">Nenhuma observação manual registrada para este cargo ainda.</p>
+              )}
+            </div>
+          </div>
+
+          {result.average !== null ? (
+            <div className="mt-4 rounded-xl border border-[#0D5C5C] bg-[#0D5C5C] p-4 text-[#F7F2E8]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Média das bases</p>
+                <span className="font-display text-2xl font-semibold">{formatBRL(result.average)}</span>
+              </div>
+              <div className="mt-3 space-y-1 border-t border-white/10 pt-3 text-[11px] text-[#B8CECE]">
+                {result.points.map((point, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3">
+                    <span className="truncate">{point.base === "governo" ? "Governo" : "Aberta"} · {point.label}</span>
+                    <span className="shrink-0 font-mono">{formatBRL(point.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 text-xs text-[#899A9A]">Nenhum dado real (observado) encontrado em nenhuma das bases para calcular uma média.</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function OpenSourceTriggersCard({ onSelect }: { onSelect: (target: PrefillTarget) => void }) {
+  const { data: triggers, isLoading } = useOpenSourceTriggers();
+
+  return (
+    <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
+      <div className="flex items-center gap-2">
+        <Clock3 className="h-4 w-4 text-[#C2660D]" />
+        <h2 className="font-display text-lg font-semibold text-[#333333]">Pendências de reavaliação</h2>
+      </div>
+      <p className="mt-1 text-xs leading-5 text-[#658080]">
+        Gerado a cada 10 dias por um cron que só compara datas no banco — nunca acessa a Robert Half automaticamente (o ToS
+        deles proíbe scraping). Um admin decide se reabre a página e registra um valor novo.
+      </p>
+      {isLoading ? (
+        <div className="mt-3 space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
+      ) : !triggers || triggers.length === 0 ? (
+        <div className="mt-4 flex flex-col items-center gap-2 py-6 text-center">
+          <Landmark className="h-8 w-8 text-[#9EB4B4]" />
+          <p className="text-xs text-[#899A9A]">Nenhuma pendência no momento.</p>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {triggers.map((trigger: OpenSourceTrigger) => (
+            <div key={trigger.job_id} className="rounded-lg border border-[#E5E0D6] bg-white/55 p-3">
+              <p className="text-xs font-semibold text-[#333333]">{trigger.role_title}{trigger.seniority ? ` · ${trigger.seniority}` : ""}{trigger.state ? ` · ${trigger.state}` : ""}</p>
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <span className="text-[10px] text-[#899A9A]">Sem reavaliação há {daysSince(trigger.requested_at)} dia(s)</span>
+                <button
+                  onClick={() => onSelect({ roleTitle: trigger.role_title, seniority: trigger.seniority ?? "", state: trigger.state ?? "" })}
+                  className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white"
+                >
+                  Registrar observação
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ManualEntryCard({ prefill, onPrefillConsumed }: { prefill: PrefillTarget | null; onPrefillConsumed: () => void }) {
+  const [roleTitle, setRoleTitle] = useState(prefill?.roleTitle ?? "");
+  const [seniority, setSeniority] = useState(prefill?.seniority ?? "");
+  const [state, setState] = useState(prefill?.state ?? "");
   const [regime, setRegime] = useState<"clt" | "pj" | "unknown">("unknown");
   const [salaryMin, setSalaryMin] = useState("");
   const [salaryMax, setSalaryMax] = useState("");
   const [currency, setCurrency] = useState<"brl" | "usd">("brl");
   const [periodicity, setPeriodicity] = useState<"monthly" | "annual">("monthly");
   const [observedAt, setObservedAt] = useState(todayIso());
-  const [sourceReference, setSourceReference] = useState("");
+  const [openSource, setOpenSource] = useState("");
+  const { data: openSources, isLoading: openSourcesLoading } = useOpenSources();
   const createManualObservation = useCreateManualObservation();
+
+  // Aplica o prefill vindo de "Pendências de reavaliação" quando ele muda -- sem useEffect: o
+  // valor só precisa ser lido uma vez, no clique que gera o prefill novo.
+  const [appliedPrefill, setAppliedPrefill] = useState(prefill);
+  if (prefill && prefill !== appliedPrefill) {
+    setAppliedPrefill(prefill);
+    setRoleTitle(prefill.roleTitle);
+    setSeniority(prefill.seniority);
+    setState(prefill.state);
+    onPrefillConsumed();
+  }
 
   const handleSubmit = () => {
     const min = Number(salaryMin);
@@ -152,13 +356,8 @@ function ManualEntryCard() {
       toast.error("Informe o cargo.");
       return;
     }
-    if (!sourceReference.trim()) {
-      toast.error("Informe a referência da fonte consultada (URL ou nome exato do relatório).");
-      return;
-    }
-    const allowedSourcePattern = /roberthalf\.com|salary\.com|mercer\.com|aon\.com|robert half|salary\.com|mercer|aon|total remuneration survey/i;
-    if (!allowedSourcePattern.test(sourceReference.trim())) {
-      toast.error("Fonte bloqueada: use uma referência pública autorizada e legítima (ex.: Robert Half, Salary.com, Mercer ou Aon). URLs genéricas ou lead-gen não são permitidas.");
+    if (!openSource) {
+      toast.error("Selecione a fonte aberta consultada.");
       return;
     }
     if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) {
@@ -181,7 +380,7 @@ function ManualEntryCard() {
         currency,
         periodicity,
         observedAt,
-        sourceReference: sourceReference.trim(),
+        openSource,
       }),
       {
         loading: "Registrando observação...",
@@ -190,7 +389,6 @@ function ManualEntryCard() {
           setSeniority("");
           setSalaryMin("");
           setSalaryMax("");
-          setSourceReference("");
           return "Observação registrada.";
         },
         error: (err) => (err instanceof Error ? err.message : "Não foi possível registrar agora."),
@@ -199,11 +397,11 @@ function ManualEntryCard() {
   };
 
   return (
-    <Card className="mt-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
-      <h2 className="font-display text-lg font-semibold text-[#333333]">Registrar observação manual</h2>
-      <p className="mt-1 max-w-3xl text-xs leading-5 text-[#658080]">
-        Use apenas fontes públicas e institucionalmente autorizadas para benchmark salarial, como Robert Half, Salary.com,
-        Mercer ou Aon. URLs genéricas, lead-gen ou páginas que exigem cadastro para liberar o dado não são permitidas.
+    <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper">
+      <h2 className="font-display text-lg font-semibold text-[#333333]">Registrar observação — base aberta</h2>
+      <p className="mt-1 max-w-2xl text-xs leading-5 text-[#658080]">
+        Para um valor lido diretamente numa fonte pública já aprovada. A fonte não é mais um campo livre: escolha na lista —
+        cada item já traz a URL exata que foi avaliada quanto a cadastro/paywall e termos de uso.
       </p>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -264,13 +462,26 @@ function ManualEntryCard() {
           <Input type="date" value={observedAt} onChange={(e) => setObservedAt(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" />
         </div>
         <div className="sm:col-span-2 lg:col-span-3">
-          <Label className="text-xs font-semibold text-[#345555]">Referência da fonte (permitido: Robert Half, Salary.com, Mercer, Aon)</Label>
-          <Input
-            value={sourceReference}
-            onChange={(e) => setSourceReference(e.target.value)}
-            placeholder="https://www.roberthalf.com/br/pt/insights/guia-salarial/tecnologia"
-            className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]"
-          />
+          <Label className="text-xs font-semibold text-[#345555]">Fonte</Label>
+          <select
+            value={openSource}
+            onChange={(e) => setOpenSource(e.target.value)}
+            disabled={openSourcesLoading}
+            className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20"
+          >
+            <option value="">{openSourcesLoading ? "Carregando..." : "Selecione a fonte"}</option>
+            {openSources?.map((source) => <option key={source.name} value={source.name}>{source.label}</option>)}
+          </select>
+          {openSource && openSources?.find((s) => s.name === openSource) && (
+            <a
+              href={openSources.find((s) => s.name === openSource)!.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[#C2660D] hover:underline"
+            >
+              Abrir página da fonte <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
       </div>
 
