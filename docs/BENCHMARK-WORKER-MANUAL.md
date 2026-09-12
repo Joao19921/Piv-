@@ -201,27 +201,27 @@ observação individual).
 
 ## 5.1 Tela no admin (Fase 8, parcial)
 
-`/administracao/benchmark-worker` (menu "Benchmark worker", só `role = ADMIN`,
-mesmo gate de `/administracao/usuarios`). Implementada **em TypeScript, no backend
-Express da aplicação** — não no worker Python, que continua isolado e sem HTTP. É a
-aplicação (que só deveria "consumir dados", ver seção 1) ganhando também uma forma
-de *alimentar* uma observação manual, sem depender do worker rodar.
+`/administracao/benchmark-worker` (menu "Benchmark worker", gate por permissão
+`BENCHMARK_WORKER`, mesmo modelo de `requirePermission` usado em outros módulos).
+Implementada **em TypeScript, no backend Express da aplicação** — não no worker
+Python, que continua isolado e sem HTTP.
 
-- **Leitura**: `GET /api/v1/admin/benchmark-worker/sources` (estado de cada fonte) e
-  `GET /api/v1/admin/benchmark-worker/runs` (últimas 20 execuções, qualquer origem —
-  manual pela UI, manual pelo CLI/GitHub Actions, ou agendada).
-- **Escrita**: `POST /api/v1/admin/benchmark-worker/manual-entry` — mesmo efeito que
-  `manual_entry.py`, mas com campos estruturados (dropdowns de UF/senioridade/regime,
-  números para salário) em vez de texto livre: por isso não reaproveita o parser de
-  `salary_text.py` e sempre grava `confidence = 1.0` — quem preenche o formulário já
-  escolheu cada valor explicitamente, não há texto ambíguo para interpretar.
-- Grava `benchmark_runs` + `benchmark_results` na mesma transação
-  (`benchmarkWorkerRepository.ts`, `withTransaction`) — mesmo motivo do
-  `PostgresRepository` do worker (seção 3, contracts.py): uma linha de execução nunca
-  fica sem os resultados que a originaram.
-- Toda gravação registra um evento em `audit_logs`
-  (`BENCHMARK_MANUAL_OBSERVATION_CREATED`), mesmo padrão de
-  `adminUsersRoutes.ts`.
+- **Leitura**: `GET /api/v1/admin/benchmark-worker/sources` (estado de cada fonte),
+  `GET /api/v1/admin/benchmark-worker/runs` (últimas 20 execuções, qualquer origem) e
+  `GET /api/v1/admin/benchmark-worker/role-lookup` (cargo digitado -> perfis do
+  catálogo casados por título, com o valor observado via CAGED/SISP quando existir).
+
+**Removido em 2026-09-12**: a tela chegou a ter um formulário de registro manual
+(`POST /manual-entry`) para alimentar a base aberta (guias públicos de terceiros,
+ex. Robert Half) com campos estruturados, mais um catálogo de fontes abertas
+aprovadas (`benchmark_open_sources`) e um cron de 10 dias que criava lembretes de
+reavaliação (`benchmark_jobs`). O produto decidiu não sustentar esse fluxo: a única
+forma de coletar um valor de um guia de terceiros é um humano ler a página e digitar
+(automatizar violaria o ToS dessas fontes -- ver seção 3), e isso deixou de fazer
+sentido como funcionalidade da UI. As tabelas `benchmark_open_sources` e as colunas
+de `benchmark_results` ligadas a isso continuam no banco (dado histórico
+preservado); só não há mais rota nem tela escrevendo nelas. A seção "Base aberta" na
+tela hoje é só um aviso informativo do porquê não existe alimentação automática.
 
 **Não implementado nesta fase** (fora do que foi aprovado): disparo de coleta
 automatizada pelo admin — não faria sentido hoje, já que não há adapter real
