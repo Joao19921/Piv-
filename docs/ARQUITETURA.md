@@ -175,12 +175,15 @@ Decisoes tomadas numa revisao dedicada das consultas ao banco (detalhe completo 
 | Azure Retail Prices | API publica da Microsoft | Ao vivo (por requisicao) |
 | AWS EC2 | AWS Pricing API (`GetProducts`) via ingestao periodica (cron 5 dias) + leitura do Postgres | Ao vivo na ingestao; leitura em runtime vem do Postgres |
 | GCP Compute Engine | Cloud Billing Catalog API via ingestao periodica (cron 5 dias) + leitura do Postgres | Ao vivo na ingestao; leitura em runtime vem do Postgres |
-| Perfis CAGED/MTE | Catalogo parametrizado local | Snapshot |
+| CAGED/MTE (salario observado, perfis CLT) | FTP do MTE + parser (7z/CSV) via ingestao periodica (`ingestCaged.ts`) + leitura do Postgres | Ao vivo na ingestao; leitura em runtime vem do Postgres |
+| RAIS (referencia adicional de salario) | Mesma infraestrutura FTP do MTE, 7 arquivos regionais `.7z`/ISO-8859-1 (`ingestRais.ts`) + leitura do Postgres | Ao vivo na ingestao (checagem mensal); sempre ao lado do CAGED (`referenciaRais`), nunca substitui |
+| SISP (referencia oficial de cargo, Portaria) | Valor hardcoded em `catalogs.ts` (editado a cada Portaria nova); `ingestSisp.ts` so projeta esse valor em Postgres, com proveniencia | Fonte primaria segue manual; leitura em runtime vem do Postgres; sempre ao lado do CAGED (`referenciaOficial`), nunca substitui |
+| Compras.gov.br Pesquisa de Preço (preco de servico/licenciamento de TI) | Modulo isolado `module3/` (banco proprio `MOD3_DATABASE_URL`), consulta por codigo CATSER fixo (`catserCatalog.ts`), worker a cada 10 dias | Ao vivo no worker; leitura em runtime vem do Postgres do modulo3 |
 | Benchmark salarial | Modelo local (catalogo interno CLT/PJ) + opcional `MARKET_BENCHMARK_CONNECTOR_URL`; historico persistido no Postgres | Snapshot ou conector |
-| Licencas SaaS | Catalogo local com URLs oficiais | Snapshot |
+| Licencas SaaS | Catalogo local com URLs oficiais | Snapshot (nenhum fornecedor do catalogo publica API de preco; ToS deles proibe scraping automatizado) |
 | PNCP | API de consulta publica (`/v1/contratacoes/publicacao`), sem chave | Ao vivo (checagem de saude por requisicao em `/system-health`) |
 
-Sem `DATABASE_URL` configurado, ou se o Postgres estiver fora do ar, AWS/GCP/benchmark caem para o snapshot estatico embutido no codigo (mesmo comportamento da fase anterior) — o app nunca fica sem responder por falta de banco.
+Sem `DATABASE_URL` configurado, ou se o Postgres estiver fora do ar, AWS/GCP/CAGED/RAIS/SISP/benchmark caem para o snapshot estatico embutido no codigo (mesmo comportamento da fase anterior) — o app nunca fica sem responder por falta de banco. `module3/` e isolado de proposito (banco, deploy e fallback proprios — ver `module3/README.md`) e nao compartilha esse fallback nem o `DATABASE_URL` do core.
 
 ## Banco De Dados
 
@@ -274,7 +277,6 @@ Detalhes:
 
 ## Pendencias Arquiteturais
 
-- Substituir snapshots de CAGED/MTE por pipeline real de ingestao (o MTE so disponibiliza microdados via FTP, sem API — exige um pipeline de download/parse periodico).
 - Expandir o PNCP alem da checagem de saude: hoje `pncpCollector.ts` so prova que a API esta no ar (contagem de contratacoes recentes); buscar preco de referencia por item exigiria paginar `/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}` e casar a descricao do item com o catalogo do Pivo.
 - Rodar `scripts/deploy-lambda.ps1` (cria a IAM Role/policy, a Lambda e o EventBridge Rule) e configurar `GOOGLE_CLOUD_BILLING_API_KEY` para validar a primeira ingestao AWS/GCP em producao — o coletor GCP em particular usa casamento de SKU por descricao/regiao que so pode ser confirmado com uma chave real.
 - Ampliar dimensoes de custo da calculadora cloud: storage (EBS/Persistent Disk), transferencia de dados, banco gerenciado (RDS/Cloud SQL) — hoje cobre so compute on-demand.

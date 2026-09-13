@@ -156,8 +156,8 @@ server/
 │   │   ├── resilience/         circuit breaker + retry + fallback
 │   │   └── observability/      logger · sentry · queryStats
 │   └── presentation/           app.ts · authRoutes · adminUsersRoutes · securityHeaders
-├── db/migrations/              9 arquivos .sql, aplicados por pnpm run migrate
-├── scripts/                    migrate · seedAdmin · refreshSources · ingestCaged
+├── db/migrations/              18 arquivos .sql, aplicados por pnpm run migrate
+├── scripts/                    migrate · seedAdmin · refreshSources · ingestCaged · ingestRais · ingestSisp
 ├── lambda/                     handler da ingestão de preços
 └── tests/                      vitest + supertest
 ```
@@ -203,7 +203,7 @@ explica as limitações aceitas (hibernação do Render, pausa da Supabase, sem 
 
 ## 3. Banco de dados
 
-16 tabelas, 9 migrations. Schema versionado em [`server/db/migrations/`](../server/db/migrations/).
+16 tabelas, 18 migrations. Schema versionado em [`server/db/migrations/`](../server/db/migrations/).
 
 | Domínio | Tabelas |
 | :--- | :--- |
@@ -572,7 +572,6 @@ um dump em lote. O código de sondagem não foi mantido no repositório — refa
 | Tabelas SGD/MGI (SISP) | Já no catálogo, mas hardcoded | Automatizar a leitura das Portarias |
 | IBGE / SIDRA (PNAD) | Recorte por ocupação e região; cobriria parte dos cargos sem CBO | API pública, não sondada ainda |
 | Convenções coletivas (Mediador/MTE) | Piso legal por sindicato e UF — frequentemente o argumento decisivo numa negociação | — |
-| RAIS (anual) | Base muito maior que o CAGED mensal; permitiria recorte por **município** | Mesmo FTP, arquivo bem maior |
 
 O hook `MARKET_BENCHMARK_CONNECTOR_URL` continua escrito em `marketBenchmark.ts` e nunca foi
 ligado — é o ponto de entrada natural para a busca livre por cargo/UF/cidade, quando ela existir.
