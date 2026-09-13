@@ -16,7 +16,7 @@ paths:
         - { name: term, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 160 } }
         - { name: x-api-key, in: header, required: false, schema: { type: string } }
       responses:
-        '200': { description: Resultados normalizados de PNCP e Compras.gov.br }
+        '200': { description: Resultados normalizados do PNCP }
         '400': { description: Termo inválido }
         '502': { description: Fonte pública indisponível }
   /v1/mod3/profiles:
@@ -27,3 +27,14 @@ paths:
     get:
       responses:
         '200': { description: Equipamentos e insumos persistidos }
+  /v1/mod3/service-price-categories:
+    get:
+      responses:
+        '200': { description: Categorias do catálogo fixo de códigos CATSER (chave + rótulo) }
+  /v1/mod3/service-prices:
+    get:
+      parameters:
+        - { name: categoria, in: query, required: true, schema: { type: string }, description: Chave do catálogo (ver /v1/mod3/service-price-categories) }
+      responses:
+        '200': { description: Mediana e últimos preços praticados persistidos (Compras.gov.br, Pesquisa de Preço) }
+        '400': { description: Categoria desconhecida }

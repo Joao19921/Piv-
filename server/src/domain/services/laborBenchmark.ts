@@ -26,9 +26,9 @@ import { logger } from "../../infrastructure/observability/logger";
 import { findCurrentByCbo, findCurrentByRoleSlug, type SalaryObservationRow } from "../../infrastructure/repositories/salaryObservationsRepository";
 import { laborProfiles, type LaborProfile } from "./catalogs";
 
-/** Um recorte observado. Serve tanto amostra (CAGED) quanto tabela publicada (SISP). */
+/** Um recorte observado. Serve amostra (CAGED/RAIS) e tabela publicada (SISP). */
 export interface ObservedSalary {
-  source: "CAGED" | "SISP";
+  source: "CAGED" | "SISP" | "RAIS";
   sourceUrl: string;
   /** Mes de referencia dos microdados (YYYY-MM-DD). */
   competencia: string;
@@ -56,6 +56,13 @@ export interface EnrichedLaborProfile extends Omit<LaborProfile, "sourceStatus">
    * que qualquer uma isolada, e a divergencia entre elas costuma ser o proprio argumento.
    */
   referenciaOficial?: ObservedSalary;
+  /**
+   * Estoque de vinculos ativos em 31/12 (RAIS), no mesmo CBO/UF do CAGED, no mesmo percentil
+   * escolhido para a senioridade do perfil -- amostra ordens de magnitude maior, mas com
+   * defasagem de ~12 meses. Fica SEPARADA de `observed` de proposito, pelo mesmo motivo de
+   * `referenciaOficial`: nunca substitui o valor de mercado do CAGED, so aparece ao lado dele.
+   */
+  referenciaRais?: ObservedSalary;
 }
 
 /** "2124-05" -> "212405", que e como o CAGED grava. */
@@ -82,7 +89,7 @@ function toObserved(row: SalaryObservationRow, percentilAplicado: ObservedSalary
   const mediana = toNumber(row.mediana);
   if (mediana === null) return null;
   return {
-    source: row.source === "SISP" ? "SISP" : "CAGED",
+    source: row.source === "SISP" ? "SISP" : row.source === "RAIS" ? "RAIS" : "CAGED",
     sourceUrl: row.source_url,
     competencia: row.competencia,
     uf: row.uf,
@@ -124,18 +131,23 @@ export function aplicarObservacao(
   profile: LaborProfile,
   row: SalaryObservationRow | undefined,
   referencia?: SalaryObservationRow,
+  raisRow?: SalaryObservationRow,
 ): EnrichedLaborProfile {
   const mediana = row ? toNumber(row.mediana) : null;
   const p25 = row ? toNumber(row.p25) : null;
   const p75 = row ? toNumber(row.p75) : null;
 
+  // Escolhido fora do "if" abaixo: a referencia da RAIS deve aparecer mesmo quando o CAGED nao
+  // tem dado pro perfil (profile cai pra estimativa estatica) -- as duas fontes sao
+  // independentes, nenhuma depende da outra estar presente.
+  const escolhido = PERCENTIL_POR_SENIORIDADE[profile.seniority];
   const referenciaOficial = referencia ? (toObserved(referencia, null) ?? undefined) : undefined;
+  const referenciaRais = raisRow ? (toObserved(raisRow, escolhido) ?? undefined) : undefined;
 
   if (!row || mediana === null || p25 === null || p75 === null) {
-    return { ...profile, sourceStatus: "FALLBACK_STALE", referenciaOficial };
+    return { ...profile, sourceStatus: "FALLBACK_STALE", referenciaOficial, referenciaRais };
   }
 
-  const escolhido = PERCENTIL_POR_SENIORIDADE[profile.seniority];
   const valor = { p25, mediana, p75 }[escolhido];
 
   return {
@@ -158,6 +170,7 @@ export function aplicarObservacao(
       p75,
     },
     referenciaOficial,
+    referenciaRais,
   };
 }
 
@@ -183,15 +196,19 @@ export async function getEnrichedLaborProfiles(options: { uf?: string | null } =
   ];
 
   let rows: SalaryObservationRow[] = [];
+  let raisRows: SalaryObservationRow[] = [];
   let referencias = new Map<string, SalaryObservationRow>();
   try {
-    // As duas consultas sao independentes e rodam juntas: o CAGED responde por CBO, o SISP pelo
-    // perfil da propria Portaria.
-    const [observadas, oficiais] = await Promise.all([
-      cbos.length ? findCurrentByCbo(cbos, { uf: options.uf ?? null, municipio: null }) : Promise.resolve([]),
+    // As tres consultas sao independentes e rodam juntas: CAGED e RAIS respondem por CBO
+    // (fontes diferentes, nunca misturadas -- ver o filtro `source` em findCurrentByCbo), o
+    // SISP pelo perfil da propria Portaria.
+    const [observadas, raisObservadas, oficiais] = await Promise.all([
+      cbos.length ? findCurrentByCbo(cbos, { uf: options.uf ?? null, municipio: null, source: "CAGED" }) : Promise.resolve([]),
+      cbos.length ? findCurrentByCbo(cbos, { uf: options.uf ?? null, municipio: null, source: "RAIS" }) : Promise.resolve([]),
       findCurrentByRoleSlug(laborProfiles.map((p) => p.id), "SISP"),
     ]);
     rows = observadas;
+    raisRows = raisObservadas;
     referencias = new Map(oficiais.filter((r) => r.role_slug).map((r) => [r.role_slug as string, r]));
   } catch (err) {
     // Benchmark degradado e melhor que tela quebrada: cai para o catalogo estatico, do mesmo
@@ -204,7 +221,8 @@ export async function getEnrichedLaborProfiles(options: { uf?: string | null } =
   return laborProfiles.map((profile) => {
     const referencia = referencias.get(profile.id);
     if (profile.employmentModel !== "CLT" || !profile.cbo) return aplicarObservacao(profile, undefined, referencia);
-    return aplicarObservacao(profile, melhorObservacao(rows, cboSemHifen(profile.cbo)), referencia);
+    const cboProfile = cboSemHifen(profile.cbo);
+    return aplicarObservacao(profile, melhorObservacao(rows, cboProfile), referencia, melhorObservacao(raisRows, cboProfile));
   });
 }
 

@@ -156,9 +156,9 @@ export async function priceCloudService(serviceId: string, params: { region: str
   return z.object({ pricing: servicePricingSchema }).parse(await res.json()).pricing;
 }
 
-/** Uma fonte que sustentou o valor de um perfil: amostra (CAGED) ou tabela publicada (SISP). */
+/** Uma fonte que sustentou o valor de um perfil: amostra (CAGED/RAIS) ou tabela publicada (SISP). */
 const observedSalarySchema = z.object({
-  source: z.enum(["CAGED", "SISP"]),
+  source: z.enum(["CAGED", "SISP", "RAIS"]),
   sourceUrl: z.string(),
   competencia: z.string(),
   uf: z.string().nullable(),
@@ -192,6 +192,9 @@ const laborProfileSchema = z.object({
   /** Referência oficial (Portaria SGD/MGI) para o mesmo perfil. Não substitui o valor de
    * mercado: aparece ao lado dele, e a divergência entre os dois costuma ser o argumento. */
   referenciaOficial: observedSalarySchema.optional(),
+  /** Estoque de vínculos ativos em 31/12 (RAIS), no mesmo percentil aplicado ao CAGED. Amostra
+   * bem maior, mas ~12 meses defasada -- nunca substitui `observed`, só aparece ao lado. */
+  referenciaRais: observedSalarySchema.optional(),
 });
 export type LaborProfile = z.infer<typeof laborProfileSchema>;
 
