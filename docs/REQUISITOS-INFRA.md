@@ -159,6 +159,15 @@ A ingestao a cada ~5 dias roda como uma AWS Lambda (`pivo-refresh-sources`) disp
 
 Nao ha access key da AWS armazenada em lugar nenhum: a Lambda autentica via a propria IAM Role de execucao. `GOOGLE_CLOUD_BILLING_API_KEY` fica salva como variavel de ambiente da funcao (Lambda criptografa em repouso por padrao).
 
+### Trava de custo (governanca, 2026-09-13)
+
+Como a conta AWS acima e **pessoal**, foi montada uma trava automatica pra garantir que nenhum
+estouro de custo vire cobranca inesperada: um AWS Budget (`pivo-personal-cost-guard`, US$ 1/mes)
+dispara, via SNS, uma Lambda separada (`pivo-cost-guard`) que desabilita a regra do EventBridge
+e zera a concorrencia da `pivo-refresh-sources` — e uma segunda regra agendada (dia 1 de cada
+mes) religa as duas automaticamente. Detalhes completos, recursos criados e como atualizar em
+[`ops/cost-guard/README.md`](../ops/cost-guard/README.md).
+
 ## Segurança Do Ambiente De Teste
 
 O login de teste atual (sessao via cookie assinado, tela propria do produto) e suficiente para teste fechado, desde que:

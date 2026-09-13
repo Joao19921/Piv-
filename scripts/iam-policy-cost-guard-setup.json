@@ -1,0 +1,85 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BudgetsForCostGuard",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:ModifyBudget",
+        "budgets:ViewBudget"
+      ],
+      "Resource": "arn:aws:budgets::926529379436:budget/pivo-personal-cost-guard"
+    },
+    {
+      "Sid": "SnsForCostGuard",
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:GetTopicAttributes",
+        "sns:SetTopicAttributes",
+        "sns:Subscribe",
+        "sns:ListSubscriptionsByTopic",
+        "sns:TagResource",
+        "sns:AddPermission"
+      ],
+      "Resource": "arn:aws:sns:us-east-1:926529379436:pivo-cost-guard*"
+    },
+    {
+      "Sid": "IamForBreakerLambdaRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:PassRole"
+      ],
+      "Resource": "arn:aws:iam::926529379436:role/pivo-cost-guard-role"
+    },
+    {
+      "Sid": "BreakerLambdaLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:AddPermission",
+        "lambda:InvokeFunction"
+      ],
+      "Resource": "arn:aws:lambda:us-east-1:926529379436:function:pivo-cost-guard"
+    },
+    {
+      "Sid": "ThrottleTargetLambda",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:PutFunctionConcurrency",
+        "lambda:DeleteFunctionConcurrency",
+        "lambda:GetFunctionConcurrency"
+      ],
+      "Resource": "arn:aws:lambda:us-east-1:926529379436:function:pivo-refresh-sources"
+    },
+    {
+      "Sid": "ExistingScheduleRuleToggle",
+      "Effect": "Allow",
+      "Action": [
+        "events:EnableRule",
+        "events:DisableRule",
+        "events:DescribeRule"
+      ],
+      "Resource": "arn:aws:events:us-east-1:926529379436:rule/pivo-refresh-sources-schedule"
+    },
+    {
+      "Sid": "NewMonthlyResetRule",
+      "Effect": "Allow",
+      "Action": [
+        "events:PutRule",
+        "events:PutTargets",
+        "events:DescribeRule",
+        "events:ListTargetsByRule"
+      ],
+      "Resource": "arn:aws:events:us-east-1:926529379436:rule/pivo-cost-guard-monthly-reset"
+    }
+  ]
+}

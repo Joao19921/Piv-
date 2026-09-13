@@ -2,6 +2,25 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-13 — Governança: trava de custo automática na conta AWS pessoal
+
+Ação de governança pedida pelo usuário: a `pivo-refresh-sources` (ingestão periódica de preços
+AWS/GCP) roda numa conta AWS **pessoal**, sem nenhum limite automático de gasto. Montado um
+disjuntor de custo: AWS Budget `pivo-personal-cost-guard` (US$ 1/mês, `ACTUAL > 100%`) → SNS
+`pivo-cost-guard-alerts` (e-mail para dois endereços + gatilho automático) → Lambda
+`pivo-cost-guard` (`ops/cost-guard/index.mjs`) que desabilita a regra do EventBridge
+(`pivo-refresh-sources-schedule`) e zera a concorrência da `pivo-refresh-sources`. Uma segunda
+regra agendada (`pivo-cost-guard-monthly-reset`, dia 1 de cada mês) chama a mesma Lambda pra
+religar as duas automaticamente, sem intervenção manual.
+
+Provisionado via AWS CLI nesta sessão, com o usuário de deploy (`pivo-deploy-temp`) recebendo
+uma política adicional escopada só aos recursos novos (nunca um `*` amplo) — ver
+`scripts/iam-policy-cost-guard-setup.json`. Testado ao vivo: invocação manual simulando o alerta
+do Budget desligou de fato a regra e zerou a concorrência (confirmado via `describe-rule`/
+`get-function`); invocação simulando o reset mensal restaurou as duas. Estado final deixado
+normal (regra `ENABLED`, sem limite de concorrência). Detalhes completos em
+`ops/cost-guard/README.md`.
+
 ## 2026-09-12 — Compras.gov.br Pesquisa de Preço: catálogo ganha licenciamento de software
 
 Levantamento pedido pelo usuário: além das fontes já automatizadas, existe base pública pra

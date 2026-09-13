@@ -182,7 +182,7 @@ server/
 | :--- | :--- | :--- | :--- |
 | App web | Render | Free | Docker, hiberna sem uso |
 | Banco | Supabase (Postgres 17) | Free | `sa-east-1`, via pooler Supavisor |
-| Ingestão de preços | AWS Lambda + EventBridge | On-demand | Conta **pessoal** do time — pendência 8 |
+| Ingestão de preços | AWS Lambda + EventBridge | On-demand | Conta **pessoal** do time; trava de custo automática desde 2026-09-13 (ver `ops/cost-guard/README.md`) |
 | Ingestão do CAGED | GitHub Actions | Free | `7z` e `curl` já no runner |
 | Ingestão da RAIS | GitHub Actions | Free | Mesmo runner; 7 arquivos regionais, até ~1.1GB descomprimidos cada |
 | CI/CD | GitHub Actions | Free | 4 jobs, deploy só se os 3 passarem |
@@ -500,6 +500,7 @@ apareceu depois de causar dano real.
 | **`catalogs.ts` usava `cbo` como agrupamento, não como CBO** — `2124-05` carregava dez cargos distintos; o join do CAGED daria salário de desenvolvedor ao designer de UX | 66 dos 73 perfis com o CBO corrigido contra a classificação oficial; os 36 cargos que a CBO 2002 não prevê ficaram com `cbo: null`, sem código inventado |
 | **CAGED nunca havia sido ingerido** — o catálogo declarava `benchmarkSource: "CAGED/MTE"` sobre números que nunca vieram do CAGED | Pipeline mensal em produção: 4,4 M linhas processadas, 84 observações da competência 2026-07 gravadas e servidas em `/labor/profiles` |
 | **Sem branch protection** exigindo os checks do CI — já aconteceu: o merge do PR #7 quebrou o `master` | Resolvido em 2026-09-11: `master` ganhou os mesmos checks obrigatórios (`Typecheck + build`, `Testes automatizados`, `Segurança`), `enforce_admins` e bloqueio de force-push/deleção que uma tentativa anterior (incompleta) de migrar o deploy para uma branch `main` havia configurado só lá. A branch `main` — nunca observada pelo Render, órfã desde essa tentativa — foi removida junto com o PR aberto contra ela (#20), que não trazia nada que `master` já não tivesse |
+| **Conta AWS pessoal sem trava de custo** — a `pivo-refresh-sources` roda numa conta pessoal, sem nenhum limite automático contra um estouro de gasto | Resolvido em 2026-09-13: AWS Budget de US$ 1/mês (`pivo-personal-cost-guard`) → SNS → Lambda `pivo-cost-guard` desliga a ingestão (desabilita a regra do EventBridge + zera a concorrência) assim que o gasto real ultrapassa o limite, e uma regra agendada religa tudo no dia 1 do mês seguinte. Testado ao vivo (stop e resume). Detalhes em `ops/cost-guard/README.md` |
 
 ## 8. Enriquecimento de dados: o que foi feito e o que falta
 
@@ -586,7 +587,7 @@ ligado — é o ponto de entrada natural para a busca livre por cargo/UF/cidade,
 | Produção | `https://pivo-i8m3.onrender.com` | — |
 | Render | painel do serviço `pivo` | só quem tem a conta |
 | Supabase | projeto `pivo` (sa-east-1) | idem |
-| AWS | conta **pessoal** do time, us-east-1 | idem — ver pendência 8 |
+| AWS | conta **pessoal** do time, us-east-1 | idem — trava de custo automática (ver `ops/cost-guard/README.md`) |
 | Sentry | `agentanalisedegoverno.sentry.io`, projeto `pivo` | — |
 | UptimeRobot | monitor de `/api/v1/healthz` | — |
 | cron-job.org | keep-alive do Supabase, 1x/dia | — |

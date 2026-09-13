@@ -120,3 +120,6 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+
+# Pacote de deploy da Lambda de governanca (ops/cost-guard/) -- gerado localmente, nao versionado
+ops/cost-guard/function.zip
