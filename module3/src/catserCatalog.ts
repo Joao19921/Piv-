@@ -35,6 +35,20 @@ export const CATSER_CATALOG: CatserCategory[] = [
   { key: "nuvem-iaas", label: "Infraestrutura como serviço (IaaS)", codigoItemCatalogo: 26050 },
   // Divisão 17, Grupo 173, Classe 1731 -- consultoria em TIC (código ativo mais recente).
   { key: "consultoria-tic", label: "Consultoria em Tecnologia da Informação e Comunicação (TIC)", codigoItemCatalogo: 27332 },
+  // Divisão 18, Grupo 182, Classe 1821 -- licenciamento de direitos permanentes sobre programas
+  // de computador e locação de software (o que cobre licença de fornecedor estrangeiro revendida
+  // no Brasil -- Microsoft, Oracle, SAP etc. -- pelo preço real pago em BRL, não estimado).
+  // Excluídos de propósito: 16233 (registro de programa no INPI, não é aquisição de licença),
+  // 27480 (direitos de produção/distribuição/comercialização, é o lado do fabricante/revenda, não
+  // da contratação de uso), 15741 e 24333 (códigos inativos, substituídos por 27456/27464/27502).
+  { key: "licenca-estacao-trabalho", label: "Licenciamento de software para estação de trabalho", codigoItemCatalogo: 27456 },
+  { key: "licenca-servidor", label: "Licenciamento de software para servidor", codigoItemCatalogo: 27464 },
+  { key: "licenca-banco-dados", label: "Licenciamento de banco de dados (DBMS)", codigoItemCatalogo: 5576 },
+  { key: "licenca-outros-softwares", label: "Licenciamento de outros softwares", codigoItemCatalogo: 27472 },
+  { key: "licenca-cessao-uso", label: "Cessão de direito de uso de software", codigoItemCatalogo: 22179 },
+  { key: "licenca-temporaria", label: "Cessão temporária de direitos / locação de software", codigoItemCatalogo: 27502 },
+  { key: "licenca-outros-direitos", label: "Outros direitos permanentes sobre programas de computador", codigoItemCatalogo: 27499 },
+  { key: "licenca-software-generico", label: "Software fechado (licença proprietária genérica)", codigoItemCatalogo: 1279 },
 ];
 
 export function findCatserCategory(key: string): CatserCategory | undefined {

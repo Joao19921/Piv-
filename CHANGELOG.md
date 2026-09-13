@@ -2,6 +2,32 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-12 — Compras.gov.br Pesquisa de Preço: catálogo ganha licenciamento de software
+
+Levantamento pedido pelo usuário: além das fontes já automatizadas, existe base pública pra
+preço de **licença de software** (inclusive de fornecedor estrangeiro, cobrado em dólar)?
+Confirmado: licenciamento/assinatura/SaaS é classificado como **serviço (CATSER)**, não
+material (CATMAT), na Administração Pública Federal — então o módulo Pesquisa de Preço já
+implementado (ver entrada abaixo) é o caminho certo, só faltava mapear os códigos. Navegada a
+hierarquia real: Seção 1 (TIC) → Divisão 18 "Arrendamento, licenciamento de direitos e
+transferência de tecnologia" → Grupo 182 → Classe 1821 "Licenciamento de direitos permanentes
+sobre programas de computador e locação de software", com 8 códigos ativos adicionados ao
+`catserCatalog.ts` (estação de trabalho, servidor, banco de dados/DBMS, outros softwares,
+cessão de uso, cessão temporária/locação, outros direitos, licença genérica). Testado ao vivo
+(código 27464): devolveu compra real de 09/09/2026, R$ 6.249.960,00, fornecedor e órgão
+identificados — preço efetivamente pago em BRL, inclusive por licença de fornecedor
+estrangeiro revendida no Brasil (Microsoft, Oracle, SAP etc.), nunca estimado.
+
+Para preço **global em dólar** de fornecedor estrangeiro (fora de licitação BR): AWS, Azure e
+GCP já tinham cobertura ao vivo via API oficial de cada nuvem (`awsCollector.ts`,
+`azureCollector.ts`, `gcpCollector.ts`) — sem gap aí. Já o catálogo estático de SaaS por
+assento (`licenseCatalog` em `catalogs.ts` — GitHub, Microsoft 365, Datadog, Atlassian, Slack,
+Okta, CrowdStrike, Salesforce etc., hoje `FALLBACK_STALE`) não tem fonte pública automatizável:
+nenhum desses fornecedores publica API de preço, e o ToS deles (conferido o da Atlassian)
+proíbe scraping automatizado sem autorização por escrito — mesmo padrão que já tinha
+descartado Robert Half/Salary.com/Mercer/Aon. Esse catálogo continua curado manualmente, de
+propósito.
+
 ## 2026-09-12 — Duas novas fontes: RAIS (salário) e Compras.gov.br Pesquisa de Preço (licitação de TI)
 
 Levantamento pedido pelo usuário: além de PNCP e CAGED/SISP, existe mais alguma base pública

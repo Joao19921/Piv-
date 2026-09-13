@@ -29,6 +29,12 @@ Rotas: `GET /v1/mod3/service-price-categories` (lista as categorias do catálogo
 pelo worker). O `worker.ts` roda uma consulta por categoria do catálogo a cada execução
 agendada, junto com o PNCP.
 
+O catálogo cobre desenvolvimento (por linguagem), manutenção/sustentação, nuvem IaaS,
+consultoria TIC e **licenciamento de software** (Divisão 18/Classe 1821 — estação de trabalho,
+servidor, banco de dados, cessão de uso/temporária etc.). Licenciamento/assinatura/SaaS é
+classificado como serviço (CATSER), não material (CATMAT), na Administração Pública Federal —
+por isso entra aqui, e não num módulo à parte.
+
 ## Isolamento
 
 O deploy recomendado usa uma Lambda/API Gateway ou serviço separado, uma URL de banco exclusiva e uma chave própria. Falhas, timeouts e crescimento das tabelas do Módulo 3 não compartilham processo, pool ou schema com o core. `openapi.yaml` descreve o contrato e `sql/schema.sql.txt` é aplicado somente no banco do módulo.
