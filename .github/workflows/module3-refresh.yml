@@ -27,7 +27,6 @@ jobs:
       - name: Atualizar banco exclusivo do Módulo 3
         env:
           MOD3_DATABASE_URL: ${{ secrets.MOD3_DATABASE_URL }}
-          MOD3_COMPRAS_GOV_API_URL: ${{ vars.MOD3_COMPRAS_GOV_API_URL }}
           MOD3_TERMS: ${{ vars.MOD3_TERMS }}
         run: |
           test -n "$MOD3_DATABASE_URL"

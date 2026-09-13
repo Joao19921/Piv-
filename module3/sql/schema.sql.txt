@@ -47,3 +47,27 @@ CREATE TABLE IF NOT EXISTS mod3_equipamentos (
 );
 
 CREATE INDEX IF NOT EXISTS mod3_equipamentos_busca_idx ON mod3_equipamentos (descricao, categoria, valor_unitario);
+
+-- Preço praticado por item de serviço (CATSER), via módulo "Pesquisa de Preço" do
+-- Compras.gov.br (dadosabertos.compras.gov.br/modulo-pesquisa-preco). Não depende de
+-- mod3_licitacoes: o dado já vem consolidado da própria API, sem precisar do parser
+-- heurístico de texto livre que alimenta mod3_perfis_talents/mod3_equipamentos.
+CREATE TABLE IF NOT EXISTS mod3_precos_servico (
+  id BIGSERIAL PRIMARY KEY,
+  categoria_chave TEXT NOT NULL,
+  codigo_servico INTEGER NOT NULL,
+  id_item_compra BIGINT NOT NULL,
+  nome_servico TEXT NOT NULL,
+  preco_unitario NUMERIC(14, 2) NOT NULL,
+  unidade_medida TEXT,
+  uf CHAR(2),
+  municipio TEXT,
+  orgao TEXT,
+  data_compra DATE,
+  payload JSONB NOT NULL DEFAULT '{}',
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (codigo_servico, id_item_compra)
+);
+
+CREATE INDEX IF NOT EXISTS mod3_precos_servico_busca_idx ON mod3_precos_servico (categoria_chave, data_compra DESC);

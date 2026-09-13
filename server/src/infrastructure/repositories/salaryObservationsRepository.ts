@@ -4,7 +4,7 @@
  */
 import { query } from "../db/client";
 
-export type SalarySource = "CAGED" | "SISP" | "PNCP" | "IBGE";
+export type SalarySource = "CAGED" | "SISP" | "PNCP" | "IBGE" | "RAIS";
 export type EmploymentModel = "CLT" | "PJ";
 
 export interface SalaryObservationInput {
@@ -112,10 +112,15 @@ export async function upsertSalaryObservations(rows: SalaryObservationInput[]): 
  * Valor corrente por CBO, com degrade geografico: tenta municipio, cai para UF, cai para o
  * agregado nacional. Devolve o que existir, mais especifico primeiro -- quem chama decide se a
  * amostra local e grande o bastante para usar no lugar da nacional.
+ *
+ * `source` filtra a fonte (ex.: 'CAGED' ou 'RAIS') -- sem isso, um CBO com observacao em mais
+ * de uma fonte devolveria as duas misturadas na mesma lista, e quem consome (`melhorObservacao`
+ * em laborBenchmark.ts) so pega a primeira, silenciosamente. RAIS e CAGED nunca devem se
+ * confundir: cada chamada pede uma fonte especifica.
  */
 export async function findCurrentByCbo(
   cbos: string[],
-  options: { uf?: string | null; municipio?: string | null } = {},
+  options: { uf?: string | null; municipio?: string | null; source?: SalarySource } = {},
 ): Promise<SalaryObservationRow[]> {
   if (!cbos.length) return [];
   return query<SalaryObservationRow>(
@@ -131,11 +136,12 @@ export async function findCurrentByCbo(
       where cbo = any($1::text[])
         and (uf is null or uf = $2)
         and (municipio is null or municipio = $3)
+        and ($4::text is null or source = $4)
       order by
         (municipio is not null) desc,
         (uf is not null) desc,
         n_amostra desc`,
-    [cbos, options.uf ?? null, options.municipio ?? null],
+    [cbos, options.uf ?? null, options.municipio ?? null, options.source ?? null],
   );
 }
 

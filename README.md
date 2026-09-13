@@ -20,6 +20,7 @@ O projeto atual e a implementacao real sobre o stack existente Node/TypeScript. 
 | Ambiente de teste | Implementado | Docker + Render Free + login com sessao, RBAC e tela propria do produto. URL real: `https://pivo-i8m3.onrender.com`. |
 | Identidade visual no produto | Implementado | Tela inicial e hero da visao geral usam os assets em `client/public/brand/`, derivados das referencias em `docs/assets/identidade-visual/`. Layout validado para mobile, desktop, 4K e 8K sem overflow horizontal. |
 | CAGED ao vivo | Implementado | Ingestao mensal dos microdados do PDET/MTE (FTP, `.7z`) via GitHub Actions; salario CLT observado por CBO/UF com P25/mediana/P75 e n amostral, aplicado em `/labor/profiles`. Ver [RUNBOOK](docs/RUNBOOK.md#8-enriquecimento-de-dados-o-que-foi-feito-e-o-que-falta). |
+| RAIS ao vivo | Implementado | Ingestao anual (7 arquivos regionais, FTP/`.7z`) do estoque de vinculos ativos em 31/12; aparece como `referenciaRais` ao lado do CAGED em `/labor/profiles`, nunca no lugar dele. |
 | MCP server | Pendente | Previsto no PRD, ainda nao implementado. |
 | Multiusuario | Implementado | Login por e-mail/senha com usuarios em Postgres, troca obrigatoria de senha inicial, perfis ADMIN/USER e permissoes por modulo. Decisao de produto: nao havera modulo de "Propostas". |
 

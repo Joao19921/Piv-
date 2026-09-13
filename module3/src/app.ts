@@ -1,8 +1,9 @@
 import express, { type Request, type Response } from "express";
+import { CATSER_CATALOG, findCatserCategory } from "./catserCatalog";
 import { getModule3Config } from "./config";
 import { saveSearch } from "./db";
-import { listEquipment, listProfiles } from "./db";
-import { searchComprasGov, searchPncp } from "./sources";
+import { listEquipment, listProfiles, listServicePrices } from "./db";
+import { searchPncp } from "./sources";
 import type { Module3Config, PublicTender } from "./types";
 
 function requireApiKey(config: Module3Config, req: Request, res: Response): boolean {
@@ -33,8 +34,7 @@ export function createModule3App(config = getModule3Config()) {
     if (!term) return;
     try {
       const uf = typeof req.query.uf === "string" ? req.query.uf.trim().toUpperCase() : undefined;
-      const [pncp, comprasGov] = await Promise.all([searchPncp(term, config, { uf }), searchComprasGov(term, config)]);
-      const tenders: PublicTender[] = [...pncp, ...comprasGov];
+      const tenders: PublicTender[] = await searchPncp(term, config, { uf });
       await saveSearch(term, tenders);
       res.json({ term, count: tenders.length, tenders });
     } catch (error) {
@@ -48,5 +48,26 @@ export function createModule3App(config = getModule3Config()) {
   app.get("/v1/mod3/equipment", async (req, res) => {
     res.json({ data: await listEquipment(typeof req.query.term === "string" ? req.query.term : undefined), source: "mod3_equipamentos" });
   });
+
+  // Catálogo de categorias disponíveis pro preço de referência (chave amigável -> rótulo),
+  // pra UI montar o dropdown sem precisar saber o codigoItemCatalogo real.
+  app.get("/v1/mod3/service-price-categories", (_req, res) => {
+    res.json({ data: CATSER_CATALOG.map(({ key, label }) => ({ key, label })) });
+  });
+
+  // Preço de referência (Compras.gov.br, Pesquisa de Preço) já persistido pra uma categoria --
+  // não busca ao vivo aqui, só lê o que o worker.ts gravou (mesmo padrão de /profiles e
+  // /equipment, que também só leem dado já coletado).
+  app.get("/v1/mod3/service-prices", async (req, res) => {
+    const categoriaChave = typeof req.query.categoria === "string" ? req.query.categoria.trim() : "";
+    const categoria = findCatserCategory(categoriaChave);
+    if (!categoria) {
+      res.status(400).json({ error: "Categoria desconhecida. Use uma das chaves de /v1/mod3/service-price-categories." });
+      return;
+    }
+    const { mediana, itens } = await listServicePrices(categoriaChave);
+    res.json({ categoria: categoria.key, label: categoria.label, mediana, itens });
+  });
+
   return app;
 }

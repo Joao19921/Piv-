@@ -228,3 +228,57 @@ describe("referência oficial do SISP ao lado do mercado", () => {
     expect(r.referenciaOficial).toBeUndefined();
   });
 });
+
+describe("referência RAIS ao lado do CAGED", () => {
+  function rais(overrides: Partial<SalaryObservationRow> = {}): SalaryObservationRow {
+    return observacao({
+      source: "RAIS",
+      source_url: "ftp://ftp.mtps.gov.br/pdet/microdados/RAIS/2025/",
+      competencia: "2025-12-31",
+      // Estoque de fim de ano tem amostra bem maior que uma unica competencia do CAGED.
+      n_amostra: 48_200,
+      p25: "4700",
+      mediana: "8300",
+      p75: "12500",
+      ...overrides,
+    });
+  }
+
+  // O ponto central, igual ao da SISP: RAIS NAO substitui o valor de mercado (CAGED), aparece
+  // ao lado dele -- mesmo quando as duas fontes tem dado real pro mesmo perfil.
+  it("expoe as duas fontes sem uma sobrescrever a outra", () => {
+    const r = aplicarObservacao(perfil({ seniority: "Pleno" }), observacao(), undefined, rais());
+
+    expect(r.monthlyCompensation).toBe(8000); // mercado (CAGED) segue sendo o valor aplicado
+    expect(r.observed?.source).toBe("CAGED");
+    expect(r.referenciaRais?.source).toBe("RAIS");
+    expect(r.referenciaRais?.mediana).toBe(8300);
+  });
+
+  // Diferente da SISP (tabela publicada, um valor so): a RAIS tem dispersao real, entao usa o
+  // MESMO percentil escolhido para a senioridade do perfil -- comparacao justa com o CAGED.
+  it("usa o mesmo percentil da senioridade, nao sempre a mediana", () => {
+    const dados = rais({ p25: "4700", mediana: "8300", p75: "12500" });
+
+    const jr = aplicarObservacao(perfil({ seniority: "Júnior" }), observacao(), undefined, dados);
+    expect(jr.referenciaRais?.percentilAplicado).toBe("p25");
+
+    const sr = aplicarObservacao(perfil({ seniority: "Sênior" }), observacao(), undefined, dados);
+    expect(sr.referenciaRais?.percentilAplicado).toBe("p75");
+  });
+
+  // Perfis sem CAGED (35 que a CBO nao cobre bem, ou so sem observacao na competencia) ainda
+  // podem ter RAIS -- as duas fontes sao independentes, nenhuma depende da outra existir.
+  it("aparece mesmo quando nao ha dado do CAGED para o perfil", () => {
+    const r = aplicarObservacao(perfil(), undefined, undefined, rais());
+
+    expect(r.observed).toBeUndefined();
+    expect(r.sourceStatus).toBe("FALLBACK_STALE");
+    expect(r.referenciaRais?.mediana).toBe(8300);
+  });
+
+  it("fica ausente quando nao ha observacao da RAIS para o CBO/UF", () => {
+    const r = aplicarObservacao(perfil(), observacao(), undefined, undefined);
+    expect(r.referenciaRais).toBeUndefined();
+  });
+});

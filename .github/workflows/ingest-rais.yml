@@ -1,0 +1,79 @@
+name: Ingestão RAIS
+
+# Lote anual que alimenta `salary_observations` (fonte 'RAIS') com o estoque de vinculos
+# ativos em 31/12 por CBO/UF -- sempre ao lado do CAGED, nunca no lugar (ver
+# server/src/infrastructure/collectors/raisCollector.ts).
+#
+# A RAIS publica em duas ondas por ano-base (parcial no meio do ano seguinte, completa no
+# fim) e o calendario ja variou entre edicoes -- rodar mensalmente e mais simples que tentar
+# acertar o mes exato: o upsert e idempotente por (source, cbo, uf, competencia), entao um mes
+# sem novidade so reprocessa o mesmo ano-base sem duplicar nada.
+#
+# Mesmo motivo do ingest-caged.yml para rodar aqui e nao na Lambda: precisa de `7z` e `curl`,
+# RAM folgada (arquivos regionais chegam a >1GB descomprimidos) e minutos de execucao.
+
+on:
+  schedule:
+    - cron: "0 10 8 * *"
+  workflow_dispatch:
+    inputs:
+      ano:
+        description: "Ano-base (vazio = o mais recente publicado no FTP)"
+        required: false
+        type: string
+      dry_run:
+        description: "Só calcula e imprime, sem gravar no banco"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingest-rais
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: Baixar, agregar e gravar
+    runs-on: ubuntu-latest
+    # 7 arquivos regionais, alguns >1GB descomprimidos -- mais lento que o CAGED (arquivo unico).
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Conferir as ferramentas externas
+        run: |
+          curl --version | head -1
+          7z i > /dev/null && echo "7z disponivel"
+
+      - name: Ingerir RAIS
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          DRY="${{ inputs.dry_run }}"
+
+          if [ "$DRY" != "true" ] && [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL nao configurado (Settings > Secrets and variables > Actions)."
+            echo "Sem ele nao ha onde gravar as observacoes. Rode com dry_run marcado para so inspecionar."
+            exit 1
+          fi
+
+          ARGS=""
+          if [ -n "${{ inputs.ano }}" ]; then ARGS="$ARGS ${{ inputs.ano }}"; fi
+          if [ "$DRY" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+
+          echo "Executando: pnpm run ingest:rais --$ARGS"
+          pnpm run ingest:rais -- $ARGS

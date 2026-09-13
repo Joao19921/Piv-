@@ -167,6 +167,7 @@ server/
 | Fonte | Acesso | Estado | Cadência |
 | :--- | :--- | :--- | :--- |
 | **CAGED / MTE** | FTP anônimo (`.7z`, ~53 MB/mês) | **Ao vivo** — salário CLT por CBO/UF | Mensal, GitHub Actions |
+| **RAIS / MTE** | FTP anônimo (7 arquivos regionais `.7z`, ~200MB-1.1GB cada) | **Ao vivo** — estoque de vínculos ativos em 31/12 por CBO/UF, amostra bem maior que o CAGED | Anual (~12 meses de defasagem), GitHub Actions |
 | BACEN PTAX | REST, sem chave | Ao vivo | Por requisição |
 | Azure Retail Prices | REST, sem chave | Ao vivo | Por requisição |
 | AWS Pricing API | SDK, IAM Role | Ingestão | ~5 dias, Lambda |
@@ -183,6 +184,7 @@ server/
 | Banco | Supabase (Postgres 17) | Free | `sa-east-1`, via pooler Supavisor |
 | Ingestão de preços | AWS Lambda + EventBridge | On-demand | Conta **pessoal** do time — pendência 8 |
 | Ingestão do CAGED | GitHub Actions | Free | `7z` e `curl` já no runner |
+| Ingestão da RAIS | GitHub Actions | Free | Mesmo runner; 7 arquivos regionais, até ~1.1GB descomprimidos cada |
 | CI/CD | GitHub Actions | Free | 4 jobs, deploy só se os 3 passarem |
 | Erros | Sentry | Free | `agentanalisedegoverno.sentry.io` |
 | Uptime | UptimeRobot | Free | Monitora `/api/v1/healthz` |

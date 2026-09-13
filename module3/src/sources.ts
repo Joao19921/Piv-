@@ -1,5 +1,5 @@
 import type { Module3Config } from "./types";
-import type { PublicTender } from "./types";
+import type { PublicTender, ServicePriceObservation } from "./types";
 
 function compactDate(date: Date): string {
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
@@ -63,19 +63,48 @@ export async function searchPncp(term: string, config: Module3Config, options: P
   })).filter((item) => item.externalId);
 }
 
-export async function searchComprasGov(term: string, config: Module3Config): Promise<PublicTender[]> {
-  const base = process.env.MOD3_COMPRAS_GOV_API_URL;
-  if (!base) return [];
-  const url = new URL(base);
-  url.searchParams.set("q", term.trim());
-  const payload = (await getJson(url, config.requestTimeoutMs, config.maxRetries)) as { data?: Record<string, unknown>[] };
-  return (payload.data ?? []).map((item) => ({
-    externalId: String(item.id ?? item.numero ?? ""),
-    source: "COMPRAS_GOV",
-    object: String(item.objeto ?? item.descricao ?? term),
-    state: typeof item.uf === "string" ? item.uf : undefined,
-    tenderDate: typeof item.data === "string" ? item.data : undefined,
-    url: typeof item.url === "string" ? item.url : undefined,
-    raw: item,
-  })).filter((item) => item.externalId);
+/**
+ * Preço praticado por item de serviço (CATSER), via o módulo "Pesquisa de Preço" do
+ * Compras.gov.br -- sucessor do extinto Painel de Preços, único caminho que devolve preço
+ * unitário de contratação de verdade (não uma lista de editais, que já vem do PNCP).
+ *
+ * Endpoint, parâmetros e formato de resposta confirmados AO VIVO em 12-13/09/2026 (não
+ * documentação sozinha): `GET .../modulo-pesquisa-preco/3_consultarServico
+ * ?pagina=&tamanhoPagina=&codigoItemCatalogo=` devolve `{ resultado: [...], totalRegistros,
+ * totalPaginas, paginasRestantes }`, sem exigir chave/cadastro. Não existe busca por texto
+ * nessa API -- `codigoItemCatalogo` vem do catálogo fixo em `catserCatalog.ts`, navegado
+ * manualmente pela hierarquia real da API (nunca um código estimado).
+ */
+export function buildPesquisaPrecoUrl(codigoItemCatalogo: number, options: { pageSize?: number } = {}): URL {
+  // A API rejeita com HTTP 400 fora do intervalo 10-500 (confirmado ao vivo) -- clampar aqui
+  // evita que um valor de fora quebre a chamada em silencio.
+  const tamanhoPagina = Math.min(500, Math.max(10, options.pageSize ?? 100));
+  const url = new URL("https://dadosabertos.compras.gov.br/modulo-pesquisa-preco/3_consultarServico");
+  url.searchParams.set("pagina", "1");
+  url.searchParams.set("tamanhoPagina", String(tamanhoPagina));
+  url.searchParams.set("codigoItemCatalogo", String(codigoItemCatalogo));
+  return url;
+}
+
+export async function consultarPrecoServico(
+  codigoItemCatalogo: number,
+  config: Module3Config,
+  options: { pageSize?: number } = {},
+): Promise<ServicePriceObservation[]> {
+  const url = buildPesquisaPrecoUrl(codigoItemCatalogo, options);
+  const payload = (await getJson(url, config.requestTimeoutMs, config.maxRetries)) as { resultado?: Record<string, unknown>[] };
+  return (payload.resultado ?? [])
+    .map((item) => ({
+      idItemCompra: Number(item.idItemCompra),
+      codigoItemCatalogo: Number(item.codigoItemCatalogo),
+      descricaoItem: String(item.descricaoItem ?? item.objetoCompra ?? ""),
+      precoUnitario: Number(item.precoUnitario),
+      unidadeMedida: String(item.siglaUnidadeMedida ?? item.nomeUnidadeMedida ?? ""),
+      municipio: typeof item.municipio === "string" ? item.municipio : undefined,
+      estado: typeof item.estado === "string" ? item.estado : undefined,
+      orgao: typeof item.nomeOrgao === "string" ? item.nomeOrgao : undefined,
+      dataCompra: typeof item.dataCompra === "string" ? item.dataCompra : undefined,
+      raw: item,
+    }))
+    .filter((item) => Number.isFinite(item.idItemCompra) && Number.isFinite(item.precoUnitario) && item.precoUnitario > 0);
 }

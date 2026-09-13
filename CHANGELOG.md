@@ -2,6 +2,40 @@
 
 Registro de mudanças relevantes de engenharia e de infraestrutura/governança do Pivô. Formato livre, em português, orientado a decisão (o quê + por quê), não apenas a lista de commits — para isso, ver `git log`.
 
+## 2026-09-12 — Duas novas fontes: RAIS (salário) e Compras.gov.br Pesquisa de Preço (licitação de TI)
+
+Levantamento pedido pelo usuário: além de PNCP e CAGED/SISP, existe mais alguma base pública
+(ou privada legítima) pra licitação de serviço de software ou pra cargo/salário de TI?
+Pesquisei um conjunto de candidatas (Painel de Preços, Compras.gov.br, Portal da
+Transparência, BEC-SP/BNC/BLL, RAIS, PNAD Contínua, e várias consultorias/plataformas
+privadas — Hays, Michael Page, Catho, Glassdoor, Levels.fyi, LinkedIn, Indeed, Código Fonte
+TV, Stack Overflow Survey). Só duas passaram no critério "usar" (API real, sem
+cadastro/paywall, sem proibição de reuso): **RAIS** e **Compras.gov.br** (módulo Pesquisa de
+Preço). As duas foram verificadas ao vivo (chamada real, não só documentação) antes de
+implementar.
+
+**RAIS** (`server/src/infrastructure/collectors/raisCollector.ts`,
+`server/scripts/ingestRais.ts`, migration `0018`): mesma infraestrutura FTP do CAGED
+(`ftp.mtps.gov.br/pdet/microdados/RAIS/`), mas o dado vem em 7 arquivos regionais `.7z`
+(não um arquivo nacional único) e o formato mudou pra `.7z`/`.COMT` — CSV com vírgula,
+aspas e ISO-8859-1 — a partir da RAIS ano-base 2024. Confirmado baixando e inspecionando
+arquivos reais (o pequeno `NI` e o `NORTE` completo, 5,6M linhas): cabeçalho, delimitador,
+encoding e posição do CBO/UF/remuneração. RAIS fica sempre **ao lado** do CAGED
+(`referenciaRais` em `EnrichedLaborProfile`), nunca no lugar — mesmo padrão já usado pra SISP.
+Corrigido no caminho: um bug de contagem dupla no agrupamento nacional quando a UF é
+desconhecida (também presente em `cagedCollector.ts`, não corrigido lá — fora de escopo desta
+mudança) e a falta de `setEncoding("latin1")` no stream do `7z` (sem isso, o cabeçalho
+acentuado da RAIS corrompe e o parser falha).
+
+**Compras.gov.br Pesquisa de Preço** (`module3/src/sources.ts`, `catserCatalog.ts`,
+`mod3_precos_servico`): substitui `searchComprasGov`, que nunca tinha sido validado contra a
+API real (URL indefinida, parâmetro de busca inexistente, formato de resposta errado). A API
+real (`dadosabertos.compras.gov.br`) não tem busca textual pra serviço — só por código CATSER
+numérico —, então o cliente novo (`consultarPrecoServico`) usa um catálogo fixo navegado
+manualmente pela hierarquia real da API (Seção 1 = TIC), com códigos confirmados ao vivo
+(desenvolvimento por linguagem, manutenção/sustentação, nuvem IaaS, consultoria TIC). Rotas
+novas: `GET /v1/mod3/service-price-categories` e `GET /v1/mod3/service-prices?categoria=`.
+
 ## 2026-09-12 — Benchmark Worker: módulo removido por completo
 
 Decisão de produto: remove o módulo inteiro (código + banco). Indeed/Glassdoor/InfoJobs nunca
