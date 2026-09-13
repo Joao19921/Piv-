@@ -60,6 +60,7 @@ pnpm run start    # Roda o build em modo producao
 pnpm run format   # Prettier
 pnpm run migrate  # Aplica as migrations pendentes (ver "Banco De Dados" abaixo)
 pnpm run ingest:caged -- --dry-run  # Ingestao do CAGED (exige curl e 7z no PATH)
+pnpm run ingest:rais -- --dry-run   # Ingestao da RAIS (mesmos pre-requisitos do CAGED)
 pnpm test         # Suite automatizada (exige um Postgres de teste -- ver "Testes" abaixo)
 ```
 
@@ -305,11 +306,14 @@ Direção de **produto**. A dívida de engenharia e operação vive em
 
 ### Próximo, em ordem de valor
 
-1. **Mostrar a divergência mercado × oficial na tela.** A API já devolve `observed` (CAGED),
-   `referenciaOficial` (SISP) e `coverage`; a tela de Mão de obra ainda ignora os três. O dado
-   mais valioso que o produto tem hoje não está visível: a tabela oficial **superprecifica
-   suporte e redes em ~40%** e **subprecifica banco de dados e gerência em 20-42%** frente ao que
-   o mercado paga. É o argumento que sustenta uma negociação, e está escondido atrás da API.
+1. **Mostrar a cobertura (`coverage`) e o detalhe de `observed` na tela.** `referenciaOficial`
+   (SISP) e `referenciaRais` (RAIS) já aparecem lado a lado na tela de Mão de obra (2026-09-12/13);
+   o que falta é `observed` (percentil/UF/amostra do CAGED por trás do valor exibido) e o resumo
+   `coverage` (quantos perfis têm dado real vs. estimativa, e de que competência). O dado mais
+   valioso que o produto tem hoje ainda não está totalmente visível: a tabela oficial
+   **superprecifica suporte e redes em ~40%** e **subprecifica banco de dados e gerência em
+   20-42%** frente ao que o mercado paga. É o argumento que sustenta uma negociação, e está
+   escondido atrás da API.
 
 2. **Conferir a Portaria SGD/MGI nº 5.921/2026.** Ela atualizou a nº 1.070/2023, e os valores de
    infraestrutura no catálogo ainda vêm da nº 6.055/2025 — podem estar superados. Exige ler o
@@ -320,9 +324,10 @@ Direção de **produto**. A dívida de engenharia e operação vive em
    populado, ele passa a ter o que servir — inclusive o cache de 10 dias previsto no desenho
    original.
 
-4. **RAIS anual** para recorte por **município**. O CAGED mensal só sustenta amostra por UF; a
-   RAIS é bem maior e permitiria descer ao município sem violar a amostra mínima. Mesmo FTP,
-   arquivo bem mais pesado.
+4. **RAIS: descer o recorte de UF para município.** A RAIS em si já foi implementada
+   (2026-09-12/13, `referenciaRais` ao lado do CAGED) — mas `raisCollector.ts` agrega por
+   CBO+UF, igual ao CAGED, não por CBO+município. A amostra da RAIS (ordens de magnitude maior)
+   permitiria descer ao município sem violar o `MIN_AMOSTRA`; falta só o agrupamento.
 
 5. **IBGE / SIDRA (PNAD Contínua).** Cobriria parte dos **36 perfis sem CBO** — Cientista de
    Dados, Engenheiro de IA, UX/UI, Scrum Master —, que hoje seguem só com estimativa por não
