@@ -531,8 +531,10 @@ function LaborPricing() {
             <Card className="mt-4 rounded-xl border-[#E5E0D6] bg-white/60 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-display text-base font-semibold text-[#333333]">Estimativa complementar</p>
-                  <p className="mt-1 text-[11px] text-[#899A9A]">Estimativa algorítmica local · confiança {Math.round(networkResult.confidence * 100)}% · não é consulta a dados externos</p>
+                  <p className="font-display text-base font-semibold text-[#333333]">Pesquisa salarial complementar</p>
+                  <p className="mt-1 text-[11px] text-[#899A9A]">
+                    {networkResult.research?.sourceLabel ?? "Pesquisa salarial"} · confiança {Math.round(networkResult.confidence * 100)}%
+                  </p>
                 </div>
                 <span className="rounded-full border border-[#E5E0D6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#718282]">PJ</span>
               </div>
@@ -548,9 +550,33 @@ function LaborPricing() {
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
+              {networkResult.research?.sources?.length ? (
+                <div className="mt-4 border-t border-[#E5E0D6] pt-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7B8F8F]">Fontes pesquisadas</p>
+                  <div className="mt-2 space-y-2">
+                    {networkResult.research.sources.slice(0, 4).map((source) => (
+                      <a
+                        key={source.url}
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-2.5 transition-colors hover:bg-white"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[11px] font-semibold text-[#345555]">{source.name}</span>
+                          {typeof source.matchedSalary === "number" && (
+                            <span className="text-[10px] font-semibold text-[#2A675F]">{formatBRL(source.matchedSalary)}</span>
+                          )}
+                        </div>
+                        <p className="mt-1 truncate text-[10px] text-[#879A9A]">{source.title || source.url}</p>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <p className="mt-3 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
               <div className="mt-3 flex justify-end">
-                <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
+                <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Referência PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
               </div>
             </Card>
           )}
