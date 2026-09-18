@@ -59,7 +59,7 @@ class DynamicSalaryResearcher:
             "salario_pj_hora": int(median * self.pj_factor / 160),
             "confidence": 0.65,
             "source": "generic_estimation_v2_local",
-            "notes": "Estimativa algorítmica local baseada em senioridade + complexidade tecnológica; não consulta fontes externas e não é dado observado de mercado."
+            "notes": "Estimativa algorítmica local baseada em senioridade + complexidade tecnológica; não consulta fontes externas e não é dado observado de mercado.",
             "status": "success",
             "timestamp": datetime.now().isoformat(),
             "job_title": job_title,
