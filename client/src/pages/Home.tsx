@@ -469,6 +469,34 @@ function LaborPricing() {
                   </Card>
                 ))}
               </div>
+              {networkLoading && (
+                <div className="mt-4 rounded-xl border border-[#E5E0D6] bg-white/60 p-4 text-xs text-[#718282]">
+                  Calculando referência complementar para o cargo informado...
+                </div>
+              )}
+              {networkResult && (
+                <Card className="mt-4 rounded-xl border-[#E5E0D6] bg-white/60 p-4 md:col-span-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-display text-base font-semibold text-[#333333]">Estimativa complementar</p>
+                      <p className="mt-1 text-[11px] text-[#899A9A]">Script dinâmico · confiança {Math.round(networkResult.confidence * 100)}% · não é dado real de mercado</p>
+                    </div>
+                    <span className="rounded-full border border-[#E5E0D6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#718282]">PJ</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {[["CLT mediana", networkResult.salario_clt_mediana], ["PJ mensal", networkResult.salario_pj_mensal], ["PJ / hora", networkResult.salario_pj_hora]].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{label}</p>
+                        <p className="mt-1 font-display text-lg font-semibold text-[#2A675F]">{formatBRL(Number(value))}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
+                  <div className="mt-3 flex justify-end">
+                    <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
+                  </div>
+                </Card>
+              )}
             </>
           )}
         </div>
