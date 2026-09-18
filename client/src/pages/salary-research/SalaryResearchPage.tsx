@@ -18,7 +18,7 @@ const formatBRL = (value: number) =>
   }).format(value);
 
 function matchesRole(profile: LaborProfile, role: string) {
-  const terms = role.trim().toLowerCase().split(/\\s+/).filter(Boolean);
+  const terms = role.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return terms.every((term) => profile.title.toLowerCase().includes(term));
 }
 
