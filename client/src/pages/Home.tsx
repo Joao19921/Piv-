@@ -45,14 +45,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLaborCatalog } from "@/hooks/useLaborCatalog";
 import { useLaborEstimate } from "@/hooks/useLaborEstimate";
 import { useLicenseCatalog } from "@/hooks/useLicenseCatalog";
-import { useMarketBenchmarkHistory, useMarketBenchmarkSearch } from "@/hooks/useMarketBenchmark";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { downloadCsv } from "@/lib/csv";
 import { parseLocaleNumber } from "@/lib/number";
-import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, MarketBenchmarkSalarySource, QueryStat, SourceStatus } from "@/lib/api";
+import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, QueryStat, SourceStatus } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
 import PublicTendersPage from "@/pages/PublicTendersPage";
-import SalaryResearchPage from "@/pages/salary-research/SalaryResearchPage";
 
 type ServiceState = "live" | "synced" | "warn" | "stale" | "offline";
 
@@ -62,8 +60,7 @@ const INGESTION_SOURCE_NAMES = new Set(["AWS Pricing API", "GCP Cloud Billing Ca
 const navigation = [
   { id: "dashboard" as SectionId, label: "Visão geral", short: "01", icon: LayoutDashboard, requires: null as PermissionCode | null, adminOnly: false },
   { id: "labor" as SectionId, label: "Mão de obra", short: "02", icon: Users, requires: "LABOR" as PermissionCode | null, adminOnly: false },
-  { id: "salary-research" as SectionId, label: "Pesquisa salarial", short: "03", icon: CircleDollarSign, requires: "LABOR" as PermissionCode | null, adminOnly: false },
-  { id: "cloud" as SectionId, label: "Infra cloud", short: "04", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
+    { id: "cloud" as SectionId, label: "Infra cloud", short: "04", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
   { id: "licenses" as SectionId, label: "Licenças", short: "05", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
   { id: "admin-users" as SectionId, label: "Usuários", short: "06", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
   { id: "public-tenders" as SectionId, label: "Editais e referências de TI", short: "07", icon: FileSearch, requires: "PUBLIC_TENDERS" as PermissionCode, adminOnly: false },
@@ -272,91 +269,198 @@ function QuickAction({ number, title, description, icon: Icon, onClick }: { numb
 
 function LaborPricing() {
   const { data: catalogData, isLoading: catalogLoading } = useLaborCatalog();
-  const { data: historyData } = useMarketBenchmarkHistory();
-  const benchmarkSearch = useMarketBenchmarkSearch();
   const profiles = catalogData?.profiles ?? [];
+  const [searchRole, setSearchRole] = useState("");
+  const [searchedRole, setSearchedRole] = useState("");
   const [profileTitle, setProfileTitle] = useState("");
   const [employmentModel, setEmploymentModel] = useState<"CLT" | "PJ">("CLT");
   const [monthlySalary, setMonthlySalary] = useState("");
   const [costsAndCharges, setCostsAndCharges] = useState("");
   const [margin, setMargin] = useState("");
-  const [benchmarkRole, setBenchmarkRole] = useState("");
-  const [benchmarkState, setBenchmarkState] = useState("");
-  const [benchmarkCity, setBenchmarkCity] = useState("");
-  const [benchmarkNotes, setBenchmarkNotes] = useState("");
-  const [appliedSource, setAppliedSource] = useState<MarketBenchmarkSalarySource | null>(null);
-  const [appliedSourceGeneric, setAppliedSourceGeneric] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const suggestions = useMemo(() => {
+    const query = searchRole.trim().toLowerCase();
+    if (!query) return profiles.slice(0, 8);
+    const terms = query.split(/\s+/).filter(Boolean);
+    return profiles
+      .filter((profile) => terms.every((term) => profile.title.toLowerCase().includes(term)))
+      .slice(0, 8);
+  }, [profiles, searchRole]);
+
+  const searchedProfiles = useMemo(() => {
+    const query = searchedRole.trim().toLowerCase();
+    if (!query) return [];
+    const terms = query.split(/\s+/).filter(Boolean);
+    return profiles.filter((profile) => terms.every((term) => profile.title.toLowerCase().includes(term)));
+  }, [profiles, searchedRole]);
+
+  const cltProfiles = searchedProfiles.filter((profile) => profile.employmentModel === "CLT");
+  const pjProfiles = searchedProfiles.filter((profile) => profile.employmentModel === "PJ");
+
+  const salaryReference = (profile: (typeof profiles)[number]) => {
+    const official = profile.referenciaOficial?.mediana;
+    const rais = profile.referenciaRais?.[profile.referenciaRais.percentilAplicado ?? "mediana"];
+    return official ?? rais ?? profile.monthlyCompensation;
+  };
+
   const salary = parseLocaleNumber(monthlySalary);
-  const { data: estimate, isFetching } = useLaborEstimate({ monthlySalary: salary, costsAndChargesPct: parseLocaleNumber(costsAndCharges), marginPct: parseLocaleNumber(margin) });
+  const { data: estimate, isFetching } = useLaborEstimate({
+    monthlySalary: salary,
+    costsAndChargesPct: parseLocaleNumber(costsAndCharges),
+    marginPct: parseLocaleNumber(margin),
+  });
   const monthlyCost = estimate?.monthlyCost ?? 0;
   const hourlyCost = estimate?.hourlyCost ?? 0;
   const suggestedRate = estimate?.suggestedRate ?? 0;
-  // Histórico permanece disponível, mas nunca é tratado como uma busca aberta nem preenche a tela.
-  const benchmark = benchmarkSearch.data?.data;
-  const benchmarkServiceState = benchmarkSearch.data ? mapApiStatus(benchmarkSearch.data.status, benchmarkSearch.data.name) : "stale";
-  const benchmarkHistory = historyData?.entries ?? [];
 
-  const applyQuickProfile = (profile: (typeof profiles)[number]) => {
+  const selectRole = (title: string) => {
+    setSearchRole(title);
+    setShowSuggestions(false);
+  };
+
+  const handleRoleSearch = () => {
+    const role = searchRole.trim();
+    if (!role) {
+      toast.error("Informe o cargo ou perfil.");
+      return;
+    }
+    setSearchedRole(role);
+    setShowSuggestions(false);
+  };
+
+  const applyProfile = (profile: (typeof profiles)[number]) => {
     setProfileTitle(profile.title);
     setEmploymentModel(profile.employmentModel);
     setMonthlySalary(String(profile.monthlyCompensation));
     setCostsAndCharges(String((profile.factorK - 1) * 100));
-    setAppliedSource(null);
-    setAppliedSourceGeneric(false);
-  };
-
-  const handleBenchmarkSearch = () => {
-    if (!benchmarkRole.trim()) {
-      toast.error("Informe o cargo ou perfil para buscar benchmark.");
-      return;
-    }
-
-    toast.promise(benchmarkSearch.mutateAsync({ role: benchmarkRole, state: benchmarkState, city: benchmarkCity, notes: benchmarkNotes }), {
-      loading: "Buscando benchmark de mercado...",
-      success: "Benchmark atualizado.",
-      error: (err) => (err instanceof Error ? err.message : "Não foi possível buscar benchmark agora."),
-    });
+    toast.success(`Referência ${profile.employmentModel} aplicada ao cálculo.`);
   };
 
   const handleClear = () => {
+    setSearchRole("");
+    setSearchedRole("");
     setProfileTitle("");
     setEmploymentModel("CLT");
     setMonthlySalary("");
     setCostsAndCharges("");
     setMargin("");
-    setBenchmarkRole("");
-    setBenchmarkState("");
-    setBenchmarkCity("");
-    setBenchmarkNotes("");
-    setAppliedSource(null);
-    setAppliedSourceGeneric(false);
-    benchmarkSearch.reset();
+    setShowSuggestions(false);
     toast.success("Dados limpos. Comece uma nova busca quando quiser.");
   };
 
-  const fillFromBenchmarkSource = (source: MarketBenchmarkSalarySource, role: string, isGeneric: boolean) => {
-    setProfileTitle(role || source.profileTitle);
-    setEmploymentModel(source.employmentModel);
-    setMonthlySalary(String(source.monthlyCompensation));
-    setCostsAndCharges(String((source.factorK - 1) * 100));
-    setAppliedSource(source);
-    setAppliedSourceGeneric(isGeneric);
-  };
-
-  const applyBenchmarkSource = (source: MarketBenchmarkSalarySource) => {
-    const isGeneric = benchmark?.hasDirectMatch === false;
-    fillFromBenchmarkSource(source, benchmark?.roleSearched ?? source.profileTitle, isGeneric);
-    toast.success(
-      isGeneric
-        ? `Referência genérica de ${source.employmentModel} aplicada ao cálculo (sem correspondência direta pra "${benchmark?.roleSearched ?? source.profileTitle}").`
-        : `Perfil ${source.employmentModel} aplicado ao cálculo (${benchmark?.roleSearched ?? source.profileTitle}).`,
-    );
-  };
-
   return <div>
-    <SectionHeading eyebrow="Módulo 02 · Laboratório" title="Mão de obra" description="Comece com os campos em branco e informe remuneração, custos e encargos e margem para calcular a taxa-hora." action={<Button onClick={handleClear} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-transparent px-5 text-xs text-[#333333] hover:bg-white"><Eraser className="mr-2 h-4 w-4" /> Limpar dados</Button>} />
-    <Card className="mb-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-5 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Benchmark de mercado</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Busca por cargo e localidade</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-[#658080]">Consulta o catálogo interno de perfis e retorna o salário CLT e/ou PJ correspondente ao cargo buscado, em valor bruto, sem margem, imposto ou ajuste regional nesta V1.</p></div><ServiceBadge state={benchmarkServiceState} /></div><div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px_180px]"><div><Label htmlFor="benchmark-role" className="text-xs font-semibold text-[#345555]">Cargo / perfil</Label><Input id="benchmark-role" value={benchmarkRole} onChange={(e) => setBenchmarkRole(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: Consultor SAP FI/CO senior, foco fiscal" /></div><div><Label htmlFor="benchmark-state" className="text-xs font-semibold text-[#345555]">Estado</Label><select id="benchmark-state" value={benchmarkState} onChange={(e) => setBenchmarkState(e.target.value)} className="mt-2 h-10 w-full rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:border-[#F57F17] focus:ring-2 focus:ring-[#F57F17]/20">{brazilStates.map(([uf, name]) => <option key={uf} value={uf}>{uf} - {name}</option>)}</select></div><div><Label htmlFor="benchmark-city" className="text-xs font-semibold text-[#345555]">Cidade</Label><Input id="benchmark-city" value={benchmarkCity} onChange={(e) => setBenchmarkCity(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="São Paulo" /></div></div><div className="mt-4"><Label htmlFor="benchmark-notes" className="text-xs font-semibold text-[#345555]">Observações</Label><Input id="benchmark-notes" value={benchmarkNotes} onChange={(e) => setBenchmarkNotes(e.target.value)} className="mt-2 h-10 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: espanhol, assessment de 3 a 5 meses, fiscal" /></div><div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center"><Button onClick={handleBenchmarkSearch} disabled={benchmarkSearch.isPending} className="pressable rounded-full bg-[#F57F17] px-5 text-xs text-white hover:bg-[#D96D0C]"><Search className="mr-2 h-4 w-4" /> Buscar benchmark</Button><span className="text-[11px] text-[#879A9A]">Salário de mercado não é valor de venda. Use "Aplicar" numa fonte abaixo para levar o perfil ao cálculo.</span></div>{benchmark && <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_260px]"><div><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-[#333333]">{benchmark.roleSearched} - {benchmark.city}/{benchmark.state}</p><p className="font-display text-lg font-semibold text-[#C2660D]">{formatBRL(benchmark.suggestedMonthlyCompensation)}</p></div><p className="mb-4 text-xs leading-5 text-[#658080]">{benchmark.summary}</p>{benchmark.hasDirectMatch === false && <div className="mb-4 flex items-start gap-2 rounded-lg border border-[#E8CBA9] bg-[#FAEFE2] px-3 py-2.5 text-[11px] leading-5 text-[#956126]"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Sem correspondência direta no catálogo para esse cargo — as fontes abaixo são referências gerais de TI, não específicas dele. Nada foi aplicado automaticamente; use "Aplicar" numa delas se quiser usar mesmo assim.</span></div>}<div className="overflow-hidden rounded-xl border border-[#E5E0D6]"><table className="w-full text-left text-xs"><thead className="bg-[#E8E9E9] text-[10px] uppercase tracking-[0.14em] text-[#7B8F8F]"><tr><th className="px-3 py-2 font-semibold">Fonte</th><th className="px-3 py-2 font-semibold">Salário mensal</th><th className="px-3 py-2 font-semibold">Observação</th><th className="px-3 py-2 font-semibold" /></tr></thead><tbody>{benchmark.sources.length ? benchmark.sources.map((item) => <tr key={item.profileId} className="border-t border-[#E5E0D6] bg-white/50"><td className="px-3 py-3 font-semibold text-[#333333]">Salário {item.employmentModel}<span className="mt-0.5 block font-normal text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{item.profileTitle} - {item.seniority}</span></td><td className="px-3 py-3 font-mono text-[#2A675F]">{formatBRL(item.monthlyCompensation)}</td><td className="px-3 py-3 text-[#658080]">{item.observation}</td><td className="px-3 py-3 text-right"><button onClick={() => applyBenchmarkSource(item)} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Aplicar</button></td></tr>) : <tr><td colSpan={4} className="px-3 py-3 text-[#899A9A]">Nenhum perfil do catálogo corresponde a este cargo ainda.</td></tr>}</tbody></table></div></div><div className="rounded-xl border border-[#E5E0D6] bg-white/45 p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Histórico</p><div className="mt-3 space-y-2">{benchmarkHistory.length ? benchmarkHistory.slice(0, 4).map((entry) => <button key={entry.id} onClick={() => { setBenchmarkRole(entry.roleSearched); setBenchmarkState(entry.state ?? "SP"); setBenchmarkCity(entry.city); setBenchmarkNotes(entry.notes ?? ""); }} className="w-full rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3 text-left hover:border-[#F0C48A]"><p className="truncate text-xs font-semibold text-[#333333]">{entry.roleSearched}</p><p className="mt-1 text-[10px] text-[#879A9A]">{entry.city}/{entry.state ?? "BR"} - {formatRelativeTime(entry.generatedAt)}</p></button>) : <p className="text-xs text-[#879A9A]">Nenhuma consulta salva ainda.</p>}</div></div></div>}</Card>
-    {!benchmark && <Card className="mb-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#C2660D]">Histórico</p><div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{benchmarkHistory.length ? benchmarkHistory.slice(0, 4).map((entry) => <button key={entry.id} onClick={() => { setBenchmarkRole(entry.roleSearched); setBenchmarkState(entry.state ?? ""); setBenchmarkCity(entry.city); setBenchmarkNotes(entry.notes ?? ""); }} className="rounded-lg border border-[#E5E0D6] bg-white/55 p-3 text-left hover:border-[#F0C48A]"><p className="truncate text-xs font-semibold text-[#333333]">{entry.roleSearched}</p><p className="mt-1 text-[10px] text-[#879A9A]">{entry.city}/{entry.state ?? "BR"} - {formatRelativeTime(entry.generatedAt)}</p></button>) : <p className="text-xs text-[#879A9A]">Nenhuma consulta salva ainda.</p>}</div></Card>}
+    <SectionHeading
+      eyebrow="Módulo 02 · Laboratório"
+      title="Mão de obra"
+      description="Pesquise um cargo uma única vez, consulte as referências CLT e PJ e use a referência escolhida no cálculo da taxa-hora."
+      action={<Button onClick={handleClear} variant="outline" className="pressable rounded-full border-[#C9C6C2] bg-transparent px-5 text-xs text-[#333333] hover:bg-white"><Eraser className="mr-2 h-4 w-4" /> Limpar dados</Button>}
+    />
+
+    <Card className="mb-5 rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7">
+      <div className="mb-5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Pesquisa integrada</p>
+        <h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Consultar cargo</h2>
+        <p className="mt-1 max-w-2xl text-xs leading-5 text-[#658080]">
+          A busca usa a mesma base de cargos já utilizada pela Mão de obra. O resultado reúne as referências disponíveis para CLT e PJ, sem uma segunda aba.
+        </p>
+      </div>
+
+      <div className="relative">
+        <Label htmlFor="labor-role-search" className="text-xs font-semibold text-[#345555]">Cargo / perfil</Label>
+        <div className="mt-2 flex gap-2">
+          <Input
+            id="labor-role-search"
+            value={searchRole}
+            onFocus={() => setShowSuggestions(true)}
+            onChange={(event) => {
+              setSearchRole(event.target.value);
+              setShowSuggestions(true);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleRoleSearch();
+              if (event.key === "Escape") setShowSuggestions(false);
+            }}
+            className="h-11 border-[#D4D1CC] bg-white text-sm text-[#333333]"
+            placeholder="Ex.: Analista de BI, Desenvolvedor, Arquiteto de Soluções"
+            autoComplete="off"
+          />
+          <Button onClick={handleRoleSearch} disabled={!searchRole.trim()} className="pressable h-11 rounded-full bg-[#F57F17] px-5 text-xs text-white hover:bg-[#D96D0C]">
+            <Search className="mr-2 h-4 w-4" /> Pesquisar
+          </Button>
+        </div>
+
+        {showSuggestions && (suggestions.length > 0 || catalogLoading) && (
+          <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-[#D8D1C7] bg-white shadow-lg">
+            {catalogLoading ? (
+              <p className="px-4 py-3 text-sm text-[#7B8B8B]">Carregando cargos...</p>
+            ) : suggestions.map((profile) => (
+              <button
+                key={profile.id}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectRole(profile.title)}
+                className="block w-full border-b border-[#EEE9E1] px-4 py-3 text-left last:border-0 hover:bg-[#FBF7F1]"
+              >
+                <span className="block text-sm font-semibold text-[#333333]">{profile.title}</span>
+                <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{profile.seniority} · {profile.employmentModel}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {searchedRole && (
+        <div className="mt-7">
+          {searchedProfiles.length === 0 ? (
+            <div className="flex items-start gap-3 rounded-xl border border-[#E8CBA9] bg-[#FAEFE2] p-4 text-sm text-[#79521F]">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div><p className="font-semibold">Cargo não encontrado na base atual</p><p className="mt-1 text-xs leading-5">Não há referência compatível com “{searchedRole}”.</p></div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div><p className="text-sm font-semibold text-[#333333]">Referências para “{searchedRole}”</p><p className="mt-1 text-[11px] text-[#879A9A]">{searchedProfiles.length} referência(s) encontrada(s)</p></div>
+                <button onClick={() => setSearchedRole("")} className="text-xs font-semibold text-[#C2660D] hover:underline">Fechar</button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {[
+                  { model: "CLT", items: cltProfiles },
+                  { model: "PJ", items: pjProfiles },
+                ].map(({ model, items }) => (
+                  <Card key={model} className="rounded-xl border-[#E5E0D6] bg-white/60 p-4">
+                    <div className="mb-3 flex items-center justify-between"><p className="font-display text-base font-semibold text-[#333333]">{model}</p><span className="text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{items.length} registro(s)</span></div>
+                    {items.length ? (
+                      <div className="space-y-2">
+                        {items.map((profile) => (
+                          <div key={profile.id} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div><p className="text-xs font-semibold text-[#333333]">{profile.title}</p><p className="mt-1 text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{profile.seniority}</p></div>
+                              <p className="font-display text-lg font-semibold text-[#2A675F]">{formatBRL(salaryReference(profile))}</p>
+                            </div>
+                            <p className="mt-2 text-[10px] text-[#718282]">Referência mensal · Fator K {profile.factorK.toFixed(2)}</p>
+                            {(profile.referenciaOficial || profile.referenciaRais) && (
+                              <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">
+                                {[profile.referenciaOficial && "SISP", profile.referenciaRais && "RAIS"].filter(Boolean).join(" · ")} · fontes públicas
+                              </p>
+                            )}
+                            <div className="mt-3 flex justify-end">
+                              <button onClick={() => applyProfile(profile)} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar no cálculo</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#899A9A]">Nenhuma referência {model} disponível para este cargo.</p>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Card>
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
       <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Entrada de premissas</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Perfil e composição da taxa</h2></div><div className="rounded-lg bg-[#E8E9E9] p-2 text-[#5D7979]"><BriefcaseBusiness className="h-4 w-4" /></div></div>
         <div className="mb-6"><Label htmlFor="profile-title" className="text-xs font-semibold text-[#345555]">Perfil profissional</Label><div className="mt-2 flex gap-2"><Input id="profile-title" value={profileTitle} onChange={(e) => setProfileTitle(e.target.value)} className="h-11 flex-1 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: Consultor SAP FI/CO senior" /><div className="flex overflow-hidden rounded-md border border-[#D4D1CC]">{(["CLT", "PJ"] as const).map((model) => <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-11 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>{model}</button>)}</div></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Nome livre - preenchido pela busca de benchmark abaixo ou digitado manualmente</p></div>
@@ -366,8 +470,8 @@ function LaborPricing() {
       <Card className="overflow-hidden rounded-2xl border-[#0D5C5C] bg-[#0D5C5C] p-5 text-[#F7F2E8] shadow-paper sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Saída do modelo</p><h2 className="mt-1 font-display text-xl font-semibold">Taxa-hora sugerida</h2></div><div className="rounded-lg bg-[#F57F17] p-2 text-white"><Calculator className="h-4 w-4" /></div></div>{isFetching && !estimate ? <Skeleton className="mt-10 h-12 w-44 bg-white/10" /> : <div className="mt-10 font-display text-5xl font-semibold tracking-[-0.06em] text-white">{formatBRL(suggestedRate)}</div>}<p className="mt-2 text-xs leading-5 text-[#AFC7C7]">por hora faturável · {profileTitle || "perfil"} / {employmentModel}</p><div className="mt-9 space-y-3 border-t border-white/10 pt-5 text-xs"><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo mensal</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(monthlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo-hora base</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(hourlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custos e encargos aplicados</span><strong className="font-medium text-[#F7F2E8]">{parseLocaleNumber(costsAndCharges)}%</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Horas faturáveis</span><strong className="font-medium text-[#F7F2E8]">{estimate?.billableHours ?? 168} h/mês</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Margem aplicada</span><strong className="font-medium text-[#F57F17]">{parseLocaleNumber(margin)}%</strong></div></div><div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-5 text-[#B8CECE]"><span className="font-semibold text-white">Nota de integridade:</span> com custos e encargos e margem em 0%, a taxa-hora é a remuneração mensal dividida por 168.</div></Card>
     </div>
   </div>;
+  </div>;
 }
-
 function LicensesCatalog() {
   const { data, isLoading } = useLicenseCatalog();
   const { data: healthData } = useSystemHealth();
@@ -490,7 +594,6 @@ export default function Home({ section }: { section: SectionId }) {
   const renderContent = () => {
     if (!canAccessSection(user, section)) return <NoAccess onNavigate={navigate} />;
     if (section === "labor") return <LaborPricing />;
-    if (section === "salary-research") return <SalaryResearchPage />;
     if (section === "cloud") return <CloudArchitect />;
     if (section === "licenses") return <LicensesCatalog />;
     if (section === "admin-users") return <AdminUsersPage />;
