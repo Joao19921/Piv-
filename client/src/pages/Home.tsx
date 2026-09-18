@@ -548,9 +548,6 @@ function LaborPricing() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 rounded-lg border border-[#E8CBA9] bg-[#FAEFE2] p-3 text-[10px] leading-4 text-[#79521F]">
-                <strong>Transparência da fonte:</strong> esta implementação não consulta Glassdoor, LinkedIn, Vagas ou Salário.com.br. O valor é calculado localmente a partir do cargo, senioridade e regras de complexidade do script. Não tratar como salário observado de mercado.
-              </div>
               <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
               <div className="mt-3 flex justify-end">
                 <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
