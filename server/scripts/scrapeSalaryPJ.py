@@ -111,7 +111,7 @@ class DynamicSalaryResearcher:
     def _salary_values(text):
         values = []
         # Aceita R$ 12.345,67 e R$ 12.345.
-        for match in re.finditer(r"R\\$\\s*([0-9]{1,3}(?:\\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]{3,6}(?:,[0-9]{2})?)", text, re.I):
+        for match in re.finditer(r"R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]{3,6}(?:,[0-9]{2})?)", text, re.I):
             raw = match.group(1).replace(".", "").replace(",", ".")
             try:
                 value = float(raw)
