@@ -1,4 +1,5 @@
 import express, { type Router } from "express";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -498,6 +499,45 @@ export function createApiRouter(): Router {
         data: null,
       },
     });
+  });
+
+  router.post("/labor/pj-search", async (req, res) => {
+    const { jobTitle, location, seniority, specialties } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof jobTitle !== "string" || !jobTitle.trim()) {
+      res.status(400).json({ status: "error", error: "jobTitle é obrigatório e deve ser string." });
+      return;
+    }
+    try {
+      const scriptPath = path.resolve(process.cwd(), "server/scripts/scrapeSalaryPJ.py");
+      const payload = JSON.stringify({
+        jobTitle: jobTitle.trim(),
+        location: typeof location === "string" ? location : "São Paulo",
+        seniority: typeof seniority === "string" ? seniority : "",
+        specialties: typeof specialties === "string" ? specialties : "",
+      });
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = spawn("python3", [scriptPath], { stdio: ["pipe", "pipe", "pipe"] });
+        let output = "";
+        let errorOutput = "";
+        child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+        child.stderr.on("data", (chunk) => { errorOutput += chunk.toString(); });
+        child.on("error", reject);
+        child.on("close", (code) => {
+          if (code === 0) resolve(output);
+          else reject(new Error(errorOutput || `python3 encerrou com código ${code}`));
+        });
+        child.stdin.end(payload);
+      });
+      const result = JSON.parse(stdout);
+      if (result?.status !== "success") {
+        res.status(422).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      logger.error("Falha na pesquisa salarial PJ", { error: error instanceof Error ? error.message : String(error) });
+      res.status(502).json({ status: "error", error: "Não foi possível executar a pesquisa salarial PJ." });
+    }
   });
 
   router.post("/labor/estimate", (req, res) => {

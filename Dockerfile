@@ -17,6 +17,7 @@ FROM node:${NODE_VERSION}-alpine AS runner
 
 WORKDIR /app
 RUN corepack enable
+RUN apk add --no-cache python3
 ENV NODE_ENV=production
 ENV PORT=3000
 
@@ -28,6 +29,7 @@ COPY --from=build /app/patches ./patches
 RUN pnpm install --prod --frozen-lockfile
 
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/server/scripts/scrapeSalaryPJ.py ./server/scripts/scrapeSalaryPJ.py
 
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

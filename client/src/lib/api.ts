@@ -221,6 +221,42 @@ export async function fetchLaborProfiles(): Promise<LaborProfilesResponse> {
   return laborProfilesResponseSchema.parse(await res.json());
 }
 
+const pjSalarySearchResponseSchema = z.object({
+  status: z.literal("success"),
+  timestamp: z.string(),
+  job_title: z.string(),
+  location: z.string(),
+  seniority: z.string(),
+  salario_clt_p25: z.number(),
+  salario_clt_mediana: z.number(),
+  salario_clt_p75: z.number(),
+  salario_clt_media: z.number(),
+  pj_factor: z.number(),
+  salario_pj_mensal: z.number(),
+  salario_pj_hora: z.number(),
+  confidence: z.number(),
+  source: z.string(),
+  notes: z.string(),
+});
+export type PjSalarySearchResponse = z.infer<typeof pjSalarySearchResponseSchema>;
+
+export async function fetchPjSalarySearch(params: {
+  jobTitle: string;
+  location?: string;
+  seniority?: string;
+}): Promise<PjSalarySearchResponse> {
+  const res = await fetch(`${API_BASE}/labor/pj-search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? "Falha na pesquisa salarial PJ.");
+  }
+  return pjSalarySearchResponseSchema.parse(await res.json());
+}
+
 export interface LaborEstimateParams {
   profileId?: string;
   monthlySalary: number;

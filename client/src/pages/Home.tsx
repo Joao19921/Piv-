@@ -48,7 +48,7 @@ import { useLicenseCatalog } from "@/hooks/useLicenseCatalog";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { downloadCsv } from "@/lib/csv";
 import { parseLocaleNumber } from "@/lib/number";
-import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, QueryStat, SourceStatus } from "@/lib/api";
+import { fetchPjSalarySearch, type ApiSourceResult, type IngestionRun, type LicenseCatalogItem, type QueryStat, type SourceStatus, type PjSalarySearchResponse } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
 import PublicTendersPage from "@/pages/PublicTendersPage";
 
@@ -278,6 +278,8 @@ function LaborPricing() {
   const [costsAndCharges, setCostsAndCharges] = useState("");
   const [margin, setMargin] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [networkResult, setNetworkResult] = useState<PjSalarySearchResponse | null>(null);
+  const [networkLoading, setNetworkLoading] = useState(false);
 
   const suggestions = useMemo(() => {
     const query = searchRole.trim().toLowerCase();
@@ -319,7 +321,7 @@ function LaborPricing() {
     setShowSuggestions(false);
   };
 
-  const handleRoleSearch = () => {
+  const handleRoleSearch = async () => {
     const role = searchRole.trim();
     if (!role) {
       toast.error("Informe o cargo ou perfil.");
@@ -327,6 +329,16 @@ function LaborPricing() {
     }
     setSearchedRole(role);
     setShowSuggestions(false);
+    setNetworkLoading(true);
+    try {
+      const result = await fetchPjSalarySearch({ jobTitle: role, location: "São Paulo" });
+      setNetworkResult(result);
+    } catch (error) {
+      setNetworkResult(null);
+      toast.error(error instanceof Error ? error.message : "Falha na pesquisa salarial complementar.");
+    } finally {
+      setNetworkLoading(false);
+    }
   };
 
   const applyProfile = (profile: (typeof profiles)[number]) => {
@@ -340,6 +352,7 @@ function LaborPricing() {
   const handleClear = () => {
     setSearchRole("");
     setSearchedRole("");
+    setNetworkResult(null);
     setProfileTitle("");
     setEmploymentModel("CLT");
     setMonthlySalary("");
@@ -456,6 +469,34 @@ function LaborPricing() {
                   </Card>
                 ))}
               </div>
+              {networkLoading && (
+                <div className="mt-4 rounded-xl border border-[#E5E0D6] bg-white/60 p-4 text-xs text-[#718282]">
+                  Calculando referência complementar para o cargo informado...
+                </div>
+              )}
+              {networkResult && (
+                <Card className="mt-4 rounded-xl border-[#E5E0D6] bg-white/60 p-4 md:col-span-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-display text-base font-semibold text-[#333333]">Estimativa complementar</p>
+                      <p className="mt-1 text-[11px] text-[#899A9A]">Script dinâmico · confiança {Math.round(networkResult.confidence * 100)}% · não é dado real de mercado</p>
+                    </div>
+                    <span className="rounded-full border border-[#E5E0D6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#718282]">PJ</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {[["CLT mediana", networkResult.salario_clt_mediana], ["PJ mensal", networkResult.salario_pj_mensal], ["PJ / hora", networkResult.salario_pj_hora]].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{label}</p>
+                        <p className="mt-1 font-display text-lg font-semibold text-[#2A675F]">{formatBRL(Number(value))}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
+                  <div className="mt-3 flex justify-end">
+                    <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
+                  </div>
+                </Card>
+              )}
             </>
           )}
         </div>
