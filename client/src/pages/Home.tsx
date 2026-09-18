@@ -48,7 +48,7 @@ import { useLicenseCatalog } from "@/hooks/useLicenseCatalog";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { downloadCsv } from "@/lib/csv";
 import { parseLocaleNumber } from "@/lib/number";
-import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, QueryStat, SourceStatus } from "@/lib/api";
+import { fetchPjSalarySearch, type ApiSourceResult, type IngestionRun, type LicenseCatalogItem, type QueryStat, type SourceStatus, type PjSalarySearchResponse } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
 import PublicTendersPage from "@/pages/PublicTendersPage";
 
@@ -278,6 +278,8 @@ function LaborPricing() {
   const [costsAndCharges, setCostsAndCharges] = useState("");
   const [margin, setMargin] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [networkResult, setNetworkResult] = useState<PjSalarySearchResponse | null>(null);
+  const [networkLoading, setNetworkLoading] = useState(false);
 
   const suggestions = useMemo(() => {
     const query = searchRole.trim().toLowerCase();
@@ -319,7 +321,7 @@ function LaborPricing() {
     setShowSuggestions(false);
   };
 
-  const handleRoleSearch = () => {
+  const handleRoleSearch = async () => {
     const role = searchRole.trim();
     if (!role) {
       toast.error("Informe o cargo ou perfil.");
@@ -327,6 +329,16 @@ function LaborPricing() {
     }
     setSearchedRole(role);
     setShowSuggestions(false);
+    setNetworkLoading(true);
+    try {
+      const result = await fetchPjSalarySearch({ jobTitle: role, location: "São Paulo" });
+      setNetworkResult(result);
+    } catch (error) {
+      setNetworkResult(null);
+      toast.error(error instanceof Error ? error.message : "Falha na pesquisa salarial complementar.");
+    } finally {
+      setNetworkLoading(false);
+    }
   };
 
   const applyProfile = (profile: (typeof profiles)[number]) => {
@@ -340,6 +352,7 @@ function LaborPricing() {
   const handleClear = () => {
     setSearchRole("");
     setSearchedRole("");
+    setNetworkResult(null);
     setProfileTitle("");
     setEmploymentModel("CLT");
     setMonthlySalary("");
