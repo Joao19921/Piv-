@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertCircle, ArrowRight, Search, Users } from "lucide-react";
+import { AlertCircle, Search, Users } from "lucide-react";
 import { toast } from "sonner";
 import { fetchLaborProfiles, type LaborProfile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,15 @@ import { Textarea } from "@/components/ui/textarea";
 type EmploymentModel = "CLT" | "PJ";
 
 const formatBRL = (value: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(value);
 
-function sourceLabel(source: MarketBenchmarkSalarySource): string {
-  return source.employmentModel === "CLT" ? "CLT" : "PJ";
+function matchesRole(profile: LaborProfile, role: string) {
+  const terms = role.trim().toLowerCase().split(/\\s+/).filter(Boolean);
+  return terms.every((term) => profile.title.toLowerCase().includes(term));
 }
 
 export default function SalaryResearchPage() {
@@ -24,43 +29,41 @@ export default function SalaryResearchPage() {
   const [employmentModel, setEmploymentModel] = useState<EmploymentModel>("CLT");
   const [notes, setNotes] = useState("");
   const [profiles, setProfiles] = useState<LaborProfile[]>([]);
+  const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const normalizedRole = role.trim().toLowerCase();
-  const sources = profiles.filter((profile) => {
-    if (profile.employmentModel !== employmentModel) return false;
-    if (!normalizedRole) return true;
-    const terms = normalizedRole.split(/\s+/).filter(Boolean);
-    return terms.every((term) => profile.title.toLowerCase().includes(term));
-  });
+  const sources = profiles.filter(
+    (profile) => profile.employmentModel === employmentModel && matchesRole(profile, role),
+  );
+
   const suggested = sources.length
     ? Math.round(sources.reduce((sum, item) => sum + item.monthlyCompensation, 0) / sources.length)
     : null;
 
   async function handleSearch() {
-    const normalizedRole = role.trim();
-    if (!normalizedRole) {
+    if (!role.trim()) {
       toast.error("Informe o cargo ou perfil.");
       return;
     }
 
     setLoading(true);
+    setSearched(false);
 
     try {
       const response = await fetchLaborProfiles();
       setProfiles(response.profiles);
-      const matches = response.profiles.filter((profile) => {
-        if (profile.employmentModel !== employmentModel) return false;
-        const terms = normalizedRole.split(/\s+/).filter(Boolean);
-        return terms.every((term) => profile.title.toLowerCase().includes(term));
-      });
+      setSearched(true);
+
+      const matches = response.profiles.filter(
+        (profile) => profile.employmentModel === employmentModel && matchesRole(profile, role),
+      );
+
       if (!matches.length) {
-        toast.error("Não encontramos referência " + employmentModel + " para esse cargo na pesquisa de cargos atual.");
+        toast.error("Nenhum cargo " + employmentModel + " encontrado na pesquisa de cargos atual.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível realizar a pesquisa.");
     } finally {
-      setLoading(false);    } finally {
       setLoading(false);
     }
   }
@@ -72,6 +75,7 @@ export default function SalaryResearchPage() {
     setEmploymentModel("CLT");
     setNotes("");
     setProfiles([]);
+    setSearched(false);
   }
 
   return (
@@ -84,8 +88,8 @@ export default function SalaryResearchPage() {
           Pesquisa salarial
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#658080]">
-          Consulte referências de mercado por cargo, localidade e regime de contratação.
-          O módulo separa CLT e PJ para evitar misturar regimes na análise.
+          A busca usa a mesma pesquisa de cargos existente na aplicação. CLT e PJ são apenas
+          selecionados como regimes da pesquisa, sem utilizar o antigo módulo de benchmark.
         </p>
       </div>
 
@@ -93,7 +97,7 @@ export default function SalaryResearchPage() {
         <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1]">
           <CardHeader>
             <CardTitle>Critérios da pesquisa</CardTitle>
-            <CardDescription>Informe o perfil que deseja consultar.</CardDescription>
+            <CardDescription>Informe o cargo e o regime que deseja consultar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
@@ -153,7 +157,7 @@ export default function SalaryResearchPage() {
                 className="mt-2"
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="Contexto da pesquisa ou referência utilizada pelo analista."
+                placeholder="Contexto da pesquisa ou anotações do analista."
                 rows={3}
               />
             </div>
@@ -165,7 +169,7 @@ export default function SalaryResearchPage() {
                 className="pressable flex-1 rounded-full bg-[#F57F17] text-white hover:bg-[#D96D0C]"
               >
                 <Search className="mr-2 h-4 w-4" />
-                {loading ? "Pesquisando..." : `Pesquisar ${employmentModel}`}
+                {loading ? "Pesquisando..." : "Pesquisar"}
               </Button>
               <Button onClick={handleReset} variant="outline" disabled={loading} className="rounded-full">
                 Limpar
@@ -179,17 +183,17 @@ export default function SalaryResearchPage() {
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
               <Users className="h-5 w-5 text-[#F57F17]" />
             </div>
-            <CardTitle className="text-[#F7F2E8]">Como interpretar</CardTitle>
+            <CardTitle className="text-[#F7F2E8]">Regra da pesquisa</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm leading-6 text-[#C3D4D4]">
-            <p><strong className="text-white">CLT</strong> mostra referências de remuneração de vínculo empregatício.</p>
-            <p><strong className="text-white">PJ</strong> mostra referências cadastradas para prestação de serviços.</p>
-            <p>Os regimes são apresentados separadamente e o módulo não transforma automaticamente um regime no outro.</p>
+            <p><strong className="text-white">CLT</strong> consulta os perfis CLT da base existente.</p>
+            <p><strong className="text-white">PJ</strong> consulta os perfis PJ da mesma base.</p>
+            <p>O cargo é pesquisado uma única vez; o regime apenas define quais referências são apresentadas.</p>
           </CardContent>
         </Card>
       </div>
 
-      {profiles.length > 0 && (
+      {searched && (
         <section className="mt-8 space-y-5">
           {sources.length === 0 ? (
             <Card className="border-[#E8CBA9] bg-[#FAEFE2]">
@@ -197,7 +201,9 @@ export default function SalaryResearchPage() {
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <div>
                   <p className="font-semibold">Nenhuma referência encontrada</p>
-                  <p className="mt-1">A pesquisa utiliza a mesma base de cargos da aplicação e não encontrou um perfil {employmentModel} compatível com os termos informados.</p>
+                  <p className="mt-1">
+                    Não há perfil {employmentModel} compatível com "{role.trim()}" na pesquisa de cargos atual.
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -207,25 +213,51 @@ export default function SalaryResearchPage() {
                 <CardContent className="p-6">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Resultado · {employmentModel}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">
+                        Resultado · {employmentModel}
+                      </p>
                       <h2 className="mt-1 font-display text-2xl font-semibold text-[#333333]">{role.trim()}</h2>
-                      <p className="mt-1 text-sm text-[#728383]">{city.trim() || "Brasil"}{state.trim() ? " / " + state.trim().toUpperCase() : ""}</p>
+                      <p className="mt-1 text-sm text-[#728383]">
+                        {city.trim() || "Brasil"}{state.trim() ? " / " + state.trim().toUpperCase() : ""}
+                      </p>
                     </div>
-                    {suggested !== null && <div className="rounded-xl border border-[#D8D1C7] bg-white px-5 py-4 text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7B8B8B]">Referência média exibida</p><p className="mt-1 font-display text-2xl font-semibold text-[#0D5C5C]">{formatBRL(suggested)}</p></div>}
+                    {suggested !== null && (
+                      <div className="rounded-xl border border-[#D8D1C7] bg-white px-5 py-4 text-right">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7B8B8B]">
+                          Referência média exibida
+                        </p>
+                        <p className="mt-1 font-display text-2xl font-semibold text-[#0D5C5C]">{formatBRL(suggested)}</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
+
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {sources.map((profile) => <Card key={profile.id} className="rounded-2xl border-[#DDD7CC]">
-                  <CardHeader><div className="flex items-center justify-between gap-3"><div><CardDescription>{profile.seniority}</CardDescription><CardTitle className="mt-1 text-lg">{profile.title}</CardTitle></div><span className="rounded-full border border-[#BDD3D0] bg-[#EBECEC] px-2.5 py-1 text-[10px] font-semibold text-[#3F746D]">{profile.employmentModel}</span></div></CardHeader>
-                  <CardContent><p className="font-display text-3xl font-semibold tracking-[-0.04em] text-[#333333]">{formatBRL(profile.monthlyCompensation)}</p><p className="mt-1 text-xs text-[#7B8B8B]">Referência mensal · Fator K {profile.factorK.toFixed(2)}</p><div className="mt-4 border-t border-[#E1DBD2] pt-3 text-xs leading-5 text-[#718282]"><span>{profile.benchmarkSource}</span></div></CardContent>
-                </Card>)}
+                {sources.map((profile) => (
+                  <Card key={profile.id} className="rounded-2xl border-[#DDD7CC]">
+                    <CardHeader>
+                      <CardDescription>{profile.seniority}</CardDescription>
+                      <CardTitle className="mt-1 text-lg">{profile.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="font-display text-3xl font-semibold tracking-[-0.04em] text-[#333333]">
+                        {formatBRL(profile.monthlyCompensation)}
+                      </p>
+                      <p className="mt-1 text-xs text-[#7B8B8B]">
+                        Referência mensal · Fator K {profile.factorK.toFixed(2)}
+                      </p>
+                      <p className="mt-4 border-t border-[#E1DBD2] pt-3 text-xs leading-5 text-[#718282]">
+                        {profile.benchmarkSource}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-              <div className="text-[11px] text-[#7A8989]">Base utilizada: pesquisa de cargos já existente na aplicação.</div>
             </>
           )}
         </section>
-      )})}
+      )}
     </div>
   );
 }
