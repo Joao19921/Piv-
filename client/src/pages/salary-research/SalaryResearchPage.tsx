@@ -203,7 +203,7 @@ export default function SalaryResearchPage() {
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <div>
                   <p className="font-semibold">Não há referência {employmentModel} para este resultado</p>
-                  <p className="mt-1">{result.data.summary}</p>
+                  <p className="mt-1">{benchmarkData.summary}</p>
                 </div>
               </CardContent>
             </Card>
