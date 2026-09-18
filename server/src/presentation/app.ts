@@ -48,7 +48,7 @@ const appVersion = (() => {
   }
 })();
 
-const execFileAsync = promisify(execFile);\n\nconst publicTenderCache = new Map<string, { expiresAt: number; tenders: Awaited<ReturnType<typeof searchPncp>> }>();
+const publicTenderCache = new Map<string, { expiresAt: number; tenders: Awaited<ReturnType<typeof searchPncp>> }>();
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
   return {
