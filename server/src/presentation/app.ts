@@ -1,4 +1,6 @@
 import express, { type Router } from "express";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,7 +49,7 @@ const appVersion = (() => {
   }
 })();
 
-const publicTenderCache = new Map<string, { expiresAt: number; tenders: Awaited<ReturnType<typeof searchPncp>> }>();
+const execFileAsync = promisify(execFile);\n\nconst publicTenderCache = new Map<string, { expiresAt: number; tenders: Awaited<ReturnType<typeof searchPncp>> }>();
 
 function toSourceView(name: string, result: ResilienceResult<unknown>) {
   return {
@@ -498,6 +500,33 @@ export function createApiRouter(): Router {
         data: null,
       },
     });
+  });
+
+  router.post("/labor/pj-search", async (req, res) => {
+    const { jobTitle, location, seniority, specialties } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof jobTitle !== "string" || !jobTitle.trim()) {
+      res.status(400).json({ status: "error", error: "jobTitle é obrigatório e deve ser string." });
+      return;
+    }
+    try {
+      const scriptPath = path.resolve(process.cwd(), "server/scripts/scrapeSalaryPJ.py");
+      const payload = JSON.stringify({
+        jobTitle: jobTitle.trim(),
+        location: typeof location === "string" ? location : "São Paulo",
+        seniority: typeof seniority === "string" ? seniority : "",
+        specialties: typeof specialties === "string" ? specialties : "",
+      });
+      const { stdout } = await execFileAsync("python3", [scriptPath], { input: payload, maxBuffer: 1024 * 1024 });
+      const result = JSON.parse(stdout);
+      if (result?.status !== "success") {
+        res.status(422).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      logger.error("Falha na pesquisa salarial PJ", { error: error instanceof Error ? error.message : String(error) });
+      res.status(502).json({ status: "error", error: "Não foi possível executar a pesquisa salarial PJ." });
+    }
   });
 
   router.post("/labor/estimate", (req, res) => {
