@@ -221,6 +221,15 @@ export async function fetchLaborProfiles(): Promise<LaborProfilesResponse> {
   return laborProfilesResponseSchema.parse(await res.json());
 }
 
+const salaryResearchSourceSchema = z.object({
+  name: z.string(),
+  url: z.string(),
+  title: z.string().optional(),
+  snippet: z.string().optional(),
+  matchedSalary: z.number().nullable().optional(),
+});
+export type SalaryResearchSource = z.infer<typeof salaryResearchSourceSchema>;
+
 const pjSalarySearchResponseSchema = z.object({
   status: z.literal("success"),
   timestamp: z.string(),
@@ -237,6 +246,12 @@ const pjSalarySearchResponseSchema = z.object({
   confidence: z.number(),
   source: z.string(),
   notes: z.string(),
+  research: z.object({
+    mode: z.enum(["WEB_RESEARCH", "LOCAL_ESTIMATE"]),
+    sourceCount: z.number(),
+    sourceLabel: z.string(),
+    sources: z.array(salaryResearchSourceSchema),
+  }).optional(),
 });
 export type PjSalarySearchResponse = z.infer<typeof pjSalarySearchResponseSchema>;
 
