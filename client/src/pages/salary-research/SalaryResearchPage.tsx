@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertCircle, ArrowRight, Search, Users } from "lucide-react";
 import { toast } from "sonner";
-import { searchMarketBenchmark, type MarketBenchmarkResponse, type MarketBenchmarkSalarySource } from "@/lib/api";
+import { fetchLaborProfiles, type LaborProfile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,11 +23,16 @@ export default function SalaryResearchPage() {
   const [city, setCity] = useState("");
   const [employmentModel, setEmploymentModel] = useState<EmploymentModel>("CLT");
   const [notes, setNotes] = useState("");
-  const [result, setResult] = useState<MarketBenchmarkResponse | null>(null);
+  const [profiles, setProfiles] = useState<LaborProfile[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const benchmarkData = result?.data ?? null;
-  const sources = benchmarkData?.sources.filter((item) => item.employmentModel === employmentModel) ?? [];
+  const normalizedRole = role.trim().toLowerCase();
+  const sources = profiles.filter((profile) => {
+    if (profile.employmentModel !== employmentModel) return false;
+    if (!normalizedRole) return true;
+    const terms = normalizedRole.split(/\s+/).filter(Boolean);
+    return terms.every((term) => profile.title.toLowerCase().includes(term));
+  });
   const suggested = sources.length
     ? Math.round(sources.reduce((sum, item) => sum + item.monthlyCompensation, 0) / sources.length)
     : null;
@@ -40,23 +45,22 @@ export default function SalaryResearchPage() {
     }
 
     setLoading(true);
-    setResult(null);
 
     try {
-      const response = await searchMarketBenchmark({
-        role: normalizedRole,
-        state: state.trim(),
-        city: city.trim(),
-        notes: notes.trim() || undefined,
+      const response = await fetchLaborProfiles();
+      setProfiles(response.profiles);
+      const matches = response.profiles.filter((profile) => {
+        if (profile.employmentModel !== employmentModel) return false;
+        const terms = normalizedRole.split(/\s+/).filter(Boolean);
+        return terms.every((term) => profile.title.toLowerCase().includes(term));
       });
-      setResult(response);
-
-      if (!response.data?.sources.some((item) => item.employmentModel === employmentModel)) {
-        toast.error(`Não encontramos referência ${employmentModel} para este cargo no catálogo atual.`);
+      if (!matches.length) {
+        toast.error("Não encontramos referência " + employmentModel + " para esse cargo na pesquisa de cargos atual.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível realizar a pesquisa.");
     } finally {
+      setLoading(false);    } finally {
       setLoading(false);
     }
   }
@@ -67,7 +71,7 @@ export default function SalaryResearchPage() {
     setCity("");
     setEmploymentModel("CLT");
     setNotes("");
-    setResult(null);
+    setProfiles([]);
   }
 
   return (
@@ -185,25 +189,15 @@ export default function SalaryResearchPage() {
         </Card>
       </div>
 
-      {result && benchmarkData && (
+      {profiles.length > 0 && (
         <section className="mt-8 space-y-5">
-          {benchmarkData.sources.length === 0 ? (
+          {sources.length === 0 ? (
             <Card className="border-[#E8CBA9] bg-[#FAEFE2]">
               <CardContent className="flex gap-3 p-5 text-sm text-[#79521F]">
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <div>
                   <p className="font-semibold">Nenhuma referência encontrada</p>
-                  <p className="mt-1">{benchmarkData.summary}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : sources.length === 0 ? (
-            <Card className="border-[#E8CBA9] bg-[#FAEFE2]">
-              <CardContent className="flex gap-3 p-5 text-sm text-[#79521F]">
-                <AlertCircle className="h-5 w-5 shrink-0" />
-                <div>
-                  <p className="font-semibold">Não há referência {employmentModel} para este resultado</p>
-                  <p className="mt-1">{benchmarkData.summary}</p>
+                  <p className="mt-1">A pesquisa utiliza a mesma base de cargos da aplicação e não encontrou um perfil {employmentModel} compatível com os termos informados.</p>
                 </div>
               </CardContent>
             </Card>
@@ -213,58 +207,25 @@ export default function SalaryResearchPage() {
                 <CardContent className="p-6">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">
-                        Resultado · {employmentModel}
-                      </p>
-                      <h2 className="mt-1 font-display text-2xl font-semibold text-[#333333]">{benchmarkData.roleSearched}</h2>
-                      <p className="mt-1 text-sm text-[#728383]">
-                        {benchmarkData.city || "Brasil"}{benchmarkData.state ? ` / ${benchmarkData.state}` : ""}
-                      </p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Resultado · {employmentModel}</p>
+                      <h2 className="mt-1 font-display text-2xl font-semibold text-[#333333]">{role.trim()}</h2>
+                      <p className="mt-1 text-sm text-[#728383]">{city.trim() || "Brasil"}{state.trim() ? " / " + state.trim().toUpperCase() : ""}</p>
                     </div>
-                    {suggested !== null && (
-                      <div className="rounded-xl border border-[#D8D1C7] bg-white px-5 py-4 text-right">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7B8B8B]">Referência média exibida</p>
-                        <p className="mt-1 font-display text-2xl font-semibold text-[#0D5C5C]">{formatBRL(suggested)}</p>
-                      </div>
-                    )}
+                    {suggested !== null && <div className="rounded-xl border border-[#D8D1C7] bg-white px-5 py-4 text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7B8B8B]">Referência média exibida</p><p className="mt-1 font-display text-2xl font-semibold text-[#0D5C5C]">{formatBRL(suggested)}</p></div>}
                   </div>
                 </CardContent>
               </Card>
-
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {sources.map((source) => (
-                  <Card key={source.profileId} className="rounded-2xl border-[#DDD7CC]">
-                    <CardHeader>
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <CardDescription>{sourceLabel(source)} · {source.seniority}</CardDescription>
-                          <CardTitle className="mt-1 text-lg">{source.profileTitle}</CardTitle>
-                        </div>
-                        <span className="rounded-full border border-[#BDD3D0] bg-[#EBECEC] px-2.5 py-1 text-[10px] font-semibold text-[#3F746D]">
-                          {source.employmentModel}
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="font-display text-3xl font-semibold tracking-[-0.04em] text-[#333333]">{formatBRL(source.monthlyCompensation)}</p>
-                      <p className="mt-1 text-xs text-[#7B8B8B]">Referência mensal · Fator K {source.factorK.toFixed(2)}</p>
-                      <div className="mt-4 flex items-center gap-2 border-t border-[#E1DBD2] pt-3 text-xs leading-5 text-[#718282]">
-                        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[#C2660D]" />
-                        <span>{source.observation}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                {sources.map((profile) => <Card key={profile.id} className="rounded-2xl border-[#DDD7CC]">
+                  <CardHeader><div className="flex items-center justify-between gap-3"><div><CardDescription>{profile.seniority}</CardDescription><CardTitle className="mt-1 text-lg">{profile.title}</CardTitle></div><span className="rounded-full border border-[#BDD3D0] bg-[#EBECEC] px-2.5 py-1 text-[10px] font-semibold text-[#3F746D]">{profile.employmentModel}</span></div></CardHeader>
+                  <CardContent><p className="font-display text-3xl font-semibold tracking-[-0.04em] text-[#333333]">{formatBRL(profile.monthlyCompensation)}</p><p className="mt-1 text-xs text-[#7B8B8B]">Referência mensal · Fator K {profile.factorK.toFixed(2)}</p><div className="mt-4 border-t border-[#E1DBD2] pt-3 text-xs leading-5 text-[#718282]"><span>{profile.benchmarkSource}</span></div></CardContent>
+                </Card>)}
               </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[#7A8989]">
-                <span>Fonte operacional do resultado: {result.source} · {benchmarkData.sourceMode === "STATIC_SNAPSHOT" ? "catálogo interno" : "conector externo"}</span>
-                <span>Consultado em {new Date(benchmarkData.generatedAt).toLocaleString("pt-BR")}</span>
-              </div>
+              <div className="text-[11px] text-[#7A8989]">Base utilizada: pesquisa de cargos já existente na aplicação.</div>
             </>
           )}
         </section>
-      )}
+      )})}
     </div>
   );
 }
