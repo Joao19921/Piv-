@@ -522,21 +522,18 @@ function LaborPricing() {
     </Card>
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
       <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Entrada de premissas</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Perfil e composição da taxa</h2></div><div className="rounded-lg bg-[#E8E9E9] p-2 text-[#5D7979]"><BriefcaseBusiness className="h-4 w-4" /></div></div>
-        <div className="mb-6">
-          <Label className="text-xs font-semibold text-[#345555]">Referência para o cálculo</Label>
-          <div className="mt-2 flex items-center gap-2">
-            <div className="flex h-11 min-w-0 flex-1 items-center rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333]">
-              <span className="truncate">{profileTitle || "Pesquise um cargo acima e selecione uma referência"}</span>
-            </div>
-            <div className="flex shrink-0 overflow-hidden rounded-md border border-[#D4D1CC]">
-              {(["CLT", "PJ"] as const).map((model) => (
-                <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-11 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>
-                  {model}
-                </button>
-              ))}
-            </div>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E0D6] pb-4">
+          <div className="min-w-0">
+            <Label className="text-xs font-semibold text-[#345555]">Referência selecionada</Label>
+            <p className="mt-1 truncate text-sm text-[#333333]">{profileTitle || "Pesquise um cargo acima e selecione uma referência"}</p>
           </div>
-          <p className="mt-1.5 text-[11px] text-[#879A9A]">A única pesquisa de cargo fica no bloco acima. Aqui você apenas escolhe o regime usado no cálculo.</p>
+          <div className="flex shrink-0 overflow-hidden rounded-md border border-[#D4D1CC]">
+            {(["CLT", "PJ"] as const).map((model) => (
+              <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-10 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>
+                {model}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="salary" className="text-xs font-semibold text-[#345555]">Remuneração mensal</Label><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-xs text-[#8A9797]">R$</span><Input id="salary" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" inputMode="numeric" /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Valor livre, editável a qualquer momento</p></div><div><Label htmlFor="costs-and-charges" className="text-xs font-semibold text-[#345555]">Custos e encargos</Label><div className="relative mt-2"><Input id="costs-and-charges" value={costsAndCharges} onChange={(e) => setCostsAndCharges(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="decimal" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Percentual adicional aplicado à remuneração mensal</p></div><div><Label htmlFor="margin" className="text-xs font-semibold text-[#345555]">Margem alvo</Label><div className="relative mt-2"><Input id="margin" value={margin} onChange={(e) => setMargin(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="numeric" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Percentual adicional aplicado sobre o custo-hora</p></div><div><Label className="text-xs font-semibold text-[#345555]">Referência aplicada</Label><div className="mt-2 flex h-10 w-full items-center rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333]"><span className="truncate">{profileTitle ? `${employmentModel} · ${profileTitle}` : "Nenhuma referência aplicada"}</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">A referência selecionada na pesquisa integrada pode ser ajustada antes do cálculo.</p></div></div>
       </Card>
