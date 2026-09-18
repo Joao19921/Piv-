@@ -1,6 +1,5 @@
 import express, { type Router } from "express";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -516,7 +515,19 @@ export function createApiRouter(): Router {
         seniority: typeof seniority === "string" ? seniority : "",
         specialties: typeof specialties === "string" ? specialties : "",
       });
-      const { stdout } = await execFileAsync("python3", [scriptPath], { input: payload, maxBuffer: 1024 * 1024 });
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = spawn("python3", [scriptPath], { stdio: ["pipe", "pipe", "pipe"] });
+        let output = "";
+        let errorOutput = "";
+        child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+        child.stderr.on("data", (chunk) => { errorOutput += chunk.toString(); });
+        child.on("error", reject);
+        child.on("close", (code) => {
+          if (code === 0) resolve(output);
+          else reject(new Error(errorOutput || `python3 encerrou com código ${code}`));
+        });
+        child.stdin.end(payload);
+      });
       const result = JSON.parse(stdout);
       if (result?.status !== "success") {
         res.status(422).json(result);
