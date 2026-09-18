@@ -52,6 +52,7 @@ import { parseLocaleNumber } from "@/lib/number";
 import type { ApiSourceResult, IngestionRun, LicenseCatalogItem, MarketBenchmarkSalarySource, QueryStat, SourceStatus } from "@/lib/api";
 import CloudArchitect from "@/pages/cloud/CloudArchitect";
 import PublicTendersPage from "@/pages/PublicTendersPage";
+import SalaryResearchPage from "@/pages/salary-research/SalaryResearchPage";
 
 type ServiceState = "live" | "synced" | "warn" | "stale" | "offline";
 
@@ -61,10 +62,11 @@ const INGESTION_SOURCE_NAMES = new Set(["AWS Pricing API", "GCP Cloud Billing Ca
 const navigation = [
   { id: "dashboard" as SectionId, label: "Visão geral", short: "01", icon: LayoutDashboard, requires: null as PermissionCode | null, adminOnly: false },
   { id: "labor" as SectionId, label: "Mão de obra", short: "02", icon: Users, requires: "LABOR" as PermissionCode | null, adminOnly: false },
-  { id: "cloud" as SectionId, label: "Infra cloud", short: "03", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
-  { id: "licenses" as SectionId, label: "Licenças", short: "04", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
-  { id: "admin-users" as SectionId, label: "Usuários", short: "05", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
-  { id: "public-tenders" as SectionId, label: "Editais e referências de TI", short: "06", icon: FileSearch, requires: "PUBLIC_TENDERS" as PermissionCode, adminOnly: false },
+  { id: "salary-research" as SectionId, label: "Pesquisa salarial", short: "03", icon: CircleDollarSign, requires: "LABOR" as PermissionCode | null, adminOnly: false },
+  { id: "cloud" as SectionId, label: "Infra cloud", short: "04", icon: Cloud, requires: "INFRA" as PermissionCode | null, adminOnly: false },
+  { id: "licenses" as SectionId, label: "Licenças", short: "05", icon: KeyRound, requires: "LICENSES" as PermissionCode | null, adminOnly: false },
+  { id: "admin-users" as SectionId, label: "Usuários", short: "06", icon: UserCog, requires: null as PermissionCode | null, adminOnly: true },
+  { id: "public-tenders" as SectionId, label: "Editais e referências de TI", short: "07", icon: FileSearch, requires: "PUBLIC_TENDERS" as PermissionCode, adminOnly: false },
 ];
 
 function visibleNavigationFor(user: AuthUser | null) {
@@ -488,6 +490,7 @@ export default function Home({ section }: { section: SectionId }) {
   const renderContent = () => {
     if (!canAccessSection(user, section)) return <NoAccess onNavigate={navigate} />;
     if (section === "labor") return <LaborPricing />;
+    if (section === "salary-research") return <SalaryResearchPage />;
     if (section === "cloud") return <CloudArchitect />;
     if (section === "licenses") return <LicensesCatalog />;
     if (section === "admin-users") return <AdminUsersPage />;
