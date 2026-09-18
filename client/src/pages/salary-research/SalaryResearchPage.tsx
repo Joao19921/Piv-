@@ -26,7 +26,8 @@ export default function SalaryResearchPage() {
   const [result, setResult] = useState<MarketBenchmarkResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const sources = result?.data?.sources.filter((item) => item.employmentModel === employmentModel) ?? [];
+  const benchmarkData = result?.data ?? null;
+  const sources = benchmarkData?.sources.filter((item) => item.employmentModel === employmentModel) ?? [];
   const suggested = sources.length
     ? Math.round(sources.reduce((sum, item) => sum + item.monthlyCompensation, 0) / sources.length)
     : null;
@@ -184,15 +185,15 @@ export default function SalaryResearchPage() {
         </Card>
       </div>
 
-      {result && (
+      {result && benchmarkData && (
         <section className="mt-8 space-y-5">
-          {result.data?.sources.length === 0 ? (
+          {benchmarkData.sources.length === 0 ? (
             <Card className="border-[#E8CBA9] bg-[#FAEFE2]">
               <CardContent className="flex gap-3 p-5 text-sm text-[#79521F]">
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <div>
                   <p className="font-semibold">Nenhuma referência encontrada</p>
-                  <p className="mt-1">{result.data.summary}</p>
+                  <p className="mt-1">{benchmarkData.summary}</p>
                 </div>
               </CardContent>
             </Card>
@@ -215,9 +216,9 @@ export default function SalaryResearchPage() {
                       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">
                         Resultado · {employmentModel}
                       </p>
-                      <h2 className="mt-1 font-display text-2xl font-semibold text-[#333333]">{result.data.roleSearched}</h2>
+                      <h2 className="mt-1 font-display text-2xl font-semibold text-[#333333]">{benchmarkData.roleSearched}</h2>
                       <p className="mt-1 text-sm text-[#728383]">
-                        {result.data.city || "Brasil"}{result.data.state ? ` / ${result.data.state}` : ""}
+                        {benchmarkData.city || "Brasil"}{benchmarkData.state ? ` / ${benchmarkData.state}` : ""}
                       </p>
                     </div>
                     {suggested !== null && (
@@ -257,8 +258,8 @@ export default function SalaryResearchPage() {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[#7A8989]">
-                <span>Fonte operacional do resultado: {result.source} · {result.data.sourceMode === "STATIC_SNAPSHOT" ? "catálogo interno" : "conector externo"}</span>
-                <span>Consultado em {new Date(result.data.generatedAt).toLocaleString("pt-BR")}</span>
+                <span>Fonte operacional do resultado: {result.source} · {benchmarkData.sourceMode === "STATIC_SNAPSHOT" ? "catálogo interno" : "conector externo"}</span>
+                <span>Consultado em {new Date(benchmarkData.generatedAt).toLocaleString("pt-BR")}</span>
               </div>
             </>
           )}
