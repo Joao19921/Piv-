@@ -12,6 +12,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SESSION_EXPIRED_EVENT } from "./lib/sessionGuard";
 import Home from "./pages/Home";
+import SalaryResearchPage from "./pages/salary-research/SalaryResearchPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,13 +23,14 @@ const queryClient = new QueryClient({
   },
 });
 
-export type SectionId = "dashboard" | "labor" | "cloud" | "licenses" | "sources" | "public-tenders" | "admin-users";
+export type SectionId = "dashboard" | "labor" | "salary-research" | "cloud" | "licenses" | "sources" | "public-tenders" | "admin-users";
 export type PermissionCode = "LABOR" | "INFRA" | "LICENSES" | "PUBLIC_TENDERS";
 
 /** Caminhos reais por secao — cada modulo tem URL propria (favoritar, compartilhar, voltar funcionam). */
 export const SECTION_PATHS: Record<SectionId, string> = {
   dashboard: "/",
   labor: "/mao-de-obra",
+  "salary-research": "/pesquisa-salarial",
   cloud: "/infra-cloud",
   licenses: "/licencas",
   sources: "/fontes",
@@ -41,6 +43,7 @@ function Router() {
     <Switch>
       <Route path="/" component={() => <Home section="dashboard" />} />
       <Route path="/mao-de-obra" component={() => <Home section="labor" />} />
+      <Route path="/pesquisa-salarial" component={() => <Home section="salary-research" />} />
       <Route path="/infra-cloud" component={() => <Home section="cloud" />} />
       <Route path="/licencas" component={() => <Home section="licenses" />} />
       <Route path="/fontes" component={() => <Home section="sources" />} />
