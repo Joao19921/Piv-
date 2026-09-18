@@ -425,87 +425,119 @@ function LaborPricing() {
 
       {searchedRole && (
         <div className="mt-7">
-          {searchedProfiles.length === 0 ? (
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[#333333]">Referências para “{searchedRole}”</p>
+              <p className="mt-1 text-[11px] text-[#879A9A]">
+                {searchedProfiles.length ? `${searchedProfiles.length} referência(s) encontrada(s)` : "Sem correspondência exata na base interna; a estimativa dinâmica continua disponível."}
+              </p>
+            </div>
+            <button onClick={() => setSearchedRole("")} className="text-xs font-semibold text-[#C2660D] hover:underline">Fechar</button>
+          </div>
+
+          {searchedProfiles.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {[
+                { model: "CLT", items: cltProfiles },
+                { model: "PJ", items: pjProfiles },
+              ].map(({ model, items }) => (
+                <Card key={model} className="rounded-xl border-[#E5E0D6] bg-white/60 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="font-display text-base font-semibold text-[#333333]">{model}</p>
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{items.length} registro(s)</span>
+                  </div>
+                  {items.length ? (
+                    <div className="space-y-2">
+                      {items.map((profile) => (
+                        <div key={profile.id} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div><p className="text-xs font-semibold text-[#333333]">{profile.title}</p><p className="mt-1 text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{profile.seniority}</p></div>
+                            <p className="font-display text-lg font-semibold text-[#2A675F]">{formatBRL(salaryReference(profile))}</p>
+                          </div>
+                          <p className="mt-2 text-[10px] text-[#718282]">Referência mensal · Fator K {profile.factorK.toFixed(2)}</p>
+                          {(profile.referenciaOficial || profile.referenciaRais) && (
+                            <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">
+                              {[profile.referenciaOficial && "SISP", profile.referenciaRais && "RAIS"].filter(Boolean).join(" · ")} · fontes públicas
+                            </p>
+                          )}
+                          <div className="mt-3 flex justify-end">
+                            <button onClick={() => applyProfile(profile)} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar no cálculo</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#899A9A]">Nenhuma referência {model} disponível para este cargo.</p>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {searchedProfiles.length === 0 && !networkLoading && !networkResult && (
             <div className="flex items-start gap-3 rounded-xl border border-[#E8CBA9] bg-[#FAEFE2] p-4 text-sm text-[#79521F]">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div><p className="font-semibold">Cargo não encontrado na base atual</p><p className="mt-1 text-xs leading-5">Não há referência compatível com “{searchedRole}”.</p></div>
-            </div>
-          ) : (
-            <>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div><p className="text-sm font-semibold text-[#333333]">Referências para “{searchedRole}”</p><p className="mt-1 text-[11px] text-[#879A9A]">{searchedProfiles.length} referência(s) encontrada(s)</p></div>
-                <button onClick={() => setSearchedRole("")} className="text-xs font-semibold text-[#C2660D] hover:underline">Fechar</button>
+              <div>
+                <p className="font-semibold">Sem correspondência na base interna</p>
+                <p className="mt-1 text-xs leading-5">A estimativa dinâmica será calculada para o cargo informado.</p>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
+            </div>
+          )}
+
+          {networkLoading && (
+            <div className="mt-4 rounded-xl border border-[#E5E0D6] bg-white/60 p-4 text-xs text-[#718282]">
+              Calculando referência complementar para o cargo informado...
+            </div>
+          )}
+
+          {networkResult && (
+            <Card className="mt-4 rounded-xl border-[#E5E0D6] bg-white/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-display text-base font-semibold text-[#333333]">Estimativa complementar</p>
+                  <p className="mt-1 text-[11px] text-[#899A9A]">Script dinâmico · confiança {Math.round(networkResult.confidence * 100)}% · não é dado real de mercado</p>
+                </div>
+                <span className="rounded-full border border-[#E5E0D6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#718282]">PJ</span>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 {[
-                  { model: "CLT", items: cltProfiles },
-                  { model: "PJ", items: pjProfiles },
-                ].map(({ model, items }) => (
-                  <Card key={model} className="rounded-xl border-[#E5E0D6] bg-white/60 p-4">
-                    <div className="mb-3 flex items-center justify-between"><p className="font-display text-base font-semibold text-[#333333]">{model}</p><span className="text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{items.length} registro(s)</span></div>
-                    {items.length ? (
-                      <div className="space-y-2">
-                        {items.map((profile) => (
-                          <div key={profile.id} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div><p className="text-xs font-semibold text-[#333333]">{profile.title}</p><p className="mt-1 text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{profile.seniority}</p></div>
-                              <p className="font-display text-lg font-semibold text-[#2A675F]">{formatBRL(salaryReference(profile))}</p>
-                            </div>
-                            <p className="mt-2 text-[10px] text-[#718282]">Referência mensal · Fator K {profile.factorK.toFixed(2)}</p>
-                            {(profile.referenciaOficial || profile.referenciaRais) && (
-                              <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">
-                                {[profile.referenciaOficial && "SISP", profile.referenciaRais && "RAIS"].filter(Boolean).join(" · ")} · fontes públicas
-                              </p>
-                            )}
-                            <div className="mt-3 flex justify-end">
-                              <button onClick={() => applyProfile(profile)} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar no cálculo</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-[#899A9A]">Nenhuma referência {model} disponível para este cargo.</p>
-                    )}
-                  </Card>
+                  ["CLT mediana", networkResult.salario_clt_mediana],
+                  ["PJ mensal", networkResult.salario_pj_mensal],
+                  ["PJ / hora", networkResult.salario_pj_hora],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{label}</p>
+                    <p className="mt-1 font-display text-lg font-semibold text-[#2A675F]">{formatBRL(Number(value))}</p>
+                  </div>
                 ))}
               </div>
-              {networkLoading && (
-                <div className="mt-4 rounded-xl border border-[#E5E0D6] bg-white/60 p-4 text-xs text-[#718282]">
-                  Calculando referência complementar para o cargo informado...
-                </div>
-              )}
-              {networkResult && (
-                <Card className="mt-4 rounded-xl border-[#E5E0D6] bg-white/60 p-4 md:col-span-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-display text-base font-semibold text-[#333333]">Estimativa complementar</p>
-                      <p className="mt-1 text-[11px] text-[#899A9A]">Script dinâmico · confiança {Math.round(networkResult.confidence * 100)}% · não é dado real de mercado</p>
-                    </div>
-                    <span className="rounded-full border border-[#E5E0D6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#718282]">PJ</span>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    {[["CLT mediana", networkResult.salario_clt_mediana], ["PJ mensal", networkResult.salario_pj_mensal], ["PJ / hora", networkResult.salario_pj_hora]].map(([label, value]) => (
-                      <div key={String(label)} className="rounded-lg border border-[#E5E0D6] bg-[#FBF7F1] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.1em] text-[#899A9A]">{label}</p>
-                        <p className="mt-1 font-display text-lg font-semibold text-[#2A675F]">{formatBRL(Number(value))}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-3 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
-                  <div className="mt-3 flex justify-end">
-                    <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
-                  </div>
-                </Card>
-              )}
-            </>
+              <p className="mt-3 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
+              <div className="mt-3 flex justify-end">
+                <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
+              </div>
+            </Card>
           )}
         </div>
       )}
     </Card>
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]">
       <Card className="rounded-2xl border-[#DDD7CC] bg-[#FBF7F1] p-5 shadow-paper sm:p-7"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#C2660D]">Entrada de premissas</p><h2 className="mt-1 font-display text-xl font-semibold text-[#333333]">Perfil e composição da taxa</h2></div><div className="rounded-lg bg-[#E8E9E9] p-2 text-[#5D7979]"><BriefcaseBusiness className="h-4 w-4" /></div></div>
-        <div className="mb-6"><Label htmlFor="profile-title" className="text-xs font-semibold text-[#345555]">Perfil profissional</Label><div className="mt-2 flex gap-2"><Input id="profile-title" value={profileTitle} onChange={(e) => setProfileTitle(e.target.value)} className="h-11 flex-1 border-[#D4D1CC] bg-white text-sm text-[#333333]" placeholder="ex: Consultor SAP FI/CO senior" /><div className="flex overflow-hidden rounded-md border border-[#D4D1CC]">{(["CLT", "PJ"] as const).map((model) => <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-11 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>{model}</button>)}</div></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Nome livre - preenchido pela pesquisa integrada acima ou digitado manualmente</p></div>
-        <div className="mb-6 grid gap-3 sm:grid-cols-3">{profiles.slice(0, 3).map((profile) => <button key={profile.id} onClick={() => applyProfile(profile)} className={`rounded-xl border p-3 text-left transition-colors ${profileTitle === profile.title && employmentModel === profile.employmentModel ? "border-[#F57F17] bg-white" : "border-[#E5E0D6] bg-white/55 hover:border-[#F0C48A]"}`}><p className="text-[11px] font-semibold text-[#333333]">{profile.title}</p><p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-[#899A9A]">{profile.seniority} - {profile.employmentModel}</p><p className="mt-3 font-display text-sm font-semibold text-[#C2660D]">{formatBRL(profile.monthlyCompensation)}</p>{(profile.referenciaOficial || profile.referenciaRais) && <p className="mt-1.5 text-[9px] leading-4 text-[#899A9A]">Referências: {[profile.referenciaOficial && `SISP ${formatBRL(profile.referenciaOficial.mediana)}`, profile.referenciaRais && `RAIS ${formatBRL(profile.referenciaRais[profile.referenciaRais.percentilAplicado ?? "mediana"] ?? profile.referenciaRais.mediana)}`].filter(Boolean).join(" · ")}</p>}</button>)}</div>
+        <div className="mb-6">
+          <Label className="text-xs font-semibold text-[#345555]">Referência para o cálculo</Label>
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex h-11 min-w-0 flex-1 items-center rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333]">
+              <span className="truncate">{profileTitle || "Pesquise um cargo acima e selecione uma referência"}</span>
+            </div>
+            <div className="flex shrink-0 overflow-hidden rounded-md border border-[#D4D1CC]">
+              {(["CLT", "PJ"] as const).map((model) => (
+                <button key={model} type="button" onClick={() => setEmploymentModel(model)} className={`h-11 px-4 text-xs font-semibold transition-colors ${employmentModel === model ? "bg-[#0D5C5C] text-white" : "bg-white text-[#345555] hover:bg-[#E8E9E9]"}`}>
+                  {model}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="mt-1.5 text-[11px] text-[#879A9A]">A única pesquisa de cargo fica no bloco acima. Aqui você apenas escolhe o regime usado no cálculo.</p>
+        </div>
         <div className="grid gap-5 sm:grid-cols-2"><div><Label htmlFor="salary" className="text-xs font-semibold text-[#345555]">Remuneração mensal</Label><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-xs text-[#8A9797]">R$</span><Input id="salary" value={monthlySalary} onChange={(e) => setMonthlySalary(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pl-9 text-sm text-[#333333]" inputMode="numeric" /></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Valor livre, editável a qualquer momento</p></div><div><Label htmlFor="costs-and-charges" className="text-xs font-semibold text-[#345555]">Custos e encargos</Label><div className="relative mt-2"><Input id="costs-and-charges" value={costsAndCharges} onChange={(e) => setCostsAndCharges(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="decimal" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Percentual adicional aplicado à remuneração mensal</p></div><div><Label htmlFor="margin" className="text-xs font-semibold text-[#345555]">Margem alvo</Label><div className="relative mt-2"><Input id="margin" value={margin} onChange={(e) => setMargin(e.target.value)} className="h-10 border-[#D4D1CC] bg-white pr-12 text-sm text-[#333333]" inputMode="numeric" /><span className="absolute right-3 top-2.5 text-xs text-[#8A9797]">%</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">Percentual adicional aplicado sobre o custo-hora</p></div><div><Label className="text-xs font-semibold text-[#345555]">Referência aplicada</Label><div className="mt-2 flex h-10 w-full items-center rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333]"><span className="truncate">{profileTitle ? `${employmentModel} · ${profileTitle}` : "Nenhuma referência aplicada"}</span></div><p className="mt-1.5 text-[11px] text-[#879A9A]">A referência selecionada na pesquisa integrada pode ser ajustada antes do cálculo.</p></div></div>
       </Card>
       <Card className="overflow-hidden rounded-2xl border-[#0D5C5C] bg-[#0D5C5C] p-5 text-[#F7F2E8] shadow-paper sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#AEC4C4]">Saída do modelo</p><h2 className="mt-1 font-display text-xl font-semibold">Taxa-hora sugerida</h2></div><div className="rounded-lg bg-[#F57F17] p-2 text-white"><Calculator className="h-4 w-4" /></div></div>{isFetching && !estimate ? <Skeleton className="mt-10 h-12 w-44 bg-white/10" /> : <div className="mt-10 font-display text-5xl font-semibold tracking-[-0.06em] text-white">{formatBRL(suggestedRate)}</div>}<p className="mt-2 text-xs leading-5 text-[#AFC7C7]">por hora faturável · {profileTitle || "perfil"} / {employmentModel}</p><div className="mt-9 space-y-3 border-t border-white/10 pt-5 text-xs"><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo mensal</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(monthlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custo-hora base</span><strong className="font-medium text-[#F7F2E8]">{formatBRL(hourlyCost)}</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Custos e encargos aplicados</span><strong className="font-medium text-[#F7F2E8]">{parseLocaleNumber(costsAndCharges)}%</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Horas faturáveis</span><strong className="font-medium text-[#F7F2E8]">{estimate?.billableHours ?? 168} h/mês</strong></div><div className="flex justify-between"><span className="text-[#AEC4C4]">Margem aplicada</span><strong className="font-medium text-[#F57F17]">{parseLocaleNumber(margin)}%</strong></div></div><div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-5 text-[#B8CECE]"><span className="font-semibold text-white">Nota de integridade:</span> com custos e encargos e margem em 0%, a taxa-hora é a remuneração mensal dividida por 168.</div></Card>
