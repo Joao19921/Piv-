@@ -272,6 +272,7 @@ function LaborPricing() {
   const profiles = catalogData?.profiles ?? [];
   const [searchRole, setSearchRole] = useState("");
   const [searchedRole, setSearchedRole] = useState("");
+  const [searchSeniority, setSearchSeniority] = useState("");
   const [profileTitle, setProfileTitle] = useState("");
   const [employmentModel, setEmploymentModel] = useState<"CLT" | "PJ">("CLT");
   const [monthlySalary, setMonthlySalary] = useState("");
@@ -301,9 +302,23 @@ function LaborPricing() {
   const pjProfiles = searchedProfiles.filter((profile) => profile.employmentModel === "PJ");
 
   const salaryReference = (profile: (typeof profiles)[number]) => {
+    if (profile.observed) {
+      const point = profile.observed.percentilAplicado ?? "mediana";
+      return profile.observed[point] ?? profile.observed.mediana;
+    }
     const official = profile.referenciaOficial?.mediana;
     const rais = profile.referenciaRais?.[profile.referenciaRais.percentilAplicado ?? "mediana"];
     return official ?? rais ?? profile.monthlyCompensation;
+  };
+
+  const salarySourceLabel = (profile: (typeof profiles)[number]) => {
+    if (profile.observed) {
+      const point = profile.observed.percentilAplicado === "p25" ? "P25" : profile.observed.percentilAplicado === "p75" ? "P75" : "mediana";
+      return `CAGED/MTE · competência ${profile.observed.competencia.slice(0, 7)} · ${profile.observed.uf ?? "Brasil"} · n=${profile.observed.nAmostra ?? "—"} · ${point}`;
+    }
+    if (profile.referenciaOficial) return `Portaria SGD/MGI · ${profile.referenciaOficial.competencia.slice(0, 7)} · referência oficial`;
+    if (profile.referenciaRais) return `RAIS · competência ${profile.referenciaRais.competencia.slice(0, 7)} · referência histórica`;
+    return "Catálogo interno · estimativa parametrizada";
   };
 
   const salary = parseLocaleNumber(monthlySalary);
@@ -331,7 +346,11 @@ function LaborPricing() {
     setShowSuggestions(false);
     setNetworkLoading(true);
     try {
-      const result = await fetchPjSalarySearch({ jobTitle: role, location: "São Paulo" });
+      const result = await fetchPjSalarySearch({
+        jobTitle: role,
+        location: "Brasil",
+        seniority: searchSeniority || undefined,
+      });
       setNetworkResult(result);
     } catch (error) {
       setNetworkResult(null);
@@ -352,6 +371,7 @@ function LaborPricing() {
   const handleClear = () => {
     setSearchRole("");
     setSearchedRole("");
+    setSearchSeniority("");
     setNetworkResult(null);
     setProfileTitle("");
     setEmploymentModel("CLT");
@@ -381,7 +401,7 @@ function LaborPricing() {
 
       <div className="relative">
         <Label htmlFor="labor-role-search" className="text-xs font-semibold text-[#345555]">Cargo / perfil</Label>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto]">
           <Input
             id="labor-role-search"
             value={searchRole}
@@ -395,13 +415,27 @@ function LaborPricing() {
               if (event.key === "Escape") setShowSuggestions(false);
             }}
             className="h-11 border-[#D4D1CC] bg-white text-sm text-[#333333]"
-            placeholder="Ex.: Analista de BI, Desenvolvedor, Arquiteto de Soluções"
+            placeholder="Ex.: Analista de IA, Desenvolvedor, Arquiteto de Soluções"
             autoComplete="off"
           />
+          <select
+            id="labor-seniority-search"
+            value={searchSeniority}
+            onChange={(event) => setSearchSeniority(event.target.value)}
+            className="h-11 rounded-md border border-[#D4D1CC] bg-white px-3 text-sm text-[#333333] outline-none focus:ring-2 focus:ring-[#0D5C5C]/20"
+            aria-label="Senioridade opcional"
+          >
+            <option value="">Todas as senioridades</option>
+            <option value="junior">Júnior</option>
+            <option value="pleno">Pleno</option>
+            <option value="senior">Sênior</option>
+            <option value="especialista">Especialista</option>
+          </select>
           <Button onClick={handleRoleSearch} disabled={!searchRole.trim()} className="pressable h-11 rounded-full bg-[#F57F17] px-5 text-xs text-white hover:bg-[#D96D0C]">
             <Search className="mr-2 h-4 w-4" /> Pesquisar
           </Button>
         </div>
+        <p className="mt-1.5 text-[11px] text-[#879A9A]">Senioridade é opcional. Se não for informada, a estimativa complementar usa Pleno; as referências internas continuam mostrando a senioridade de cada registro.</p>
 
         {showSuggestions && (suggestions.length > 0 || catalogLoading) && (
           <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-[#D8D1C7] bg-white shadow-lg">
@@ -455,9 +489,12 @@ function LaborPricing() {
                             <p className="font-display text-lg font-semibold text-[#2A675F]">{formatBRL(salaryReference(profile))}</p>
                           </div>
                           <p className="mt-2 text-[10px] text-[#718282]">Referência mensal · Fator K {profile.factorK.toFixed(2)}</p>
-                          {(profile.referenciaOficial || profile.referenciaRais) && (
-                            <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">
-                              {[profile.referenciaOficial && "SISP", profile.referenciaRais && "RAIS"].filter(Boolean).join(" · ")} · fontes públicas
+                          <p className={`mt-2 text-[10px] leading-4 ${profile.observed ? "font-semibold text-[#2A675F]" : "text-[#879A9A]"}`}>
+                            Fonte do valor: {salarySourceLabel(profile)}
+                          </p>
+                          {(profile.observed && (profile.referenciaOficial || profile.referenciaRais)) && (
+                            <p className="mt-1 text-[10px] leading-4 text-[#879A9A]">
+                              Referências auxiliares: {[profile.referenciaOficial && "Portaria SGD/MGI", profile.referenciaRais && "RAIS"].filter(Boolean).join(" · ")} · não substituem o CAGED
                             </p>
                           )}
                           <div className="mt-3 flex justify-end">
@@ -495,7 +532,7 @@ function LaborPricing() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-display text-base font-semibold text-[#333333]">Estimativa complementar</p>
-                  <p className="mt-1 text-[11px] text-[#899A9A]">Script dinâmico · confiança {Math.round(networkResult.confidence * 100)}% · não é dado real de mercado</p>
+                  <p className="mt-1 text-[11px] text-[#899A9A]">Estimativa algorítmica local · confiança {Math.round(networkResult.confidence * 100)}% · não é consulta a dados externos</p>
                 </div>
                 <span className="rounded-full border border-[#E5E0D6] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#718282]">PJ</span>
               </div>
@@ -511,7 +548,10 @@ function LaborPricing() {
                   </div>
                 ))}
               </div>
-              <p className="mt-3 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
+              <div className="mt-3 rounded-lg border border-[#E8CBA9] bg-[#FAEFE2] p-3 text-[10px] leading-4 text-[#79521F]">
+                <strong>Transparência da fonte:</strong> esta implementação não consulta Glassdoor, LinkedIn, Vagas ou Salário.com.br. O valor é calculado localmente a partir do cargo, senioridade e regras de complexidade do script. Não tratar como salário observado de mercado.
+              </div>
+              <p className="mt-2 text-[10px] leading-4 text-[#879A9A]">{networkResult.notes}</p>
               <div className="mt-3 flex justify-end">
                 <button onClick={() => { setProfileTitle(searchedRole); setEmploymentModel("PJ"); setMonthlySalary(String(networkResult.salario_pj_mensal)); setCostsAndCharges(""); toast.success("Estimativa PJ aplicada ao cálculo."); }} className="rounded-full border border-[#F0C48A] px-3 py-1 text-[11px] font-semibold text-[#C2660D] hover:bg-white">Usar PJ no cálculo</button>
               </div>
